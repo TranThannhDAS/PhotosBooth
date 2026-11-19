@@ -1,0 +1,107 @@
+@implements IDisposable
+@inject PhotoSessionService Sessions
+
+@*
+    Component gốc. Màn hình hiển thị được SUY RA từ trạng thái phiên (PhotoSessionService),
+    nên điều hướng luôn nhất quán với nghiệp vụ và khôi phục đúng chỗ khi giao diện được tải lại.
+*@
+<AppErrorBoundary @ref="_errorBoundary">
+    <ChildContent>
+        @switch (CurrentScreen)
+        {
+            case AppScreen.Welcome:
+                <WelcomeScreen OnStart="StartSession" />
+                break;
+            case AppScreen.TemplateSelection:
+                <TemplateSelectionScreen OnCancel="CancelSession" />
+                break;
+            case AppScreen.Capture:
+                <CaptureScreen OnCancel="CancelSession" />
+                break;
+            case AppScreen.Review:
+                <ReviewScreen OnCancel="CancelSession" />
+                break;
+            case AppScreen.Result:
+                <ResultScreen OnCancel="CancelSession" />
+                break;
+            case AppScreen.Done:
+                <DoneScreen OnNewSession="StartSession" OnHome="GoHome" />
+                break;
+        }
+    </ChildContent>
+    <ErrorContent>
+        <div class="fatal-error" role="alert">
+            <h1>Đã xảy ra lỗi giao diện</h1>
+            <p>Ảnh đã chụp vẫn được giữ nguyên. Nhấn nút bên dưới để quay về màn hình chính.</p>
+            <button type="button" class="btn btn-primary btn-lg" @onclick="Recover">Về màn hình chính</button>
+        </div>
+    </ErrorContent>
+</AppErrorBoundary>
+
+@code {
+    private enum AppScreen
+    {
+        Welcome,
+        TemplateSelection,
+        Capture,
+        Review,
+        Result,
+        Done,
+    }
+
+    private AppErrorBoundary? _errorBoundary;
+    private bool _atWelcome;
+
+    private AppScreen CurrentScreen
+    {
+        get
+        {
+            var session = Sessions.Current;
+            if (_atWelcome || session is null)
+            {
+                return AppScreen.Welcome;
+            }
+
+            return session.State switch
+            {
+                PhotoSessionState.Created when session.Template is null => AppScreen.TemplateSelection,
+                PhotoSessionState.Created or PhotoSessionState.Previewing or PhotoSessionState.Capturing => AppScreen.Capture,
+                PhotoSessionState.Reviewing => AppScreen.Review,
+                PhotoSessionState.Composing or PhotoSessionState.Ready => AppScreen.Result,
+                PhotoSessionState.Completed => AppScreen.Done,
+                _ => AppScreen.Welcome,
+            };
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        // Giao diện có thể được tải lại sau sự cố WebView2: phiên còn dang dở thì quay lại đúng bước.
+        _atWelcome = Sessions.Current is null or { IsEnded: true };
+        Sessions.SessionChanged += OnSessionChanged;
+    }
+
+    private void StartSession()
+    {
+        Sessions.StartNewSession();
+        _atWelcome = false;
+    }
+
+    private void CancelSession()
+    {
+        Sessions.EndCurrentSession();
+        _atWelcome = true;
+    }
+
+    private void GoHome() => _atWelcome = true;
+
+    private void Recover()
+    {
+        _atWelcome = true;
+        _errorBoundary?.Recover();
+    }
+
+    private void OnSessionChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Sessions.SessionChanged -= OnSessionChanged;
+}

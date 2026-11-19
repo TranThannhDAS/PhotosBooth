@@ -1,0 +1,55 @@
+.welcome {
+    height: 100%;
+    display: grid;
+    place-items: center;
+    padding: var(--space-6);
+    background:
+        radial-gradient(circle at 20% 15%, rgba(37, 99, 235, 0.10), transparent 45%),
+        radial-gradient(circle at 85% 85%, rgba(245, 158, 11, 0.10), transparent 40%),
+        var(--color-bg);
+    overflow: auto;
+}
+
+.welcome-card {
+    width: min(560px, 100%);
+    padding: var(--space-8) var(--space-6);
+    text-align: center;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+}
+
+.welcome-logo {
+    display: inline-grid;
+    place-items: center;
+    width: 112px;
+    height: 112px;
+    margin-bottom: var(--space-4);
+    border-radius: 50%;
+    color: var(--color-primary);
+    background: var(--color-info-bg);
+}
+
+.welcome-title {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 2.75rem);
+    line-height: 1.2;
+}
+
+.welcome-lead {
+    margin: var(--space-3) 0 var(--space-8);
+    font-size: 1.25rem;
+    color: var(--color-text-muted);
+}
+
+.welcome-start {
+    width: 100%;
+    max-width: 360px;
+}
+
+.welcome-note {
+    margin: var(--space-4) 0 0;
+    font-size: 0.9375rem;
+    color: var(--color-text-muted);
+}

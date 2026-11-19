@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!--
+      Cần chỉ định phiên bản Windows SDK: BlazorWebView .NET 10 dùng WebView2CompositionControl,
+      control này phụ thuộc Microsoft.Windows.SDK.NET (chỉ có khi TFM ghi rõ windows10.0.17763.0 trở lên).
+      Yêu cầu tối thiểu: Windows 10 1809.
+    -->
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Photobooth.Desktop</RootNamespace>
+    <AssemblyName>Photobooth</AssemblyName>
+    <Product>Photobooth Mini</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.130" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Template khung ảnh đi kèm ứng dụng (nạp lúc chạy, thêm template = thêm file JSON). -->
+    <None Include="Templates\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Photobooth.Application\Photobooth.Application.csproj" />
+    <ProjectReference Include="..\Photobooth.Infrastructure\Photobooth.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

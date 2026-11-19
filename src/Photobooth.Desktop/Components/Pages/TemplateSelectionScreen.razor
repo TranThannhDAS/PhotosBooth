@@ -1,0 +1,88 @@
+@inherits SessionScreenBase
+@inject ITemplateCatalog Catalog
+@inject IPhotoComposer Composer
+@inject ILogger<TemplateSelectionScreen> Logger
+
+<SessionLayout Step="0" OnCancel="OnCancel">
+    <ChildContent>
+        <div class="page-heading">
+            <h1>Chọn khung ảnh</h1>
+            <p>Chạm vào một mẫu rồi nhấn “Tiếp tục”. Bạn sẽ chụp @Sessions.Options.PhotosPerSession ảnh.</p>
+        </div>
+
+        @if (_templates is null)
+        {
+            <div class="center-state"><span class="spinner spinner-dark" aria-hidden="true"></span><p>Đang tải khung ảnh…</p></div>
+        }
+        else if (_templates.Count == 0)
+        {
+            <StatusMessage Status="@(new StatusInfo(StatusKind.Error, "Chưa có khung ảnh nào.", "Vui lòng kiểm tra thư mục Templates của ứng dụng."))" />
+        }
+        else
+        {
+            <div class="template-grid" role="radiogroup" aria-label="Khung ảnh">
+                @foreach (var template in _templates)
+                {
+                    var item = template;
+                    var compatible = Sessions.IsTemplateCompatible(item);
+                    var selected = _selected?.Id == item.Id;
+                    <button type="button"
+                            class="template-card @(selected ? "is-selected" : null)"
+                            role="radio"
+                            aria-checked="@(selected ? "true" : "false")"
+                            disabled="@(!compatible)"
+                            @onclick="() => _selected = item">
+                        <ImageView Class="template-preview"
+                                   Key="@item.Id"
+                                   Alt="@($"Xem trước khung {item.Name}")"
+                                   Loader="@(ct => LoadPreviewAsync(item, ct))" />
+                        <span class="template-name">
+                            @if (selected)
+                            {
+                                <span class="template-check" aria-hidden="true">✓</span>
+                            }
+                            @item.Name
+                        </span>
+                        @if (!compatible)
+                        {
+                            <span class="template-note">Cần @item.RequiredPhotoCount ảnh — không khớp cấu hình @Sessions.Options.PhotosPerSession ảnh.</span>
+                        }
+                        else if (!string.IsNullOrEmpty(item.Description))
+                        {
+                            <span class="template-note">@item.Description</span>
+                        }
+                    </button>
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-secondary" @onclick="OnCancel">Quay lại</button>
+        <button type="button" class="btn btn-primary btn-lg" disabled="@(_selected is null)" @onclick="Continue">Tiếp tục</button>
+    </Footer>
+</SessionLayout>
+
+@code {
+    private IReadOnlyList<PhotoTemplate>? _templates;
+    private PhotoTemplate? _selected;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnCancel { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Catalog.GetTemplatesAsync();
+        _selected = _templates.FirstOrDefault(Sessions.IsTemplateCompatible);
+    }
+
+    private async Task<byte[]?> LoadPreviewAsync(PhotoTemplate template, CancellationToken cancellationToken) =>
+        await Composer.RenderTemplatePreviewAsync(template, 480, cancellationToken);
+
+    private void Continue()
+    {
+        if (_selected is not null && !Sessions.SelectTemplate(_selected))
+        {
+            Logger.LogWarning("Không chọn được template {TemplateId}", _selected.Id);
+        }
+    }
+}

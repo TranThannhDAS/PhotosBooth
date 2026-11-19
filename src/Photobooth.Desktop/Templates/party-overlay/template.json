@@ -1,0 +1,21 @@
+// Template minh họa ảnh trang trí: ảnh nền (zIndex -100), 4 ô ảnh, khung PNG trong suốt phủ lên ảnh (zIndex 20),
+// logo PNG (zIndex 30) và chữ có placeholder {datetime} (zIndex 40).
+{
+  "id": "party-overlay",
+  "name": "Tiệc vui vẻ",
+  "description": "Nền gradient, khung trang trí trong suốt, logo và ngày giờ chụp.",
+  "canvas": { "widthPixels": 1200, "heightPixels": 1800, "dpi": 300, "backgroundColor": "#7C3AED" },
+  "slots": [
+    { "id": "photo-1", "photoIndex": 0, "x": 90, "y": 300, "width": 480, "height": 560, "cornerRadius": 20 },
+    { "id": "photo-2", "photoIndex": 1, "x": 630, "y": 300, "width": 480, "height": 560, "cornerRadius": 20 },
+    { "id": "photo-3", "photoIndex": 2, "x": 90, "y": 900, "width": 480, "height": 560, "cornerRadius": 20 },
+    { "id": "photo-4", "photoIndex": 3, "x": 630, "y": 900, "width": 480, "height": 560, "cornerRadius": 20 }
+  ],
+  "decorations": [
+    { "id": "background", "type": "image", "assetPath": "assets/background.png", "x": 0, "y": 0, "width": 1200, "height": 1800, "fit": "cover", "zIndex": -100 },
+    { "id": "overlay", "type": "image", "assetPath": "assets/frame-overlay.png", "x": 0, "y": 0, "width": 1200, "height": 1800, "zIndex": 20 },
+    { "id": "logo", "type": "image", "assetPath": "assets/logo.png", "x": 490, "y": 70, "width": 220, "height": 200, "zIndex": 30 },
+    { "id": "title", "type": "text", "x": 90, "y": 1500, "width": 1020, "height": 130, "text": "Tiệc vui vẻ!", "fontFamily": "Segoe UI", "fontSizePixels": 104, "bold": true, "textAlign": "center", "color": "#FFFFFF", "zIndex": 40 },
+    { "id": "datetime", "type": "text", "x": 90, "y": 1640, "width": 1020, "height": 70, "text": "{datetime}", "fontSizePixels": 44, "color": "#FDE68A", "zIndex": 40 }
+  ]
+}

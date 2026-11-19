@@ -1,0 +1,20 @@
+@inherits ErrorBoundaryBase
+@inject ILogger<AppErrorBoundary> Logger
+
+@* Error boundary tự ghi log qua ILogger, không phụ thuộc IErrorBoundaryLogger của host. *@
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else if (ErrorContent is not null)
+{
+    @ErrorContent(CurrentException)
+}
+
+@code {
+    protected override Task OnErrorAsync(Exception exception)
+    {
+        Logger.LogError(exception, "Lỗi không được xử lý trong giao diện Razor");
+        return Task.CompletedTask;
+    }
+}

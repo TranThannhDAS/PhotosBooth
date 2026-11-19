@@ -1,0 +1,40 @@
+@* Màn hình chào: một hành động chính duy nhất. Camera chưa được bật ở đây. *@
+<div class="welcome">
+    <div class="welcome-card">
+        <div class="welcome-logo" aria-hidden="true">
+            <svg viewBox="0 0 64 64" width="72" height="72">
+                <rect x="6" y="16" width="52" height="38" rx="8" fill="none" stroke="currentColor" stroke-width="4" />
+                <path d="M22 16l4-7h12l4 7" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round" />
+                <circle cx="32" cy="35" r="10" fill="none" stroke="currentColor" stroke-width="4" />
+            </svg>
+        </div>
+        <h1 class="welcome-title">Photobooth Mini</h1>
+        <p class="welcome-lead">Tự chụp ảnh lưu niệm chỉ với một lần chạm.</p>
+
+        <button type="button" class="btn btn-primary btn-lg welcome-start"
+                disabled="@_starting" @onclick="StartAsync">
+            Bắt đầu chụp
+        </button>
+
+        <p class="welcome-note">Máy ảnh chỉ được bật khi bạn bắt đầu chụp.</p>
+    </div>
+</div>
+
+@code {
+    private bool _starting;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnStart { get; set; }
+
+    private async Task StartAsync()
+    {
+        // Chống bấm liên tục tạo nhiều phiên.
+        if (_starting)
+        {
+            return;
+        }
+
+        _starting = true;
+        await OnStart.InvokeAsync();
+    }
+}

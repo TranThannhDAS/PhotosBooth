@@ -1,0 +1,143 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject ILogger<ImageView> Logger
+
+@* Hiển thị ảnh do C# tạo (JPEG bytes) qua object URL. Tải lại khi Key thay đổi. *@
+<div class="image-view @Class">
+    <img @ref="_image" class="image-view-img @(_state == LoadState.Shown ? null : "is-hidden")" alt="@Alt" />
+    @if (_state == LoadState.Loading)
+    {
+        <div class="image-view-overlay"><span class="spinner spinner-sm" aria-hidden="true"></span><span class="visually-hidden">Đang tải ảnh</span></div>
+    }
+    else if (_state == LoadState.Failed)
+    {
+        <div class="image-view-overlay image-view-error">Không hiển thị được ảnh</div>
+    }
+    @ChildContent
+</div>
+
+@code {
+    private static readonly TimeSpan JsCleanupTimeout = TimeSpan.FromSeconds(2);
+
+    private enum LoadState
+    {
+        Loading,
+        Shown,
+        Empty,
+        Failed,
+    }
+
+    private ElementReference _image;
+    private LoadState _state = LoadState.Loading;
+    private CancellationTokenSource? _loadCts;
+    private object? _loadedKey;
+    private bool _needsLoad = true;
+    private bool _disposed;
+
+    /// <summary>Hàm tạo dữ liệu ảnh (JPEG). Trả về null nếu không có ảnh.</summary>
+    [Parameter, EditorRequired]
+    public Func<CancellationToken, Task<byte[]?>> Loader { get; set; } = default!;
+
+    /// <summary>Khóa nhận diện nội dung; ảnh chỉ được tải lại khi khóa đổi.</summary>
+    [Parameter]
+    public object? Key { get; set; }
+
+    [Parameter]
+    public string Alt { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    /// <summary>Nội dung phủ lên ảnh (ví dụ nhãn, trạng thái).</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!Equals(Key, _loadedKey))
+        {
+            _needsLoad = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_needsLoad || _disposed)
+        {
+            return;
+        }
+
+        _needsLoad = false;
+        _loadedKey = Key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        var token = _loadCts.Token;
+
+        _state = LoadState.Loading;
+        StateHasChanged();
+
+        try
+        {
+            var bytes = await Loader(token);
+            if (token.IsCancellationRequested || _disposed)
+            {
+                return;
+            }
+
+            if (bytes is null || bytes.Length == 0)
+            {
+                _state = LoadState.Empty;
+                await JS.InvokeVoidAsync("photoboothPhotoView.clear", token, _image);
+            }
+            else
+            {
+                // Truyền nhị phân sang JS (không Base64).
+                using var streamReference = new DotNetStreamReference(new MemoryStream(bytes));
+                await JS.InvokeVoidAsync("photoboothPhotoView.show", token, _image, streamReference, "image/jpeg");
+                _state = LoadState.Shown;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or CompositionException or JSException or JSDisconnectedException)
+        {
+            Logger.LogWarning(ex, "Không hiển thị được ảnh xem trước");
+            _state = LoadState.Failed;
+        }
+
+        if (!_disposed)
+        {
+            StateHasChanged();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(JsCleanupTimeout);
+            await JS.InvokeVoidAsync("photoboothPhotoView.clear", timeout.Token, _image);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException or ObjectDisposedException)
+        {
+            // WebView đang đóng: object URL được giải phóng cùng trang.
+        }
+    }
+}

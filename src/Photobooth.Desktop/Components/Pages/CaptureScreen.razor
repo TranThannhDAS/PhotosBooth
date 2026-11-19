@@ -1,0 +1,126 @@
+@inherits SessionScreenBase
+@* Logic của màn hình nằm ở CaptureScreen.razor.cs. *@
+<SessionLayout Step="1" OnCancel="OnCancel" CancelDisabled="@IsCapturing" ConfirmCancel="@(Session?.Photos.Count > 0)">
+    <ChildContent>
+        <div class="capture-layout">
+            <section class="stage" aria-label="Khung hình camera">
+                @* Video luôn nằm trong DOM để ElementReference ổn định; chỉ ẩn/hiện bằng CSS. *@
+                <video @ref="_videoElement"
+                       class="stage-media @(_cameraState == CameraUiState.Ready ? null : "is-hidden") @(Mirror ? "is-mirrored" : null)"
+                       autoplay muted playsinline
+                       aria-label="Hình ảnh trực tiếp từ camera"></video>
+
+                @if (_cameraState == CameraUiState.Connecting)
+                {
+                    <div class="stage-overlay">
+                        <div class="spinner" aria-hidden="true"></div>
+                        <p>Đang kết nối máy ảnh…</p>
+                    </div>
+                }
+                else if (_cameraState == CameraUiState.Failed)
+                {
+                    <div class="stage-overlay">
+                        <p class="stage-overlay-title">Máy ảnh chưa sẵn sàng</p>
+                        <p>Xem hướng dẫn bên cạnh để khắc phục.</p>
+                    </div>
+                }
+                else if (_cameraState == CameraUiState.Off)
+                {
+                    <div class="stage-overlay"><p>Máy ảnh đang tắt</p></div>
+                }
+
+                @if (_progress is { } progress)
+                {
+                    <div class="stage-badge">@UiText.PhotoLabel(progress.Position, progress.PhotoCount)</div>
+                    @switch (progress.Stage)
+                    {
+                        case CaptureStage.Countdown:
+                            <div class="countdown" aria-live="assertive">
+                                <span class="countdown-number">@progress.SecondsRemaining</span>
+                            </div>
+                            break;
+                        case CaptureStage.Shooting:
+                            <div class="countdown countdown-flash" aria-live="assertive">
+                                <span class="countdown-label">Cười lên nào!</span>
+                            </div>
+                            break;
+                        case CaptureStage.Saved:
+                            <div class="countdown" aria-live="polite">
+                                <span class="countdown-label">✓ Đã chụp @UiText.PhotoLabel(progress.Position, progress.PhotoCount)</span>
+                            </div>
+                            break;
+                    }
+                }
+            </section>
+
+            <aside class="side-panel" aria-label="Điều khiển chụp ảnh">
+                <div class="capture-progress">
+                    <span class="capture-progress-title">@ProgressTitle</span>
+                    <span class="capture-progress-detail">Khung: @Session?.Template?.Name</span>
+                </div>
+
+                <div class="slot-strip" aria-label="Các ảnh của phiên">
+                    @for (var i = 0; i < SlotCount; i++)
+                    {
+                        var position = i;
+                        var photo = Session!.Slots[position];
+                        var isCurrent = _progress?.Position == position;
+                        var isPending = Session.PendingPositions.Contains(position);
+                        <div class="slot-thumb @(isCurrent ? "is-current" : null) @(isPending ? "is-pending" : null)">
+                            @if (photo is not null)
+                            {
+                                <ImageView Class="slot-thumb-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
+                                           Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 240, ct))" />
+                            }
+                            <span class="slot-thumb-number">@(position + 1)</span>
+                        </div>
+                    }
+                </div>
+
+                <StatusMessage Status="@CameraStatus">
+                    @if (_cameraState is CameraUiState.Failed or CameraUiState.Off)
+                    {
+                        <button type="button" class="btn btn-secondary" @onclick="StartCameraAsync">Thử lại</button>
+                        @if (_cameraError == CameraError.PermissionDenied)
+                        {
+                            <button type="button" class="btn btn-ghost" @onclick="OpenCameraSettings">Mở cài đặt camera</button>
+                        }
+                    }
+                </StatusMessage>
+
+                @if (_message is not null)
+                {
+                    <StatusMessage Status="@_message" />
+                }
+
+                <button type="button" class="toggle @(Mirror ? "is-on" : null)" aria-pressed="@(Mirror ? "true" : "false")"
+                        disabled="@IsCapturing" @onclick="ToggleMirror">
+                    <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                    <span>Lật ảnh như gương</span>
+                </button>
+            </aside>
+        </div>
+    </ChildContent>
+    <Footer>
+        @if (IsCapturing)
+        {
+            <button type="button" class="btn btn-secondary" @onclick="CancelCapture">Dừng chụp</button>
+        }
+        else if (Session?.IsRetake == true)
+        {
+            <button type="button" class="btn btn-secondary" @onclick="KeepOldPhotosAsync">Giữ ảnh cũ</button>
+        }
+        else if (Session?.Photos.Count == 0)
+        {
+            <button type="button" class="btn btn-secondary" @onclick="ChangeTemplateAsync">Đổi khung ảnh</button>
+        }
+        else
+        {
+            <span></span>
+        }
+
+        <button type="button" class="btn btn-primary btn-lg" disabled="@(!CanCapture)" @onclick="CaptureAsync">
+            @PrimaryLabel
+        </button>
+    </Footer>
+</SessionLayout>

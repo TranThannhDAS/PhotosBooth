@@ -1,0 +1,76 @@
+@inherits SessionScreenBase
+
+<SessionLayout Step="2" OnCancel="OnCancel" ConfirmCancel="true" CancelDisabled="@_composing">
+    <ChildContent>
+        <div class="page-heading">
+            <h1>Xem lại ảnh</h1>
+            <p>Chưa ưng ảnh nào? Nhấn “Chụp lại” dưới ảnh đó. Ảnh cũ chỉ được thay khi ảnh mới chụp thành công.</p>
+        </div>
+
+        @if (Session?.LastCompositionFailed == true)
+        {
+            <StatusMessage Status="@UiText.CompositionFailed" />
+        }
+
+        <div class="review-grid">
+            @if (Session is not null)
+            {
+                @for (var i = 0; i < Session.RequiredPhotoCount; i++)
+                {
+                    var position = i;
+                    var photo = Session.Slots[position];
+                    <figure class="review-card">
+                        @if (photo is not null)
+                        {
+                            <ImageView Class="review-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
+                                       Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 720, ct))" />
+                        }
+                        <figcaption class="review-caption">
+                            <span>Ảnh @(position + 1)</span>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_composing" @onclick="() => Sessions.BeginRetake(position)">
+                                Chụp lại
+                            </button>
+                        </figcaption>
+                    </figure>
+                }
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-secondary" disabled="@_composing" @onclick="() => Sessions.BeginRetake(null)">Chụp lại tất cả</button>
+        <button type="button" class="btn btn-primary btn-lg" disabled="@_composing" @onclick="ComposeAsync">
+            @if (_composing)
+            {
+                <span class="spinner spinner-sm" aria-hidden="true"></span>
+                <span>Đang tạo ảnh…</span>
+            }
+            else
+            {
+                <span>Ghép ảnh</span>
+            }
+        </button>
+    </Footer>
+</SessionLayout>
+
+@code {
+    private bool _composing;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnCancel { get; set; }
+
+
+    private async Task ComposeAsync()
+    {
+        if (_composing)
+        {
+            return;
+        }
+
+        _composing = true;
+
+        // Phiên chuyển sang Composing → màn hình thành phẩm hiển thị trạng thái xử lý.
+        // Không hủy theo vòng đời component: ghép ảnh nhanh và kết quả cần được giữ.
+        await Sessions.ComposeAsync(Session?.Composed?.Filter ?? ColorFilter.None);
+        _composing = false;
+    }
+}

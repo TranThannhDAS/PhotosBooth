@@ -1,0 +1,39 @@
+@* Khối thông báo trạng thái dùng chung: icon + tiêu đề + mô tả + (tùy chọn) nút hành động. *@
+<div class="status @CssClass" role="@(Status.Kind == StatusKind.Error ? "alert" : "status")">
+    <span class="status-icon" aria-hidden="true">@Icon</span>
+    <div class="status-body">
+        <p class="status-title">@Status.Title</p>
+        @if (!string.IsNullOrEmpty(Status.Detail))
+        {
+            <p class="status-detail">@Status.Detail</p>
+        }
+        @if (ChildContent is not null)
+        {
+            <div class="status-actions">@ChildContent</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public StatusInfo Status { get; set; } = default!;
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private string CssClass => Status.Kind switch
+    {
+        StatusKind.Success => "status-success",
+        StatusKind.Warning => "status-warning",
+        StatusKind.Error => "status-error",
+        _ => "status-info",
+    };
+
+    private string Icon => Status.Kind switch
+    {
+        StatusKind.Success => "✓",
+        StatusKind.Warning => "!",
+        StatusKind.Error => "✕",
+        _ => "i",
+    };
+}

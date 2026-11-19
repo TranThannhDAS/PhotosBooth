@@ -1,0 +1,16 @@
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Photobooth.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Chỉ dùng abstractions để ghi log; không phụ thuộc provider cụ thể. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.15" />
+  </ItemGroup>
+
+</Project>

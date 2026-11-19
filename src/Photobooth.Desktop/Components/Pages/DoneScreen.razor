@@ -1,0 +1,35 @@
+@inherits SessionScreenBase
+@inject WindowsShellService Shell
+
+<SessionLayout Step="4">
+    <ChildContent>
+        <div class="done">
+            <div class="done-icon" aria-hidden="true">✓</div>
+            <h1>Hoàn thành!</h1>
+            <p class="done-lead">Cảm ơn bạn đã sử dụng Photobooth. Ảnh của bạn đã được lưu:</p>
+            <ul class="done-files">
+                @foreach (var file in Session?.Exports ?? [])
+                {
+                    <li><strong>@UiText.FormatLabel(file.Format)</strong> — @Path.GetFileName(file.FilePath)</li>
+                }
+            </ul>
+            @if (Session?.Exports.LastOrDefault() is { } last)
+            {
+                <button type="button" class="btn btn-secondary" @onclick="() => Shell.RevealFile(last.FilePath)">Mở thư mục</button>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-secondary" @onclick="OnHome">Về màn hình chính</button>
+        <button type="button" class="btn btn-primary btn-lg" @onclick="OnNewSession">Phiên mới</button>
+    </Footer>
+</SessionLayout>
+
+@code {
+    [Parameter, EditorRequired]
+    public EventCallback OnNewSession { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback OnHome { get; set; }
+
+}

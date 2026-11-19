@@ -1,0 +1,41 @@
+@* Hộp thoại xác nhận dạng lớp phủ; focus mặc định vào nút an toàn (không thực hiện). *@
+<div class="dialog-backdrop">
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message">
+        <h2 id="dialog-title" class="dialog-title">@Title</h2>
+        <p id="dialog-message" class="dialog-message">@Message</p>
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" @ref="_safeButton" @onclick="OnCancel">@CancelText</button>
+            <button type="button" class="btn btn-danger" @onclick="OnConfirm">@ConfirmText</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ElementReference _safeButton;
+
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Message { get; set; }
+
+    [Parameter]
+    public string ConfirmText { get; set; } = "Đồng ý";
+
+    [Parameter]
+    public string CancelText { get; set; } = "Quay lại";
+
+    [Parameter]
+    public EventCallback OnConfirm { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _safeButton.FocusAsync();
+        }
+    }
+}

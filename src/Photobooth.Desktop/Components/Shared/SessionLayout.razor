@@ -1,0 +1,83 @@
+@* Khung chung cho các màn hình trong phiên: thương hiệu, chỉ báo bước, nút hủy phiên, nội dung và thanh hành động. *@
+<div class="screen">
+    <header class="screen-header">
+        <span class="brand-name">Photobooth Mini</span>
+        <ol class="steps" aria-label="Các bước">
+            @for (var i = 0; i < UiText.StepLabels.Length; i++)
+            {
+                var index = i;
+                <li class="step @(index == Step ? "is-current" : index < Step ? "is-done" : null)"
+                    aria-current="@(index == Step ? "step" : null)">
+                    <span class="step-number" aria-hidden="true">@(index < Step ? "✓" : (index + 1).ToString())</span>
+                    <span class="step-label">@UiText.StepLabels[index]</span>
+                </li>
+            }
+        </ol>
+        @if (OnCancel.HasDelegate)
+        {
+            <button type="button" class="btn btn-ghost" disabled="@CancelDisabled" @onclick="RequestCancelAsync">Hủy phiên</button>
+        }
+    </header>
+
+    <main class="screen-body">
+        @ChildContent
+    </main>
+
+    @if (Footer is not null)
+    {
+        <footer class="screen-footer">
+            @Footer
+        </footer>
+    }
+
+    @if (_confirming)
+    {
+        <ConfirmDialog Title="Hủy phiên chụp?"
+                       Message="Phiên này sẽ kết thúc. Ảnh đã chụp vẫn được lưu trong máy, không bị xóa."
+                       ConfirmText="Hủy phiên"
+                       CancelText="Tiếp tục"
+                       OnConfirm="ConfirmCancelAsync"
+                       OnCancel="() => _confirming = false" />
+    }
+</div>
+
+@code {
+    private bool _confirming;
+
+    /// <summary>Chỉ số bước hiện tại (0-based) trong <see cref="UiText.StepLabels"/>.</summary>
+    [Parameter]
+    public int Step { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public RenderFragment? Footer { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    [Parameter]
+    public bool CancelDisabled { get; set; }
+
+    /// <summary>Hỏi xác nhận trước khi hủy (khi đã có ảnh).</summary>
+    [Parameter]
+    public bool ConfirmCancel { get; set; }
+
+    private async Task RequestCancelAsync()
+    {
+        if (ConfirmCancel)
+        {
+            _confirming = true;
+            return;
+        }
+
+        await OnCancel.InvokeAsync();
+    }
+
+    private async Task ConfirmCancelAsync()
+    {
+        _confirming = false;
+        await OnCancel.InvokeAsync();
+    }
+}
