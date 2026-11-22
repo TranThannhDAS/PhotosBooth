@@ -1,4 +1,5 @@
 .welcome {
+    position: relative;
     height: 100%;
     display: grid;
     place-items: center;
@@ -8,6 +9,14 @@
         radial-gradient(circle at 85% 85%, rgba(245, 158, 11, 0.10), transparent 40%),
         var(--color-bg);
     overflow: auto;
+}
+
+.welcome-admin {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    min-width: 0;
+    opacity: 0.7;
 }
 
 .welcome-card {
@@ -23,12 +32,8 @@
 .welcome-logo {
     display: inline-grid;
     place-items: center;
-    width: 112px;
-    height: 112px;
     margin-bottom: var(--space-4);
-    border-radius: 50%;
-    color: var(--color-primary);
-    background: var(--color-info-bg);
+    filter: drop-shadow(0 8px 18px rgba(37, 99, 235, 0.22));
 }
 
 .welcome-title {

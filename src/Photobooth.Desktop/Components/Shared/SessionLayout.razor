@@ -1,7 +1,10 @@
 @* Khung chung cho các màn hình trong phiên: thương hiệu, chỉ báo bước, nút hủy phiên, nội dung và thanh hành động. *@
 <div class="screen">
     <header class="screen-header">
-        <span class="brand-name">Photobooth Mini</span>
+        <span class="brand-name">
+            <BrandLogo Size="34" />
+            <span>Photobooth Mini</span>
+        </span>
         <ol class="steps" aria-label="Các bước">
             @for (var i = 0; i < UiText.StepLabels.Length; i++)
             {

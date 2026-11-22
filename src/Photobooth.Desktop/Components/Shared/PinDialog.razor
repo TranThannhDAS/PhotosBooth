@@ -1,0 +1,70 @@
+@* Nhập PIN quản trị bằng bàn phím số trên màn hình (dùng được trên màn cảm ứng). *@
+<div class="dialog-backdrop">
+    <div class="dialog pin-dialog" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+        <h2 id="pin-title" class="dialog-title">Chế độ quản trị</h2>
+        <p class="dialog-message">Nhập mã PIN để tiếp tục.</p>
+
+        <div class="pin-dots" aria-label="@($"Đã nhập {_pin.Length} chữ số")">
+            @for (var i = 0; i < MaxLength; i++)
+            {
+                <span class="pin-dot @(i < _pin.Length ? "is-filled" : null)" aria-hidden="true"></span>
+            }
+        </div>
+
+        @if (_error)
+        {
+            <p class="pin-error" role="alert">Mã PIN không đúng.</p>
+        }
+
+        <div class="pin-pad">
+            @foreach (var digit in Digits)
+            {
+                var value = digit;
+                <button type="button" class="btn btn-secondary pin-key" @onclick="() => Press(value)">@value</button>
+            }
+            <button type="button" class="btn btn-ghost pin-key" @onclick="Clear" aria-label="Xóa hết">Xóa</button>
+            <button type="button" class="btn btn-secondary pin-key" @onclick="() => Press(0)">0</button>
+            <button type="button" class="btn btn-ghost pin-key" @onclick="Backspace" aria-label="Xóa một số">⌫</button>
+        </div>
+
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" @onclick="OnCancel">Hủy</button>
+            <button type="button" class="btn btn-primary" disabled="@(_pin.Length == 0)" @onclick="SubmitAsync">Mở quản trị</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int MaxLength = 8;
+    private static readonly int[] Digits = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    private string _pin = string.Empty;
+    private bool _error;
+
+    /// <summary>Kiểm tra PIN; trả về true nếu đúng.</summary>
+    [Parameter, EditorRequired]
+    public Func<string, bool> OnSubmit { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnCancel { get; set; }
+
+    private void Press(int digit)
+    {
+        _error = false;
+        if (_pin.Length < MaxLength)
+        {
+            _pin += digit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
+
+    private void Backspace() => _pin = _pin.Length > 0 ? _pin[..^1] : _pin;
+
+    private void Clear() => _pin = string.Empty;
+
+    private Task SubmitAsync()
+    {
+        var ok = OnSubmit(_pin);
+        _pin = string.Empty;
+        _error = !ok;
+        return Task.CompletedTask;
+    }
+}

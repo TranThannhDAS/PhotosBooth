@@ -105,9 +105,9 @@ public static partial class TemplateValidator
             var slot = template.Slots[i];
             var path = ElementPath("slots", i, slot.Id);
 
-            if (slot.PhotoIndex < 0 || slot.PhotoIndex >= CaptureOptions.MaxPhotosPerSession)
+            if (slot.PhotoIndex < 0 || slot.PhotoIndex >= CaptureOptions.AbsoluteMaxPhotosPerSession)
             {
-                error($"{path}.photoIndex", $"Phải trong khoảng 0..{CaptureOptions.MaxPhotosPerSession - 1}.");
+                error($"{path}.photoIndex", $"Phải trong khoảng 0..{CaptureOptions.AbsoluteMaxPhotosPerSession - 1}.");
             }
 
             var sizeValid = CheckBox(template.Canvas, path, slot.X, slot.Y, slot.Width, slot.Height, error, warn);
@@ -142,13 +142,14 @@ public static partial class TemplateValidator
             }
         }
 
-        // Ảnh chụp nhưng không dùng ở ô nào: dùng được nhưng lãng phí lượt chụp.
+        // BR-T03: chỉ số ảnh nguồn phải liên tục 0..N-1 (cho phép trùng). Thiếu chỉ số trung gian
+        // nghĩa là khách phải chụp một ảnh không dùng ở đâu → lỗi, không chỉ cảnh báo.
         var used = template.Slots.Select(s => s.PhotoIndex).Where(i => i >= 0).ToHashSet();
         for (var index = 0; index < template.RequiredPhotoCount; index++)
         {
             if (!used.Contains(index))
             {
-                warn("slots", string.Create(CultureInfo.InvariantCulture, $"Ảnh có photoIndex {index} được chụp nhưng không dùng ở ô nào."));
+                error("slots", string.Create(CultureInfo.InvariantCulture, $"Thiếu ô ảnh dùng photoIndex {index}: các photoIndex phải liên tục từ 0."));
             }
         }
     }

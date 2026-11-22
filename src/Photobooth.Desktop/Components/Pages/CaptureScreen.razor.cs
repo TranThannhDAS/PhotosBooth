@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using Photobooth.Application.Camera;
+using Photobooth.Application.Composition;
 using Photobooth.Application.Sessions;
+using Photobooth.Application.Templates;
 using Photobooth.Desktop.Camera;
 using Photobooth.Desktop.Platform;
 
@@ -89,11 +91,58 @@ public sealed partial class CaptureScreen : SessionScreenBase
         _ => UiText.CameraOff,
     };
 
+    // Camera Framing Overlay: chỉ tính lại khi template/ảnh đang chụp/kích thước camera/chế độ gương đổi.
+    private (PhotoTemplate Template, int PhotoIndex, int Width, int Height, bool Mirror)? _guideKey;
+    private FramingGuide? _guide;
+
+    /// <summary>Ảnh sắp/đang chụp: ảnh trong lượt chụp, hoặc vị trí chờ chụp đầu tiên.</summary>
+    private int? GuidePhotoIndex => _progress?.Position
+        ?? (Session is { PendingPositions.Count: > 0 } s ? s.PendingPositions[0] : null);
+
+    /// <summary>Khung hướng dẫn vùng ảnh thành phẩm trên live preview (null = không hiển thị).</summary>
+    private FramingGuide? Guide
+    {
+        get
+        {
+            if (_cameraState != CameraUiState.Ready || Session?.Template is not { } template
+                || GuidePhotoIndex is not { } photoIndex || Camera.FrameSize is not { } frame)
+            {
+                return null;
+            }
+
+            var key = (template, photoIndex, frame.Width, frame.Height, Mirror);
+            if (_guideKey != key)
+            {
+                _guideKey = key;
+                _guide = CaptureFraming.Compute(template, photoIndex, frame.Width, frame.Height, Mirror);
+            }
+
+            return _guide;
+        }
+    }
+
+    private string FramingStyle => Camera.FrameSize is { } frame
+        ? string.Create(CultureInfo.InvariantCulture, $"--frame-aspect: {frame.Width} / {frame.Height}; --frame-ratio: {(double)frame.Width / frame.Height};")
+        : string.Empty;
+
+    private static string GuideWindowStyle(FramingGuide guide) => string.Create(
+        CultureInfo.InvariantCulture,
+        $"left: {guide.X * 100}%; top: {guide.Y * 100}%; width: {guide.Width * 100}%; height: {guide.Height * 100}%;");
+
     protected override void OnInitialized()
     {
         base.OnInitialized();
         Camera.Faulted += OnCameraFaulted;
+        Camera.FrameSizeChanged += OnFrameSizeChanged;
     }
+
+    private void OnFrameSizeChanged(object? sender, EventArgs e) => _ = InvokeAsync(() =>
+    {
+        if (!IsDisposed)
+        {
+            StateHasChanged();
+        }
+    });
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -177,6 +226,13 @@ public sealed partial class CaptureScreen : SessionScreenBase
         try
         {
             var result = await Sessions.CaptureSequenceAsync(Camera, progress, _captureCts.Token);
+            if (result.Succeeded && Sessions.Current?.State == PhotoSessionState.Reviewing)
+            {
+                // Đủ ảnh theo template → tự ghép và chuyển sang màn xem thành phẩm (Photo Preview).
+                // Ghép lỗi thì phiên ở lại màn xem lại với thông báo và nút "Ghép ảnh" để thử lại.
+                await Sessions.ComposeAsync();
+            }
+
             if (IsDisposed)
             {
                 // Đủ ảnh → phiên chuyển sang xem lại và màn hình này đã được gỡ.
@@ -256,6 +312,7 @@ public sealed partial class CaptureScreen : SessionScreenBase
     protected override async ValueTask DisposeCoreAsync()
     {
         Camera.Faulted -= OnCameraFaulted;
+        Camera.FrameSizeChanged -= OnFrameSizeChanged;
 
         // Hủy đếm ngược; nếu khung hình đã lấy được, service vẫn ghi trọn file gốc.
         _lifetimeCts.Cancel();

@@ -1,0 +1,79 @@
+@inject PrinterSelectionService Printers
+@inject PrintOptions PrintOptions
+@inject ILogger<PrinterPanel> Logger
+
+@* Chọn máy in: chưa cấu hình / máy in giả lập (Mock) / máy in Windows đã cài. *@
+<section class="panel-section">
+    <h2 class="panel-title">Máy in</h2>
+    <div class="format-group" role="radiogroup" aria-label="Máy in">
+        <label class="format-option">
+            <input type="radio" name="printer" checked="@(_kind == PrinterKind.None)" @onchange="() => Select(PrinterKind.None, null)" />
+            <span><strong>Chưa dùng máy in</strong><small>Khách chỉ lưu ảnh; nút in báo “chưa thể in”.</small></span>
+        </label>
+        <label class="format-option">
+            <input type="radio" name="printer" checked="@(_kind == PrinterKind.Mock)" @onchange="() => Select(PrinterKind.Mock, null)" />
+            <span><strong>Máy in thử nghiệm (giả lập)</strong><small>Ghi nhận lịch sử in để kiểm thử — không in ra giấy.</small></span>
+        </label>
+        @foreach (var name in _installed)
+        {
+            var value = name;
+            <label class="format-option">
+                <input type="radio" name="printer" checked="@(_kind == PrinterKind.Windows && _name == value)" @onchange="() => Select(PrinterKind.Windows, value)" />
+                <span><strong>@value</strong><small>Máy in Windows — ứng dụng chỉ biết Windows đã tiếp nhận lệnh, cần kiểm tra bản in thực tế.</small></span>
+            </label>
+        }
+    </div>
+    <p class="panel-hint">Số bản tối đa mỗi lần in: @PrintOptions.MaxCopies (cấu hình “print.maxCopies” trong settings.json).</p>
+    <button type="button" class="btn btn-primary" disabled="@(_saving || !Changed)" @onclick="SaveAsync">Lưu và áp dụng</button>
+    @if (_message is not null)
+    {
+        <StatusMessage Status="@_message" />
+    }
+</section>
+
+@code {
+    private IReadOnlyList<string> _installed = [];
+    private PrinterKind _kind;
+    private string? _name;
+    private bool _saving;
+    private StatusInfo? _message;
+
+    private bool Changed => _kind != Printers.Selection.Kind || (_kind == PrinterKind.Windows && _name != Printers.Selection.WindowsPrinterName);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _kind = Printers.Selection.Kind;
+        _name = Printers.Selection.WindowsPrinterName;
+        _installed = await Task.Run(Printers.GetInstalledPrinters);
+        if (_kind == PrinterKind.Windows && _name is not null && !_installed.Contains(_name))
+        {
+            _message = new StatusInfo(StatusKind.Warning, "Không tìm thấy máy in đã chọn trước đây.", _name);
+        }
+    }
+
+    private void Select(PrinterKind kind, string? name)
+    {
+        _kind = kind;
+        _name = name;
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            await Printers.SaveAsync(new PrinterSelection { Kind = _kind, WindowsPrinterName = _kind == PrinterKind.Windows ? _name : null });
+            _message = new StatusInfo(StatusKind.Success, "Đã lưu cấu hình máy in.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogError(ex, "Không lưu được cấu hình máy in");
+            _message = new StatusInfo(StatusKind.Error, "Không lưu được cấu hình máy in.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

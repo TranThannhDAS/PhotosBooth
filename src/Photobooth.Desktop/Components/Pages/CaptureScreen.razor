@@ -10,6 +10,26 @@
                        autoplay muted playsinline
                        aria-label="Hình ảnh trực tiếp từ camera"></video>
 
+                @* Lớp phủ hướng dẫn: đặt đúng trên vùng nội dung video (object-fit: contain), không lật, không chặn thao tác,
+                   không nằm trong ảnh chụp (ảnh được lấy trực tiếp từ khung hình camera). *@
+                @if (Guide is { } guide)
+                {
+                    <div class="framing" style="@FramingStyle" aria-hidden="true">
+                        @if (guide.ShowsWholeImage)
+                        {
+                            <div class="framing-window framing-whole">
+                                <span class="framing-label">Toàn bộ khung hình được giữ trong ảnh</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="framing-window" style="@GuideWindowStyle(guide)">
+                                <span class="framing-label">Vùng ảnh thành phẩm</span>
+                            </div>
+                        }
+                    </div>
+                }
+
                 @if (_cameraState == CameraUiState.Connecting)
                 {
                     <div class="stage-overlay">

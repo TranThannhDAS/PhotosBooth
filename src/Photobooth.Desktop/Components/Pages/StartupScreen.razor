@@ -1,0 +1,81 @@
+@implements IDisposable
+@inject EventWorkspaceService Workspaces
+@inject AdminAccessService Admin
+@inject ILogger<StartupScreen> Logger
+
+@*
+    Màn khởi động: hiện khi mở ứng dụng và khi thoát chế độ quản trị.
+    Chọn sự kiện (thư mục lưu ảnh) rồi bắt đầu phục vụ khách; hoặc vào chế độ quản trị bằng PIN.
+    Đang phục vụ khách: nút "Quản trị" ở màn hình chào + PIN để vào lại Admin.
+*@
+<div class="startup">
+    <div class="startup-card">
+        <div class="startup-logo" aria-hidden="true">
+            <BrandLogo Size="76" />
+        </div>
+        <h1 class="startup-title">Photobooth Mini</h1>
+        <p class="startup-lead">Chọn sự kiện để lưu toàn bộ ảnh của buổi chụp hôm nay.</p>
+
+        @if (_restoring)
+        {
+            <div class="center-state"><span class="spinner spinner-dark" aria-hidden="true"></span><p>Đang mở sự kiện lần trước…</p></div>
+        }
+        else
+        {
+            <EventWorkspacePicker />
+        }
+
+        <div class="startup-actions">
+            <button type="button" class="btn btn-ghost" disabled="@_restoring" @onclick="() => _askPin = true">Chế độ quản trị</button>
+            <button type="button" class="btn btn-primary btn-lg" disabled="@(_restoring || Workspaces.Current is null)" @onclick="StartKiosk">
+                Bắt đầu phục vụ khách
+            </button>
+        </div>
+        <p class="startup-note">Khi đang phục vụ khách, nhân viên vào lại quản trị bằng nút “Quản trị” ở màn hình chào (cần PIN).</p>
+    </div>
+</div>
+
+@if (_askPin)
+{
+    <PinDialog OnSubmit="Admin.TryUnlock" OnCancel="() => _askPin = false" />
+}
+
+@code {
+    private bool _restoring;
+    private bool _askPin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Workspaces.Changed += OnWorkspaceChanged;
+
+        // Tự mở lại sự kiện dùng lần trước (một lần mỗi lần chạy ứng dụng).
+        if (!Workspaces.RestoreAttempted && Workspaces.Current is null)
+        {
+            _restoring = true;
+            try
+            {
+                await Workspaces.RestoreLastAsync();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning(ex, "Không mở lại được sự kiện lần trước");
+            }
+            finally
+            {
+                _restoring = false;
+            }
+        }
+    }
+
+    private void StartKiosk()
+    {
+        if (Workspaces.Current is not null)
+        {
+            Admin.StartKiosk();
+        }
+    }
+
+    private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Workspaces.Changed -= OnWorkspaceChanged;
+}

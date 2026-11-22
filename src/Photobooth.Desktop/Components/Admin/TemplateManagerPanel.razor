@@ -1,0 +1,391 @@
+@implements IDisposable
+@inject TemplateLibrary Library
+@inject IPhotoComposer Composer
+@inject PhotoSessionService Sessions
+@inject WindowsShellService Shell
+@inject ILogger<TemplateManagerPanel> Logger
+
+@*
+    Template Manager (Admin): thư viện template dùng chung cho mọi sự kiện.
+    Tạo, sao chép, đổi tên, xóa, nhập/xuất, bật/tắt trên Kiosk và mở Visual Template Editor.
+*@
+<div class="tpl-manager">
+    <div class="gallery-toolbar">
+        <p class="panel-hint">
+            @if (_entries is not null)
+            {
+                <span>@_entries.Count template · @_entries.Count(e => e.Enabled && e.IsValid) đang hiện trên Kiosk</span>
+            }
+        </p>
+        <div class="event-actions">
+            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => { _dialog = Dialog.Create; _dialogError = null; }">+ Tạo template</button>
+            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="ImportFolderAsync">Nhập từ thư mục</button>
+            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="ImportZipAsync">Nhập file .zip</button>
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="ReloadAsync">Tải lại</button>
+            <button type="button" class="btn btn-ghost btn-sm" @onclick="() => Shell.OpenFolder(Library.RootDirectory)">Mở thư mục</button>
+        </div>
+    </div>
+
+    @if (_message is not null)
+    {
+        <StatusMessage Status="@_message">
+            @if (_messageIssues.Count > 0)
+            {
+                <ul class="issue-list">
+                    @foreach (var issue in _messageIssues.Take(8))
+                    {
+                        <li class="@(issue.Severity == ValidationSeverity.Error ? "is-error" : null)"><code>@issue.Path</code> @issue.Message</li>
+                    }
+                </ul>
+            }
+            <button type="button" class="btn btn-ghost btn-sm" @onclick="ClearMessage">Đóng</button>
+        </StatusMessage>
+    }
+
+    @if (_entries is null && _loadError is null)
+    {
+        <div class="center-state"><span class="spinner spinner-dark" aria-hidden="true"></span><p>Đang tải thư viện template…</p></div>
+    }
+    else if (_loadError is not null)
+    {
+        <StatusMessage Status="@_loadError">
+            <button type="button" class="btn btn-secondary btn-sm" @onclick="ReloadAsync">Thử lại</button>
+        </StatusMessage>
+    }
+    else if (_entries is { Count: 0 })
+    {
+        <div class="center-state"><p>Thư viện chưa có template nào. Nhấn “Tạo template” hoặc nhập một template có sẵn.</p></div>
+    }
+    else if (_entries is not null)
+    {
+        <div class="tpl-grid">
+            @foreach (var entry in _entries)
+            {
+                var item = entry;
+                <article class="tpl-card @(item.IsValid ? null : "is-invalid")">
+                    @if (item.Template is { } template)
+                    {
+                        <ImageView Class="tpl-thumb" Key="@($"{item.Key}-{_revision}")" Alt="@($"Xem trước {template.Name}")"
+                                   Loader="@(ct => LoadThumbnailAsync(template, ct))" />
+                        <h3 class="tpl-name">@template.Name</h3>
+                        <p class="tpl-meta">
+                            @template.Canvas.WidthPixels × @template.Canvas.HeightPixels px · @template.Canvas.Dpi DPI<br />
+                            <strong>@template.RequiredPhotoCount ảnh</strong> · @template.Slots.Count ô · @template.Decorations.Count trang trí
+                        </p>
+                        @if (item.Issues.Any(i => i.Severity == ValidationSeverity.Warning))
+                        {
+                            <p class="tpl-warning" title="@string.Join("\n", item.Issues)">@item.Issues.Count cảnh báo</p>
+                        }
+                        <button type="button" class="toggle @(item.Enabled ? "is-on" : null)" role="switch" aria-checked="@(item.Enabled ? "true" : "false")"
+                                disabled="@_busy" @onclick="() => ToggleAsync(item)">
+                            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                            <span>@(item.Enabled ? "Hiện trên Kiosk" : "Đang tắt")</span>
+                        </button>
+                        <div class="tpl-actions">
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => OnEdit.InvokeAsync(item.Key)">Chỉnh sửa</button>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => DuplicateAsync(item)">Sao chép</button>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => OpenRename(item)">Đổi tên</button>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => ExportAsync(item)">Xuất .zip</button>
+                            <button type="button" class="btn btn-ghost btn-sm tpl-delete" disabled="@_busy" @onclick="() => AskDelete(item)">Xóa</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="tpl-thumb tpl-thumb-error" aria-hidden="true">!</div>
+                        <h3 class="tpl-name">@item.Key</h3>
+                        <p class="tpl-warning">Template lỗi, không hiện trên Kiosk:</p>
+                        <ul class="issue-list">
+                            @foreach (var issue in item.Issues.Where(i => i.Severity == ValidationSeverity.Error).Take(3))
+                            {
+                                <li class="is-error"><code>@issue.Path</code> @issue.Message</li>
+                            }
+                        </ul>
+                        <div class="tpl-actions">
+                            <button type="button" class="btn btn-ghost btn-sm tpl-delete" disabled="@_busy" @onclick="() => AskDelete(item)">Xóa</button>
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@if (_dialog == Dialog.Create)
+{
+    <TemplateCreateDialog OnCreate="CreateAsync" OnCancel="CloseDialog" Busy="_busy" Error="@_dialogError" />
+}
+else if (_dialog == Dialog.Rename && _target is { Template: { } renaming })
+{
+    <div class="dialog-backdrop">
+        <div class="dialog template-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+            <h2 id="rename-title" class="dialog-title">Đổi tên template</h2>
+            <div class="form-grid">
+                <label for="rename-name">Tên</label>
+                <input id="rename-name" class="text-input" type="text" maxlength="120" @bind="_renameName" @bind:event="oninput" />
+                <label for="rename-desc">Mô tả</label>
+                <input id="rename-desc" class="text-input" type="text" maxlength="200" @bind="_renameDescription" />
+            </div>
+            <p class="panel-hint">Mã template (<code>@renaming.Id</code>) giữ nguyên.</p>
+            @if (_dialogError is not null)
+            {
+                <StatusMessage Status="@(new StatusInfo(StatusKind.Error, _dialogError))" />
+            }
+            <div class="dialog-actions">
+                <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="CloseDialog">Hủy</button>
+                <button type="button" class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_renameName))" @onclick="RenameAsync">Lưu</button>
+            </div>
+        </div>
+    </div>
+}
+else if (_dialog == Dialog.Delete && _target is { } deleting)
+{
+    <ConfirmDialog Title="@($"Xóa template “{deleting.DisplayName}”?")"
+                   Message="Template sẽ bị xóa khỏi thư viện và không thể khôi phục. Ảnh của các phiên chụp đã dùng template này vẫn được giữ nguyên trong thư mục sự kiện."
+                   ConfirmText="Xóa template" CancelText="Không xóa"
+                   OnConfirm="DeleteAsync" OnCancel="CloseDialog" />
+}
+
+@code {
+    private enum Dialog
+    {
+        None,
+        Create,
+        Rename,
+        Delete,
+    }
+
+    private IReadOnlyList<TemplateLibraryEntry>? _entries;
+    private StatusInfo? _loadError;
+    private StatusInfo? _message;
+    private IReadOnlyList<TemplateValidationIssue> _messageIssues = [];
+    private Dialog _dialog;
+    private string? _dialogError;
+    private TemplateLibraryEntry? _target;
+    private string _renameName = string.Empty;
+    private string? _renameDescription;
+    private bool _busy;
+    private int _revision;
+
+    /// <summary>Mở Editor cho template (theo khóa thư mục trong thư viện).</summary>
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnEdit { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Library.Changed += OnLibraryChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _entries = await Library.ListAsync();
+            _loadError = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TemplateLibraryException)
+        {
+            Logger.LogWarning(ex, "Không đọc được Template Library");
+            _loadError = new StatusInfo(StatusKind.Error, "Không đọc được thư viện template.", "Kiểm tra quyền truy cập thư mục rồi thử lại.");
+        }
+    }
+
+    private Task ReloadAsync() => RunAsync(async () =>
+    {
+        await Library.ReloadAsync();
+        await LoadAsync();
+    });
+
+    private async Task<byte[]?> LoadThumbnailAsync(PhotoTemplate template, CancellationToken cancellationToken) =>
+        await Composer.RenderTemplatePreviewAsync(template, 360, cancellationToken);
+
+    private async Task CreateAsync(NewTemplateRequest request)
+    {
+        _dialogError = null;
+        _busy = true;
+        try
+        {
+            var entry = await Library.CreateAsync(request);
+            _dialog = Dialog.None;
+            await OnEdit.InvokeAsync(entry.Key);
+        }
+        catch (TemplateLibraryException ex)
+        {
+            _dialogError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task DuplicateAsync(TemplateLibraryEntry entry) => RunAsync(async () =>
+    {
+        var copy = await Library.DuplicateAsync(entry.Key);
+        ShowMessage(new StatusInfo(StatusKind.Success, $"Đã tạo bản sao “{copy.DisplayName}”.", "Bản sao đang tắt trên Kiosk; có thể đổi tên hoặc chỉnh sửa ngay."));
+    });
+
+    private void OpenRename(TemplateLibraryEntry entry)
+    {
+        _target = entry;
+        _renameName = entry.Template?.Name ?? string.Empty;
+        _renameDescription = entry.Template?.Description;
+        _dialogError = null;
+        _dialog = Dialog.Rename;
+    }
+
+    private async Task RenameAsync()
+    {
+        if (_target is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Library.RenameAsync(_target.Key, _renameName, _renameDescription);
+            CloseDialog();
+        }
+        catch (TemplateLibraryException ex)
+        {
+            _dialogError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void AskDelete(TemplateLibraryEntry entry)
+    {
+        if (entry.Template is { } template && Sessions.IsTemplateInActiveSession(template.Id))
+        {
+            ShowMessage(new StatusInfo(StatusKind.Warning, "Template đang được dùng trong phiên chụp chưa kết thúc.", "Hãy kết thúc phiên đó trước khi xóa."));
+            return;
+        }
+
+        _target = entry;
+        _dialog = Dialog.Delete;
+    }
+
+    private async Task DeleteAsync()
+    {
+        var target = _target;
+        CloseDialog();
+        if (target is null)
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            await Library.DeleteAsync(target.Key);
+            ShowMessage(new StatusInfo(StatusKind.Success, $"Đã xóa template “{target.DisplayName}”."));
+        });
+    }
+
+    private Task ToggleAsync(TemplateLibraryEntry entry) => RunAsync(() => Library.SetEnabledAsync(entry.Key, !entry.Enabled));
+
+    private async Task ImportFolderAsync()
+    {
+        var folder = await FolderPicker.PickAsync("Chọn thư mục template (chứa template.json)", null);
+        if (folder is not null)
+        {
+            await ImportAsync(folder);
+        }
+    }
+
+    private async Task ImportZipAsync()
+    {
+        var file = await FilePicker.OpenAsync("Chọn gói template (.zip)", FilePicker.ZipFilter);
+        if (file is not null)
+        {
+            await ImportAsync(file);
+        }
+    }
+
+    private Task ImportAsync(string path) => RunAsync(async () =>
+    {
+        var result = await Library.ImportAsync(path);
+        if (result.Succeeded)
+        {
+            ShowMessage(new StatusInfo(StatusKind.Success, result.Message ?? "Đã nhập template.", "Template vừa nhập đang tắt trên Kiosk."),
+                result.Issues.Where(i => i.Severity == ValidationSeverity.Warning).ToArray());
+        }
+        else
+        {
+            ShowMessage(new StatusInfo(StatusKind.Error, result.Message ?? "Không nhập được template."), result.Issues);
+        }
+    });
+
+    private async Task ExportAsync(TemplateLibraryEntry entry)
+    {
+        var file = await FilePicker.SaveAsync("Xuất template", FilePicker.ZipFilter, $"{entry.Key}.zip", ".zip");
+        if (file is null)
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            await Library.ExportAsync(entry.Key, file);
+            ShowMessage(new StatusInfo(StatusKind.Success, $"Đã xuất “{entry.DisplayName}”.", file));
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await action();
+        }
+        catch (TemplateLibraryException ex)
+        {
+            ShowMessage(new StatusInfo(StatusKind.Error, ex.Message));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning(ex, "Thao tác Template Manager thất bại");
+            ShowMessage(new StatusInfo(StatusKind.Error, "Không thực hiện được thao tác.", "Kiểm tra ổ đĩa, quyền truy cập hoặc file đang được mở bởi chương trình khác."));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ShowMessage(StatusInfo message, IReadOnlyList<TemplateValidationIssue>? issues = null)
+    {
+        _message = message;
+        _messageIssues = issues ?? [];
+    }
+
+    private void ClearMessage()
+    {
+        _message = null;
+        _messageIssues = [];
+    }
+
+    private void CloseDialog()
+    {
+        _dialog = Dialog.None;
+        _dialogError = null;
+        _target = null;
+    }
+
+    private void OnLibraryChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () =>
+    {
+        _revision++;
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Library.Changed -= OnLibraryChanged;
+}

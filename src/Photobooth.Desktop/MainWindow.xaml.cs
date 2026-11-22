@@ -49,6 +49,11 @@ public partial class MainWindow : Window
         var settings = _coreWebView.Settings;
         settings.IsStatusBarEnabled = false;
         settings.IsZoomControlEnabled = false;
+
+        // Màn cảm ứng: không cho chụm hai ngón phóng to cả trang, không cho vuốt ngang để "quay lại trang trước".
+        // Cử chỉ chụm trong trình chỉnh vùng cắt vẫn hoạt động (do trang tự xử lý, touch-action: none).
+        settings.IsPinchZoomEnabled = false;
+        settings.IsSwipeNavigationEnabled = false;
 #if !DEBUG
         // Bản phát hành: tắt menu chuột phải và phím tắt trình duyệt (F5, Ctrl+P...) để giao diện như ứng dụng kiosk.
         settings.AreDefaultContextMenusEnabled = false;

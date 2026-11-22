@@ -12,10 +12,11 @@
 
 - Khách sử dụng luồng **Chào mừng → Chọn template → Camera preview → Chụp ảnh → Xem lại → Ghép ảnh → Xuất file → Hoàn tất**.
 - Sử dụng webcam tích hợp của laptop; không cần camera ngoài, máy in thật hoặc Internet.
-- Mặc định chụp **4 ảnh/phiên**, đếm ngược **3 giây trước mỗi lần chụp**. Đây là **giá trị mặc định có thể cấu hình**, không phải giá trị cố định.
+- **Số ảnh mỗi phiên do template khách chọn quyết định** (xem mục 6.1), không có giá trị mặc định cố định. Đếm ngược mặc định **3 giây trước mỗi lần chụp**, có thể cấu hình, độc lập với số ảnh.
 - Quản lý phiên (`SessionId`), thứ tự ảnh, lưu ảnh gốc và ảnh thành phẩm độc lập.
 - Cho xuất **JPEG, PNG và PDF**; dữ liệu được lưu cục bộ, không tải lên mạng.
-- Có chế độ **Kiosk** cho khách và **Admin** để quản lý cấu hình, mẫu ảnh, lịch sử.
+- Có chế độ **Kiosk** cho khách và **Admin** để quản lý sự kiện, thư viện ảnh thành phẩm, chỉnh sửa lại, in lại và máy in (mục 9).
+- Mỗi sự kiện cho thuê lưu toàn bộ dữ liệu trong **một Event Workspace** riêng do người vận hành chọn (mục 7, `docs/EVENT_STORAGE.md`).
 
 ### 1.2 Không thuộc V1 hiện tại
 
@@ -45,13 +46,16 @@
 
 | Thiết lập | Giá trị mặc định V1 | Quy tắc |
 |---|---|---|
-| Số ảnh mỗi phiên | 4 | Số nguyên dương, cần phù hợp với template được chọn |
+| Số ảnh mỗi phiên | Theo template | Tính từ `photoIndex` của template (mục 6.1); người dùng không nhập tay |
+| Giới hạn an toàn số ảnh | 10 (`capture.maxPhotosPerSession`) | Cấu hình được trong 1..20 để tránh phiên quá dài/tốn tài nguyên; template vượt giới hạn được hiển thị nhưng không chọn được, kèm lý do. Đây là giới hạn tài nguyên, **không** phải số ảnh mặc định |
 | Thời gian đếm ngược | 3 giây | Số nguyên dương, giới hạn min/max cụ thể `CHƯA CHỐT` |
-| Template | Một template mẫu đi kèm | Phải hợp lệ và có đủ vị trí ảnh theo cấu hình |
+| Template | Các template mẫu đi kèm | Phải hợp lệ; số ảnh cần chụp lấy từ chính template |
 | Camera | Webcam laptop hiện có | Thông báo khi không tìm thấy hoặc không truy cập được |
 | Khổ xuất ban đầu | 4 × 6 inch | Có thể cấu hình qua template/export preset |
 | Kích thước raster tham khảo | 1200 × 1800 px | Tương ứng 300 DPI cho 4 × 6 inch; không hardcode vào mọi mẫu |
-| Thư mục lưu | Vùng dữ liệu ứng dụng hợp lệ trên Windows | Cho phép cấu hình; kiểm tra quyền ghi và dung lượng |
+| Thư mục lưu | Event Workspace do người vận hành chọn | Bắt buộc trước khi phục vụ khách; kiểm tra tồn tại, quyền ghi, dung lượng (≥ 200 MB); không hardcode |
+| Số bản in | 1 bản, tối đa 10 (`print.maxCopies`, 1..50) | Không phụ thuộc số ảnh nguồn của template |
+| Máy in | Chưa cấu hình | Chọn trong Admin: chưa dùng / máy in giả lập / máy in Windows |
 | Chất lượng JPEG | `CHƯA CHỐT` | Chỉ lưu khi giá trị hợp lệ; không giả định 100% |
 | Chụp lại | Có trong đích V1 | Cho phép chụp lại **từng ảnh hoặc toàn bộ phiên** (đã chốt 19/11/2026); giới hạn số lần `CHƯA CHỐT` (hiện không giới hạn) |
 | Tự động xóa ảnh | Không triển khai ở giai đoạn đầu | Thời hạn lưu/xóa `CHƯA CHỐT` |
@@ -64,14 +68,15 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
 
 1. Mở ứng dụng: hiển thị màn hình chào.
 2. Khách chọn **Bắt đầu**: tạo một `PhotoSession` mới hoặc tạo ở thời điểm được định nghĩa thống nhất trong code; không tạo trùng session vì người dùng bấm liên tục.
-3. Chọn một template hợp lệ; lưu tham chiếu/template snapshot cần thiết để phiên không bị ảnh hưởng nếu mẫu bị sửa sau đó.
+3. Chọn một template hợp lệ; phiên lưu **snapshot template và số ảnh cần chụp** tại thời điểm chọn, để không bị ảnh hưởng nếu file mẫu bị sửa sau đó (BR-T04).
 4. Vào preview và yêu cầu quyền camera nếu chưa có.
 5. Camera sẵn sàng thì hiển thị hình trực tiếp; chưa sẵn sàng thì hiển thị trạng thái và hành động khắc phục.
 
 ### 4.2 Chụp ảnh
 
 1. Khách nhấn **Chụp ảnh**.
-2. Với mỗi ảnh cần chụp, hiển thị đếm ngược theo cấu hình; phải dễ nhận biết ảnh thứ mấy trong tổng số.
+2. Với mỗi ảnh cần chụp, hiển thị đếm ngược theo cấu hình; phải dễ nhận biết ảnh thứ mấy trong tổng số **theo template** (BR-T07).
+   - **Khung hướng dẫn (Camera Framing Overlay, đã chốt 19/11/2026):** preview luôn hiện **toàn bộ** khung hình camera (không cắt, không méo); một khung nét đứt "Vùng ảnh thành phẩm" cho biết phần sẽ nằm trong ô ảnh sau Auto Crop, phần ngoài được làm tối nhưng vẫn nhìn thấy. Khung tính theo ô của ảnh đang chụp (ảnh dùng ở nhiều ô → ô lớn nhất, bằng nhau thì ô khai báo trước), theo đúng `fit`/`focalPoint` và chế độ gương như Photo Composer. Ô `contain`: báo toàn bộ khung hình được giữ. Khung chỉ để hướng dẫn: không cắt ảnh gốc, không có trong ảnh chụp, thành phẩm hay file xuất; Manual Crop sau khi chụp vẫn đổi được vùng ảnh.
 3. Khi hết đếm ngược, lấy frame chụp từ camera; không sử dụng ảnh thumbnail ở độ phân giải thấp như ảnh gốc nếu API cho phép lấy chất lượng cao hơn.
 4. Gửi dữ liệu ảnh sang service C# và **ghi ảnh gốc hoàn chỉnh** trước khi xác nhận lần chụp thành công.
 5. Cập nhật danh sách ảnh, thứ tự và tiến trình. Lặp lại đến số ảnh được yêu cầu.
@@ -86,17 +91,39 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
 - Nếu chụp lại, file ảnh mới **không ghi đè ảnh gốc cũ**; kết quả ghép chỉ dùng ảnh đang được chọn cho vị trí đó.
 - Nếu chụp lại thất bại, vẫn giữ ảnh đang được chọn trước đó và đưa ra phương án thử lại/quay lại.
 - Chụp lại từng ảnh hoặc toàn bộ phiên: **đã chốt** (19/11/2026). Mọi ảnh gốc (kể cả ảnh bị thay) được giữ trên ổ đĩa và trong lịch sử phiên. Giới hạn số lần chụp lại: **CHƯA CHỐT**.
-- Giả định Giai đoạn 2 (chưa phải quyết định chính thức): không cho đổi template sau khi đã có ảnh trong phiên.
+- Trước khi chụp ảnh đầu tiên, khách được đổi template; số ảnh cần chụp cập nhật theo template mới. Giả định Giai đoạn 2 (chưa phải quyết định chính thức): không cho đổi template sau khi đã có ảnh trong phiên — muốn đổi thì hủy phiên và bắt đầu phiên mới.
 - Khi có thay đổi ảnh được chọn, bản ghép trước đó (nếu có) phải được đánh dấu cần tạo lại, không sử dụng nhầm kết quả cũ.
 
 ### 4.4 Ghép ảnh
 
 - Chỉ ghép khi đủ ảnh đang được chọn và template hợp lệ.
 - Giữ nguyên thứ tự vị trí `photoSlots`; không dựa vào thứ tự file trong thư mục.
-- Scale/crop giữ đúng tỉ lệ; mặc định có thể dùng center-crop khi template không quy định khác, nhưng không được bóp méo ảnh.
+- Scale/crop giữ đúng tỉ lệ; mặc định dùng Auto Crop theo `focalPoint` của template (center-crop khi không khai báo) hoặc chỉnh vùng cắt khách đã xác nhận (mục 4.4.1), không được bóp méo ảnh.
 - Quá trình ghép tạo **file mới** độc lập ảnh gốc; thất bại không được phá hủy ảnh đã lưu.
 - Hiển thị trạng thái đang xử lý, tránh thao tác ghép trùng.
 - Nếu không ghép được, thông báo lý do có thể hiểu và cho phép thực hiện lại.
+- Chụp đủ ảnh theo template thì **tự động ghép** và chuyển sang màn xem thành phẩm (Photo Preview); ghép lỗi thì ở lại màn xem lại với thông báo và nút thử lại.
+
+### 4.4.1 Photo Preview và Manual Crop (đã chốt 19/11/2026)
+
+- Ảnh xem trước là bản thu nhỏ của **chính ảnh thành phẩm dùng để xuất** (cùng template, ảnh nguồn, bộ lọc, chỉnh vùng cắt); không có cách dựng ảnh thứ hai cho preview. Preview giữ đúng tỉ lệ canvas.
+- Khách chọn một **ô ảnh** (chạm trực tiếp trên preview hoặc chọn trong danh sách ô) để chỉnh. Ô được xác định theo thứ tự ô trong template, không nhầm với `photoIndex`; hình trang trí/overlay không chặn việc chọn ô.
+- Chỉnh vùng cắt gồm **kéo ảnh** và **phóng to 100–300%** (100% = vùng cắt mặc định của template). Ảnh luôn phủ kín ô, không méo, không xoay.
+- Chỉ ô `fit = cover` được chỉnh; ô `contain` (hiển thị trọn ảnh) báo rõ là chưa hỗ trợ.
+- **Áp dụng** mới lưu chỉnh sửa vào phiên và tạo lại thành phẩm; **Hủy**/đóng thì bỏ thay đổi dang dở. **Khôi phục Auto Crop** đưa một ô về mặc định; **Khôi phục chỉnh sửa** (có xác nhận) đưa mọi ô về mặc định.
+- Chỉnh sửa là **dữ liệu của phiên**, gắn với từng ô (hai ô dùng chung ảnh có thể cắt khác nhau); **không** sửa template JSON, không sửa ảnh gốc.
+- Chụp lại một ảnh thì các ô dùng ảnh đó quay về Auto Crop (vùng cắt cũ được chỉnh cho ảnh cũ); các ô khác giữ nguyên.
+- Chỉnh vùng cắt tính theo hướng ảnh khách nhìn thấy (sau khi lật gương), không lật hai lần, không lật chữ/logo.
+- File JPEG/PNG/PDF xuất ra phải giống preview, kể cả vùng cắt đã chỉnh.
+- Ảnh thành phẩm được **xác nhận** (Hoàn tất / Lưu ảnh / In) thành phiên bản `final-v{N}` không bao giờ bị ghi đè. Xuất/in dùng đúng file phiên bản; chỉnh sửa lại luôn tạo phiên bản mới.
+
+### 4.4.2 Chỉnh sửa lại phiên đã lưu (Admin, đã chốt 19/11/2026)
+
+- Quản trị viên mở phiên cũ từ thư viện ảnh của sự kiện; hệ thống khôi phục ảnh nguồn, template (snapshot), mirror, Manual Crop và bộ lọc của phiên bản được chọn rồi ghép lại bằng chính Photo Composer.
+- **Lưu phiên bản mới** tạo phiên bản tiếp theo; bản cũ vẫn xem/xuất/in lại được. **Hủy** không tạo phiên bản và không đổi dữ liệu đã xác nhận.
+- Không crop trên ảnh đã ghép; không ghi chỉnh sửa vào template JSON; không sửa ảnh gốc.
+- Thiếu ảnh gốc hoặc snapshot template: vẫn xem/xuất/in lại file đã lưu, khóa chỉnh sửa và nêu lý do; không tạo dữ liệu giả.
+- Phiên mở lại trong Admin không chụp lại được (không dùng camera).
 
 ### 4.5 Xuất ảnh
 
@@ -110,8 +137,18 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
 
 **Thông số ban đầu:** PDF khổ 4×6 inch có kích thước trang **288×432 point**. Ảnh raster tham khảo 1200×1800 pixel; đây là hai đơn vị khác nhau. Phải test chiều xoay, tỉ lệ, vùng an toàn và kết quả in thử bằng PDF nếu có công cụ phù hợp.
 
+### 4.5.1 In ảnh, in lại (đã chốt 19/11/2026)
+
+- Khách chọn số bản (nút −/+, mặc định 1, tối đa theo cấu hình) và **xác nhận** trước khi gửi lệnh in. Một ảnh thành phẩm → một Print Job N bản.
+- Mỗi phiên có thể có nhiều Print Job; mỗi Print Job ghi rõ **phiên bản thành phẩm** được in và được lưu trong session.json của sự kiện **trước khi** gửi tới máy in.
+- Trạng thái: `Pending` (chưa rõ), `Submitted` (Windows đã tiếp nhận — chưa phải đã in xong), `Simulated` (máy in giả lập, **không có bản in thật**), `Completed` (chỉ khi quản trị viên xác nhận đã in xong), `Failed`, `Cancelled`.
+- Không bao giờ tự đánh dấu "đã in xong"; không tự gửi lại. Phiên bản có lệnh in thất bại hoặc chưa rõ trạng thái phải được xác nhận lại trước khi in tiếp. Yêu cầu in giống hệt gửi liên tiếp (bấm nhiều lần) chỉ tạo một Print Job.
+- Chưa cấu hình máy in: Kiosk báo "chưa thể in", không hiển thị kết quả giả.
+- In lỗi không làm mất ảnh gốc, thành phẩm hay lịch sử.
+
 ### 4.6 Kết thúc
 
+- **Hoàn tất** lưu ảnh thành phẩm đang xem thành một phiên bản trong Event Workspace (không bắt buộc xuất file ra ngoài) rồi kết thúc phiên.
 - Sau khi hoàn tất, session có trạng thái kết thúc phù hợp; không tự xóa ảnh của phiên.
 - Bấm **Phiên mới** tạo session khác, không sử dụng lại danh sách ảnh cũ.
 - Hủy/thoát ứng dụng phải dừng camera và lưu trạng thái/file đã hoàn tất ở mức có thể phục hồi.
@@ -148,27 +185,80 @@ Các trạng thái sau là **mô hình mục tiêu**, tên enum thực tế có 
 - Template có `TemplateId`, tên hiển thị, kích thước canvas và danh sách `photoSlots`.
 - Mỗi `photoSlot` có vị trí, kích thước hợp lệ, quy tắc crop/fit và thứ tự lấy ảnh.
 - Vùng ảnh không nên vượt khỏi canvas; nếu vượt (chủ ý thiết kế tràn mép) thì phần thừa bị cắt và validation chỉ **cảnh báo**, không chặn (xem `docs/TEMPLATE_SCHEMA.md`).
-- Nếu số slot không khớp số ảnh cấu hình, **không cho bắt đầu chụp với cấu hình không hợp lệ**, hoặc có quy tắc ánh xạ đã được người dùng duyệt.
+- Số ảnh cần chụp được quyết định bởi template theo các quy tắc ở mục 6.1; template không hợp lệ thì **không cho bắt đầu chụp**.
 - Template đi kèm ứng dụng phải có bản mẫu/preview; không phụ thuộc Internet để tải ảnh nền.
-- Cho phép mở rộng thêm chữ/ngày/logo/overlay sau, nhưng không mặc định mọi template phải hỗ trợ editor kéo-thả trong V1.
+- Template có chữ/ngày giờ/logo/overlay/hình; quản trị viên tạo và sửa bằng Template Manager + Visual Template Editor (mục 6.2).
 - Thay đổi template sau khi đã chụp: hành vi giữ/chụp lại/ghép mới **CHƯA CHỐT**; không tự quyết định ngầm.
+
+### 6.1 Số lượng ảnh theo template (đã chốt 19/11/2026)
+
+**BR-T01 — Số lượng ảnh phụ thuộc vào template**
+
+- Mỗi template quy định các ảnh cần dùng thông qua danh sách Photo Slots (`slots`).
+- Số ảnh cần chụp được xác định từ các `photoIndex` trong template.
+- Không mặc định mọi phiên đều cần 4 ảnh; không yêu cầu người dùng nhập thủ công số ảnh.
+
+**BR-T02 — Một ảnh có thể dùng nhiều lần**
+
+- Một `photoIndex` có thể xuất hiện ở nhiều slot; các slot đó dùng chung một ảnh nguồn.
+- Không yêu cầu chụp thêm ảnh chỉ vì ảnh được dùng ở nhiều vị trí.
+
+**BR-T03 — Quy tắc `photoIndex`**
+
+- Bắt đầu từ 0, là số nguyên không âm.
+- Các chỉ số ảnh nguồn phải **liên tục từ 0 đến N-1**, không bỏ trống chỉ số trung gian; cho phép nhiều slot cùng chỉ số.
+- Số ảnh cần chụp `N = max(photoIndex) + 1` sau khi validation hợp lệ — **không** dùng số lượng slot.
+- Template không có Photo Slot hợp lệ thì không thể bắt đầu phiên chụp.
+- Ví dụ: `[0, 1, 2]` → hợp lệ, 3 ảnh; `[0, 0, 1]` → hợp lệ, 2 ảnh; `[0, 2]` → **không hợp lệ** vì thiếu 1.
+
+**BR-T04 — Phiên chụp tuân thủ template đã chọn**
+
+- Khách chọn template trước khi chụp; khi chọn, phiên xác định và lưu số ảnh cần chụp cùng snapshot template.
+- Không thay đổi số ảnh giữa phiên vì file template nguồn bị chỉnh sửa.
+- Đổi sang template có cấu trúc khác phải qua luồng đổi/hủy phiên rõ ràng (mục 4.3), không âm thầm thay đổi phiên đang chụp.
+
+**BR-T05 — Hoàn thành phiên chụp**
+
+- Chỉ chuyển sang xem lại/ghép khi có đủ **tất cả** ảnh nguồn template yêu cầu; không kiểm tra cố định kiểu `== 4`.
+- Không tự chụp thêm ảnh ngoài yêu cầu của template.
+
+**BR-T06 — Chụp lại ảnh**
+
+- Cho phép chụp lại một ảnh bất kỳ; ảnh mới thay thế ảnh tại `photoIndex` tương ứng, không đổi các ảnh khác.
+- Nếu ảnh được nhiều slot tham chiếu, mọi slot đó dùng ảnh mới khi ghép lại.
+
+**BR-T07 — Hiển thị tiến trình**
+
+- UI hiển thị số ảnh đã chụp và tổng số ảnh theo template, ví dụ `Ảnh 1/3`, `Ảnh 2/3`, `Ảnh 3/3`.
+- Không hardcode nhãn `1/4`…`4/4`; danh sách thumbnail co giãn theo số ảnh.
+
+### 6.2 Template Library, Template Manager và Editor (Phase 3, đã chốt 19/11/2026)
+
+- **BR-TL01 — Thư viện dùng chung:** template nằm trong Template Library của máy (`%LOCALAPPDATA%\Photobooth\Templates`), dùng cho mọi sự kiện; **không** lưu trong Event Workspace. Phiên chụp lưu snapshot template riêng, nên sửa/xóa template trong thư viện không đổi kết quả của phiên cũ (BR-T04).
+- **BR-TL02 — Bật/tắt:** chỉ template hợp lệ và **đang bật** hiện trên Kiosk. Template mới tạo, sao chép hoặc nhập **mặc định tắt** để không lộ template dở dang cho khách. Tắt template không ảnh hưởng phiên đã dùng nó.
+- **BR-TL03 — Không lưu bản hỏng:** lưu/nhập chỉ thành công khi template hợp lệ hoàn toàn (nội dung + asset). Thất bại → không ghi gì, bản đang có giữ nguyên, lỗi hiển thị theo vị trí thuộc tính.
+- **BR-TL04 — Không ghi đè ngoài ý muốn:** nhập template có id trùng → đặt id mới; sao chép tạo id mới và bản riêng của asset; đổi tên không đổi id.
+- **BR-TL05 — Xóa có xác nhận:** xóa hẳn một template (không có thùng rác) sau khi xác nhận; không xóa asset của template khác hay dữ liệu Event Workspace. Không cho xóa/lưu đè template đang được một phiên chụp chưa kết thúc sử dụng.
+- **BR-TL06 — Editor dùng Engine hiện có:** Editor chỉ tạo đúng cấu trúc `template.json` của Engine; số ảnh vẫn theo BR-T03; `focalPoint` là mặc định của template, Manual Crop của phiên không ghi vào template; "Xem thử" render bằng Photo Composer.
 
 ## 7. Quy tắc lưu trữ và phục hồi
 
-Ví dụ cấu trúc đề xuất (có thể thay đổi khi phát triển):
+Dữ liệu phiên nằm trong **Event Workspace** (chi tiết: `docs/EVENT_STORAGE.md`); `%LOCALAPPDATA%/Photobooth/` chỉ chứa log, cấu hình (`settings.json`), trạng thái máy (`app-state.json`: sự kiện/máy in đang chọn, danh bạ sự kiện đã mở) và hồ sơ WebView2.
 
 ```text
-%LOCALAPPDATA%/Photobooth/
-├── Data/
-│   └── photobooth.db
-├── Sessions/
-│   └── {SessionId}/
-│       ├── Originals/
-│       └── Outputs/
-└── Logs/
+{Thư mục sự kiện}/
+├── event.json
+└── Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/
+    ├── session.json      (đường dẫn tương đối)
+    ├── Template/         (snapshot template + asset)
+    ├── Originals/
+    ├── Outputs/          (final-v{N}.png, ảnh thu nhỏ)
+    └── Drafts/           (bản ghép tạm, được dọn)
 ```
 
-- Không đưa ảnh gốc vào database dưới dạng BLOB mặc định; SQLite lưu metadata, đường dẫn và trạng thái khi persistence đã được triển khai.
+- Metadata lưu bằng file JSON trong thư mục phiên (ghi tạm rồi đổi tên); chưa dùng SQLite vì chưa có nhu cầu truy vấn. Không đưa ảnh vào database.
+- Trước khi phục vụ khách phải có Event Workspace hợp lệ; thư mục mất/không ghi được thì báo lỗi, **không** lưu sang chỗ khác và **không** tự tạo lại thư mục đã mất.
+- Không đổi sự kiện khi đang có phiên chụp chưa kết thúc; dữ liệu các sự kiện không trộn lẫn.
 - Không phụ thuộc vào thư mục dự án/build để lưu phiên ảnh.
 - Nếu ghi file lỗi giữa chừng, không tạo metadata “thành công” trỏ vào file chưa hoàn chỉnh.
 - Khởi động lại phải không làm mất file ảnh đã lưu; ứng dụng có thể đánh dấu phiên đang dang dở để người quản trị xem/xử lý.
@@ -195,13 +285,14 @@ Ví dụ cấu trúc đề xuất (có thể thay đổi khi phát triển):
 
 Quản trị viên trong V1 cần có khả năng:
 
-- Xem và chỉnh cấu hình camera (trong phạm vi thiết bị có sẵn), số ảnh, thời gian đếm ngược, thư mục lưu và tùy chọn xuất.
-- Xem danh sách template có sẵn; việc tạo editor template đồ họa là **CHƯA CHỐT**.
+- **Đã triển khai (19/11/2026):** chọn/tạo/mở lại/đổi tên sự kiện; thư viện ảnh thành phẩm có **bộ lọc theo sự kiện** (sự kiện hiện tại, một sự kiện khác đã mở trên máy, hoặc tất cả — chỉ để xem, không đổi sự kiện của Kiosk; xem `docs/EVENT_STORAGE.md`) (xem, phóng to, chọn phiên bản); chỉnh sửa lại; xuất và in lại đúng phiên bản; lịch sử in và xác nhận trạng thái in thực tế; chọn máy in.
+- Xem và chỉnh cấu hình camera (trong phạm vi thiết bị có sẵn), giới hạn an toàn số ảnh, thời gian đếm ngược, thư mục lưu và tùy chọn xuất.
+- **Đã triển khai (Phase 3, 19/11/2026):** Template Manager (danh sách có thumbnail, tạo, sao chép, đổi tên, xóa, nhập/xuất `.zip`, bật/tắt trên Kiosk) và Visual Template Editor (mục 6.2, `docs/TEMPLATE_SCHEMA.md` mục 11).
 - Xem lịch sử phiên/ảnh đã lưu, mở file hoặc thư mục chứa file.
 - Thấy trạng thái lỗi cơ bản để chẩn đoán, không phải mở console của developer.
 - Điều chỉnh cấu hình mới mà **không phá hủy phiên đang chụp**; thời điểm áp dụng cài đặt (ngay hay phiên sau) cần nhất quán và thể hiện rõ.
 
-**Bảo vệ truy cập Admin:** cách mở Admin và có đặt PIN hay không `CHƯA CHỐT`; không tự thêm xác thực Internet hoặc mật khẩu mặc định không an toàn.
+**Bảo vệ truy cập Admin (đã chốt 19/11/2026 theo yêu cầu chủ sản phẩm):** màn khởi động hiện khi mở ứng dụng; tại đó có nút vào Admin bằng **PIN cố định `1234`** (khai báo duy nhất ở `AdminAccessService.Pin`). Sau khi bấm "Bắt đầu phục vụ khách", Admin và thư viện ảnh bị ẩn. **Cập nhật 19/11/2026 (theo yêu cầu chủ sản phẩm):** màn hình chào của Kiosk có nút nhỏ **"Quản trị"** hiện rõ ở góc; bấm và nhập đúng PIN thì vào lại Admin mà không cần mở lại ứng dụng. Nút chỉ có ở màn hình chào, nên không làm gián đoạn phiên chụp đang dở. Thoát Admin → màn khởi động → "Bắt đầu phục vụ khách" để quay lại Kiosk. Vì nút hiện rõ, khách có thể tò mò bấm; PIN `1234` rất dễ đoán, nên nên đổi sang PIN khó hơn trước khi dùng thật. Lưu ý rủi ro: PIN cố định, ngắn chỉ ngăn khách bấm nhầm, không phải bảo mật mạnh. Khách ở Kiosk không xem được ảnh của khách khác.
 
 ## 10. Tiêu chí nghiệm thu theo kịch bản
 
@@ -209,10 +300,10 @@ Quản trị viên trong V1 cần có khả năng:
 |---|---|---|
 | BR-01 | Không có Internet, mở ứng dụng | Có thể vào luồng chụp và xuất file bình thường |
 | BR-02 | Webcam không tồn tại/không cấp quyền | Có thông báo tiếng Việt và hướng thử lại; không crash |
-| BR-03 | Cấu hình 4 ảnh, chụp thành công | Lưu đủ 4 ảnh gốc, đúng thứ tự, không trùng file |
+| BR-03 | Chọn template cần N ảnh (ví dụ 1, 2, 3, 4, 6), chụp thành công | Chụp đúng N lần, lưu đủ N ảnh gốc, đúng thứ tự, không trùng file |
 | BR-04 | Nhấn Chụp liên tục | Không tạo nhiều yêu cầu chụp song song |
 | BR-05 | Chụp ảnh thứ 3 bị lỗi | Hai ảnh đầu vẫn còn; bộ đếm ảnh thành công không nhảy thành 3 |
-| BR-06 | Chọn template đủ 4 slot | Thành phẩm hiển thị đúng ảnh và đúng tỉ lệ |
+| BR-06 | Ghép theo template (kể cả nhiều slot dùng chung `photoIndex`) | Mỗi slot hiển thị đúng ảnh theo `photoIndex`, đúng tỉ lệ |
 | BR-07 | Template/ảnh không hợp lệ | Trả lỗi có thể hiểu; không báo ghép thành công |
 | BR-08 | Xuất JPEG và PNG | Tạo file mở được, không ghi đè ngoài ý muốn |
 | BR-09 | Xuất PDF 4×6 inch | Trang PDF có kích thước 288×432 point và đúng hướng |
@@ -227,7 +318,7 @@ Quản trị viên trong V1 cần có khả năng:
 1. ~~Chụp lại từng tấm hay toàn bộ phiên~~ (đã chốt: cả hai); có giới hạn số lần không?
 2. Chỉnh template sau khi đã chụp có cho phép không?
 3. Khi khách đã xem kết quả, phần mềm tự xuất vào thư mục mặc định hay chỉ xuất sau khi khách chọn?
-4. Cách chọn và bảo vệ Admin Mode, có dùng PIN không?
+4. ~~Cách chọn và bảo vệ Admin Mode~~ (đã chốt: màn khởi động + PIN cố định, mục 9); có cần đổi PIN được không?
 5. Thời hạn lưu, cách xóa dữ liệu cũ và chính sách bảo mật ảnh khi dùng thật.
 6. Thiết lập chính thức của JPEG quality, kích thước template và thời gian chờ không thao tác.
 7. Người dùng được xuất bao nhiêu lần/định dạng trong mỗi phiên và quy tắc hoàn tất phiên.
@@ -241,3 +332,4 @@ Nếu nhiệm vụ được giao **không phụ thuộc** một điểm chưa ch
 - `docs/ARCHITECTURE.md`: phân tách WPF/Blazor/Application/Infrastructure.
 - `docs/CODING_STANDARDS.md`: quy chuẩn triển khai, test và xử lý lỗi.
 - `docs/UI_UX_GUIDELINES.md`: hành vi và nguyên tắc thể hiện trên màn hình.
+- `docs/EVENT_STORAGE.md`: Event Workspace, cấu trúc lưu trữ, mở lại/chỉnh sửa phiên, sao chép sự kiện.

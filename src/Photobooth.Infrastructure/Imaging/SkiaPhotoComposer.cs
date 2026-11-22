@@ -49,9 +49,11 @@ public sealed class SkiaPhotoComposer : IPhotoComposer
             }
         }
 
+        ValidateSlotCrops(request);
+
         var png = await Task.Run(() => RenderComposition(request, cancellationToken), cancellationToken).ConfigureAwait(false);
 
-        var directory = _paths.GetOutputsDirectory(request.SessionId);
+        var directory = _paths.GetDraftsDirectory(request.SessionId);
         Directory.CreateDirectory(directory);
         var filePath = Path.Combine(directory, string.Create(CultureInfo.InvariantCulture, $"composed-{Guid.NewGuid():N}.png"));
 
@@ -105,6 +107,60 @@ public sealed class SkiaPhotoComposer : IPhotoComposer
             cancellationToken);
     }
 
+    public Task<byte[]> RenderTemplateSampleAsync(PhotoTemplate template, TemplateSampleContent content, int maxWidthPixels, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxWidthPixels);
+
+        var validation = TemplateValidator.Validate(template);
+        if (!validation.IsValid)
+        {
+            throw new CompositionException($"Template {template.Id} không hợp lệ: {string.Join(" ", validation.Errors)}");
+        }
+
+        var timestamp = DateTimeOffset.Now;
+        return Task.Run(
+            () =>
+            {
+                var images = content == TemplateSampleContent.SamplePhotos
+                    ? Enumerable.Range(0, template.RequiredPhotoCount).Select(i => TemplateSamplePhotos.Create(i)).ToArray()
+                    : [];
+                try
+                {
+                    var canvasInfo = template.Canvas;
+                    var scale = Math.Min(1f, maxWidthPixels / (float)canvasInfo.WidthPixels);
+                    var width = Math.Max(1, (int)Math.Round(canvasInfo.WidthPixels * scale));
+                    var height = Math.Max(1, (int)Math.Round(canvasInfo.HeightPixels * scale));
+                    using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul))
+                        ?? throw new CompositionException("Không tạo được vùng vẽ.");
+                    surface.Canvas.Scale(scale);
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Cùng TemplateRenderer và DrawPhoto như ComposeAsync: Xem thử phản ánh đúng thành phẩm.
+                    TemplateRenderer.Render(
+                        surface.Canvas,
+                        template,
+                        timestamp,
+                        images.Length > 0
+                            ? (canvas, slotIndex, slot, rect) => TemplateRenderer.DrawPhoto(canvas, images[slot.PhotoIndex], slot, rect, mirror: false, filter: null)
+                            : DrawPlaceholder);
+
+                    using var snapshot = surface.Snapshot();
+                    using var data = snapshot.Encode(SKEncodedImageFormat.Png, 100)
+                        ?? throw new CompositionException("Không mã hóa được ảnh xem thử.");
+                    return data.ToArray();
+                }
+                finally
+                {
+                    foreach (var image in images)
+                    {
+                        image.Dispose();
+                    }
+                }
+            },
+            cancellationToken);
+    }
+
     /// <summary>thumbnail.png tùy chọn trong thư mục template; lỗi đọc thì dùng ảnh render tự động.</summary>
     private SKImage? LoadThumbnail(PhotoTemplate template)
     {
@@ -149,7 +205,8 @@ public sealed class SkiaPhotoComposer : IPhotoComposer
                 surface.Canvas,
                 request.Template,
                 request.LocalTimestamp,
-                (canvas, slot, rect) => TemplateRenderer.DrawPhoto(canvas, images[slot.PhotoIndex], slot, rect, request.Photos[slot.PhotoIndex].Mirror, filter));
+                (canvas, slotIndex, slot, rect) => TemplateRenderer.DrawPhoto(
+                    canvas, images[slot.PhotoIndex], slot, rect, request.Photos[slot.PhotoIndex].Mirror, filter, request.SlotCrops?[slotIndex]));
 
             cancellationToken.ThrowIfCancellationRequested();
             using var snapshot = surface.Snapshot();
@@ -162,6 +219,42 @@ public sealed class SkiaPhotoComposer : IPhotoComposer
             foreach (var image in images)
             {
                 image?.Dispose();
+            }
+        }
+    }
+
+    /// <summary>Manual Crop phải khớp số ô, hợp lệ và chỉ cho ô cover; sai thì báo lỗi rõ, không render sai.</summary>
+    private static void ValidateSlotCrops(CompositionRequest request)
+    {
+        if (request.SlotCrops is not { } crops)
+        {
+            return;
+        }
+
+        var slots = request.Template.Slots;
+        if (crops.Count != slots.Count)
+        {
+            throw new CompositionException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Dữ liệu chỉnh vùng cắt có {crops.Count} phần tử nhưng template có {slots.Count} ô."));
+        }
+
+        for (var i = 0; i < crops.Count; i++)
+        {
+            if (crops[i] is not { } crop)
+            {
+                continue;
+            }
+
+            var label = string.Create(CultureInfo.InvariantCulture, $"slots[{i}]{(slots[i].Id is null ? string.Empty : $"({slots[i].Id})")}");
+            if (!SlotCrop.IsSupported(slots[i]))
+            {
+                throw new CompositionException($"Ô ảnh {label} dùng fit contain, không hỗ trợ chỉnh vùng cắt.");
+            }
+
+            if (!crop.IsValid)
+            {
+                throw new CompositionException($"Dữ liệu chỉnh vùng cắt của ô {label} không hợp lệ.");
             }
         }
     }
@@ -184,7 +277,7 @@ public sealed class SkiaPhotoComposer : IPhotoComposer
         return SKImage.FromBitmap(bitmap).ToRasterImage(ensurePixelData: true);
     }
 
-    private static void DrawPlaceholder(SKCanvas canvas, TemplateSlot slot, SKRect rect)
+    private static void DrawPlaceholder(SKCanvas canvas, int slotIndex, TemplateSlot slot, SKRect rect)
     {
         using var fill = new SKPaint { Color = new SKColor(0xFFCBD5E1), Style = SKPaintStyle.Fill };
         canvas.DrawRect(rect, fill);

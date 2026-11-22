@@ -17,7 +17,7 @@ public sealed class PhotoboothSettingsTests : IDisposable
     {
         var settings = PhotoboothSettings.Load(SettingsFile, NullLogger.Instance);
 
-        Assert.Equal(4, settings.Capture.PhotosPerSession);
+        Assert.Equal(10, settings.Capture.MaxPhotosPerSession);
         Assert.Equal(3, settings.Capture.CountdownSeconds);
         Assert.True(settings.Capture.MirrorByDefault);
         Assert.Equal(92, settings.Export.JpegQuality);
@@ -26,11 +26,21 @@ public sealed class PhotoboothSettingsTests : IDisposable
     [Fact]
     public void Load_ValidFile_AppliesValues()
     {
-        File.WriteAllText(SettingsFile, """{ "capture": { "photosPerSession": 3, "countdownSeconds": 5, "mirrorByDefault": false }, "export": { "jpegQuality": 80 } }""");
+        File.WriteAllText(SettingsFile, """{ "capture": { "maxPhotosPerSession": 6, "countdownSeconds": 5, "mirrorByDefault": false }, "export": { "jpegQuality": 80 } }""");
 
         var settings = PhotoboothSettings.Load(SettingsFile, NullLogger.Instance);
 
-        Assert.Equal((3, 5, false, 80), (settings.Capture.PhotosPerSession, settings.Capture.CountdownSeconds, settings.Capture.MirrorByDefault, settings.Export.JpegQuality));
+        Assert.Equal((6, 5, false, 80), (settings.Capture.MaxPhotosPerSession, settings.Capture.CountdownSeconds, settings.Capture.MirrorByDefault, settings.Export.JpegQuality));
+    }
+
+    [Fact]
+    public void Load_LegacyPhotosPerSession_IsIgnored_PhotoCountComesFromTemplate()
+    {
+        File.WriteAllText(SettingsFile, """{ "capture": { "photosPerSession": 3, "countdownSeconds": 5 } }""");
+
+        var settings = PhotoboothSettings.Load(SettingsFile, NullLogger.Instance);
+
+        Assert.Equal((10, 5),(settings.Capture.MaxPhotosPerSession, settings.Capture.CountdownSeconds));
     }
 
     [Theory]

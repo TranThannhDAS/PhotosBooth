@@ -2,7 +2,7 @@
 @inject IJSRuntime JS
 @inject ILogger<ImageView> Logger
 
-@* Hiển thị ảnh do C# tạo (JPEG bytes) qua object URL. Tải lại khi Key thay đổi. *@
+@* Hiển thị ảnh do C# tạo (bytes JPEG/PNG) qua object URL. Tải lại khi Key thay đổi. *@
 <div class="image-view @Class">
     <img @ref="_image" class="image-view-img @(_state == LoadState.Shown ? null : "is-hidden")" alt="@Alt" />
     @if (_state == LoadState.Loading)
@@ -47,6 +47,10 @@
 
     [Parameter]
     public string? Class { get; set; }
+
+    /// <summary>Kiểu dữ liệu ảnh do <see cref="Loader"/> trả về (mặc định JPEG; PNG để giữ độ trong suốt).</summary>
+    [Parameter]
+    public string ContentType { get; set; } = "image/jpeg";
 
     /// <summary>Nội dung phủ lên ảnh (ví dụ nhãn, trạng thái).</summary>
     [Parameter]
@@ -99,7 +103,7 @@
             {
                 // Truyền nhị phân sang JS (không Base64).
                 using var streamReference = new DotNetStreamReference(new MemoryStream(bytes));
-                await JS.InvokeVoidAsync("photoboothPhotoView.show", token, _image, streamReference, "image/jpeg");
+                await JS.InvokeVoidAsync("photoboothPhotoView.show", token, _image, streamReference, ContentType);
                 _state = LoadState.Shown;
             }
         }
@@ -107,7 +111,7 @@
         {
             return;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or CompositionException or JSException or JSDisconnectedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or CompositionException or JSException or JSDisconnectedException or TemplateLibraryException)
         {
             Logger.LogWarning(ex, "Không hiển thị được ảnh xem trước");
             _state = LoadState.Failed;

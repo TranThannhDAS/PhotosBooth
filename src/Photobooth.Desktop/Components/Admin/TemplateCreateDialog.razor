@@ -1,0 +1,106 @@
+@using System.Globalization
+
+@* Tạo template mới: tên, mô tả, khổ giấy gợi ý (inch × DPI → pixel) hoặc kích thước tùy chỉnh, màu nền. *@
+<div class="dialog-backdrop">
+    <div class="dialog template-dialog" role="dialog" aria-modal="true" aria-labelledby="create-title">
+        <h2 id="create-title" class="dialog-title">Tạo template mới</h2>
+
+        <div class="form-grid">
+            <label for="tpl-name">Tên template</label>
+            <input id="tpl-name" class="text-input" type="text" maxlength="120" @bind="_name" @bind:event="oninput" />
+
+            <label for="tpl-desc">Mô tả (không bắt buộc)</label>
+            <input id="tpl-desc" class="text-input" type="text" maxlength="200" @bind="_description" />
+
+            <span>Khổ giấy</span>
+            <div class="chip-group" role="radiogroup" aria-label="Khổ giấy">
+                @foreach (var preset in CanvasPreset.All)
+                {
+                    var item = preset;
+                    <button type="button" class="chip @(_preset == item.Key ? "is-active" : null)" @onclick="() => SelectPreset(item.Key)">@item.Label</button>
+                }
+                <button type="button" class="chip @(_preset is null ? "is-active" : null)" @onclick="() => SelectPreset(null)">Tùy chỉnh</button>
+            </div>
+
+            <label for="tpl-dpi">DPI</label>
+            <input id="tpl-dpi" class="text-input num-input" type="number" min="@TemplateValidator.MinDpi" max="@TemplateValidator.MaxDpi" value="@_dpi" @onchange="OnDpiChanged" />
+
+            <label for="tpl-width">Chiều rộng (px)</label>
+            <input id="tpl-width" class="text-input num-input" type="number" min="1" max="@TemplateValidator.MaxCanvasPixels" value="@_width" disabled="@(_preset is not null)" @onchange="e => _width = ParseInt(e, _width)" />
+
+            <label for="tpl-height">Chiều cao (px)</label>
+            <input id="tpl-height" class="text-input num-input" type="number" min="1" max="@TemplateValidator.MaxCanvasPixels" value="@_height" disabled="@(_preset is not null)" @onchange="e => _height = ParseInt(e, _height)" />
+
+            <label for="tpl-bg">Màu nền</label>
+            <div class="color-field">
+                <input id="tpl-bg" type="color" value="@_background" @onchange="e => _background = e.Value?.ToString()?.ToUpperInvariant() ?? _background" />
+                <span>@_background</span>
+            </div>
+        </div>
+
+        <p class="panel-hint">
+            Canvas @_width × @_height px ≈ @Inches(_width) × @Inches(_height) inch ở @_dpi DPI.
+            Template mới có sẵn một ô ảnh và <strong>đang tắt trên Kiosk</strong> cho đến khi bạn bật.
+        </p>
+
+        @if (Error is not null)
+        {
+            <StatusMessage Status="@(new StatusInfo(StatusKind.Error, Error))" />
+        }
+
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="OnCancel">Hủy</button>
+            <button type="button" class="btn btn-primary" disabled="@(Busy || string.IsNullOrWhiteSpace(_name))" @onclick="SubmitAsync">Tạo và mở Editor</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _name = string.Empty;
+    private string? _description;
+    private string? _preset = "4x6";
+    private int _dpi = 300;
+    private int _width = 1200;
+    private int _height = 1800;
+    private string _background = "#FFFFFF";
+
+    [Parameter, EditorRequired]
+    public EventCallback<NewTemplateRequest> OnCreate { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback OnCancel { get; set; }
+
+    [Parameter]
+    public bool Busy { get; set; }
+
+    [Parameter]
+    public string? Error { get; set; }
+
+    private void SelectPreset(string? key)
+    {
+        _preset = key;
+        ApplyPreset();
+    }
+
+    private void OnDpiChanged(ChangeEventArgs e)
+    {
+        _dpi = Math.Clamp(ParseInt(e, _dpi), TemplateValidator.MinDpi, TemplateValidator.MaxDpi);
+        ApplyPreset();
+    }
+
+    private void ApplyPreset()
+    {
+        if (CanvasPreset.Find(_preset) is { } preset)
+        {
+            (_width, _height) = preset.ToPixels(_dpi);
+        }
+    }
+
+    private string Inches(int pixels) => (pixels / (double)Math.Max(1, _dpi)).ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static int ParseInt(ChangeEventArgs e, int fallback) =>
+        int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : fallback;
+
+    private Task SubmitAsync() =>
+        OnCreate.InvokeAsync(new NewTemplateRequest(_name, _description, _width, _height, _dpi, _background));
+}

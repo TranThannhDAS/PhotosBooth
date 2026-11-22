@@ -6,9 +6,17 @@ namespace Photobooth.Application.Composition;
 public enum ColorFilter
 {
     None,
-    Grayscale,
-    Sepia,
     Warm,
+    Cool,
+    Bright,
+    Pastel,
+    SoftRose,
+    GoldenHour,
+    Film,
+    Cinematic,
+    Moody,
+    Sepia,
+    Grayscale,
 }
 
 /// <summary>Một ảnh gốc đưa vào ghép. <paramref name="Mirror"/> = lật ngang để khớp với hướng live preview lúc chụp.</summary>
@@ -19,12 +27,17 @@ public sealed record CompositionPhoto(string FilePath, bool Mirror);
 /// Thời điểm thống nhất (giờ địa phương) cho {date}/{time}/{datetime} trong suốt lượt render — lấy từ dữ liệu phiên,
 /// không đọc lại đồng hồ hệ thống khi render.
 /// </param>
+/// <param name="SlotCrops">
+/// Manual Crop theo <b>chỉ số ô</b> trong <c>Template.Slots</c> (không theo photoIndex: hai ô dùng chung ảnh vẫn cắt khác nhau).
+/// null hoặc phần tử null = Auto Crop theo template. Nếu có, số phần tử phải bằng số ô.
+/// </param>
 public sealed record CompositionRequest(
     Guid SessionId,
     PhotoTemplate Template,
     IReadOnlyList<CompositionPhoto> Photos,
     ColorFilter Filter,
-    DateTimeOffset LocalTimestamp);
+    DateTimeOffset LocalTimestamp,
+    IReadOnlyList<SlotCrop?>? SlotCrops = null);
 
 /// <summary>Ảnh thành phẩm (PNG không nén mất dữ liệu) dùng làm nguồn chung cho mọi định dạng xuất.</summary>
 public sealed record ComposedImage(string FilePath, int WidthPixels, int HeightPixels);
@@ -47,10 +60,39 @@ public interface IPhotoComposer
     /// ngược lại render bố cục với ô ảnh là vùng giữ chỗ.
     /// </summary>
     Task<byte[]> RenderTemplatePreviewAsync(PhotoTemplate template, int maxWidthPixels, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Render bố cục template bằng ĐÚNG pipeline ghép ảnh (nền, lớp theo zIndex, Auto Crop, bo góc, chữ, ảnh trang trí)
+    /// nhưng không cần ảnh chụp: ô ảnh là ảnh mẫu có sẵn hoặc vùng giữ chỗ đánh số. Trả về PNG.
+    /// Dùng cho "Xem thử" trong Template Editor và ảnh đại diện template. Không bao giờ đọc thumbnail.png.
+    /// </summary>
+    Task<byte[]> RenderTemplateSampleAsync(PhotoTemplate template, TemplateSampleContent content, int maxWidthPixels, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Tạo ảnh xem trước thu nhỏ (JPEG) từ một file ảnh, có thể lật ngang.</summary>
+/// <summary>Nội dung đặt vào ô ảnh khi render mẫu template.</summary>
+public enum TemplateSampleContent
+{
+    /// <summary>Vùng giữ chỗ màu xám, ghi số thứ tự ảnh (photoIndex + 1).</summary>
+    Placeholders,
+
+    /// <summary>Ảnh mẫu tự sinh (khung hình 16:9 như webcam) để thấy đúng cách Auto Crop cắt ảnh.</summary>
+    SamplePhotos,
+}
+
+/// <summary>Tạo ảnh xem trước thu nhỏ (JPEG) từ một file ảnh, có thể lật ngang và áp dụng bộ lọc màu.</summary>
 public interface IImagePreviewRenderer
 {
-    Task<byte[]> RenderPreviewAsync(string imageFilePath, bool mirror, int maxWidthPixels, CancellationToken cancellationToken = default);
+    Task<byte[]> RenderPreviewAsync(
+        string imageFilePath,
+        bool mirror,
+        int maxWidthPixels,
+        CancellationToken cancellationToken = default) =>
+        RenderPreviewAsync(imageFilePath, mirror, maxWidthPixels, ColorFilter.None, cancellationToken);
+
+    Task<byte[]> RenderPreviewAsync(
+        string imageFilePath,
+        bool mirror,
+        int maxWidthPixels,
+        ColorFilter filter,
+        CancellationToken cancellationToken = default);
 }

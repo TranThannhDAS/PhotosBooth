@@ -18,12 +18,15 @@ internal static class TemplateRenderer
     public static readonly SKSamplingOptions Sampling = new(SKFilterMode.Linear, SKMipmapMode.Linear);
 
     /// <param name="localTimestamp">Thời điểm thống nhất cho {date}/{time}/{datetime}.</param>
-    /// <param name="drawSlotContent">Vẽ nội dung một ô (ảnh hoặc vùng giữ chỗ); canvas đã được clip theo khung bo góc.</param>
+    /// <param name="drawSlotContent">
+    /// Vẽ nội dung một ô (ảnh hoặc vùng giữ chỗ); canvas đã được clip theo khung bo góc.
+    /// Tham số int là chỉ số ô trong <c>template.Slots</c> (để áp Manual Crop theo từng ô).
+    /// </param>
     public static void Render(
         SKCanvas canvas,
         PhotoTemplate template,
         DateTimeOffset localTimestamp,
-        Action<SKCanvas, TemplateSlot, SKRect> drawSlotContent)
+        Action<SKCanvas, int, TemplateSlot, SKRect> drawSlotContent)
     {
         canvas.Clear(ToColor(template.Canvas.BackgroundColor));
 
@@ -31,7 +34,8 @@ internal static class TemplateRenderer
         {
             if (element.Slot is { } slot)
             {
-                DrawSlot(canvas, slot, drawSlotContent);
+                // Với ô ảnh, DeclarationOrder chính là chỉ số trong template.Slots.
+                DrawSlot(canvas, element.DeclarationOrder, slot, drawSlotContent);
             }
             else if (element.Decoration is { } decoration)
             {
@@ -43,8 +47,9 @@ internal static class TemplateRenderer
     /// <summary>
     /// Vẽ ảnh vào ô theo fit. Cover: cắt theo focal point; contain: đặt vừa, giữ tỉ lệ.
     /// Mirror: lật ngang quanh tâm ô (chỉ ảnh). Focal point tính theo hướng ảnh hiển thị (sau khi lật).
+    /// <paramref name="crop"/> (Manual Crop, chỉ cho cover) thay focal point/zoom của template; cùng một công thức Auto Crop.
     /// </summary>
-    public static void DrawPhoto(SKCanvas canvas, SKImage image, TemplateSlot slot, SKRect destination, bool mirror, SKColorFilter? filter)
+    public static void DrawPhoto(SKCanvas canvas, SKImage image, TemplateSlot slot, SKRect destination, bool mirror, SKColorFilter? filter, SlotCrop? crop = null)
     {
         SKRect source;
         SKRect target;
@@ -55,13 +60,9 @@ internal static class TemplateRenderer
         }
         else
         {
-            // Ảnh gốc là khung hình thô; nếu hiển thị lật gương thì focal x tương ứng phía đối diện trên ảnh thô.
-            var focalX = mirror ? 1 - slot.FocalPoint.X : slot.FocalPoint.X;
-            var crop = CropCalculator.Cover(
-                image.Width, image.Height,
-                Math.Max(1, (int)Math.Round(destination.Width)), Math.Max(1, (int)Math.Round(destination.Height)),
-                focalX, slot.FocalPoint.Y);
-            source = ToRect(crop);
+            // Cùng quy tắc với lớp phủ khung chụp: ảnh gốc là khung hình thô; nếu hiển thị lật gương thì
+            // focal x tương ứng phía đối diện trên ảnh thô. Vùng cắt kẹp trong ảnh nên phép lật đối xứng.
+            source = ToRect(CropCalculator.CoverSourceRect(image.Width, image.Height, slot, crop, mirror));
             target = destination;
         }
 
@@ -76,36 +77,107 @@ internal static class TemplateRenderer
         canvas.Restore();
     }
 
-    public static SKColorFilter? CreateColorFilter(ColorFilter filter) => filter switch
+    public static SKColorFilter? CreateColorFilter(ColorFilter filter) =>
+        GetColorMatrix(filter) is { } matrix ? SKColorFilter.CreateColorMatrix(matrix) : null;
+
+    /// <summary>
+    /// Ma trận màu 4×5 (SkiaSharp: cột dịch chuyển thứ 5 chuẩn hóa trong khoảng 0..1) cho từng bộ lọc.
+    /// Chỉ áp dụng khi vẽ ảnh chụp; không áp dụng cho nền, chữ, khung hay ảnh trang trí của template.
+    /// </summary>
+    public static float[]? GetColorMatrix(ColorFilter filter) => filter switch
     {
-        ColorFilter.Grayscale => SKColorFilter.CreateColorMatrix(
+        ColorFilter.Warm =>
         [
-            0.2126f, 0.7152f, 0.0722f, 0, 0,
-            0.2126f, 0.7152f, 0.0722f, 0, 0,
-            0.2126f, 0.7152f, 0.0722f, 0, 0,
-            0, 0, 0, 1, 0,
-        ]),
-        ColorFilter.Sepia => SKColorFilter.CreateColorMatrix(
+            1.08f, 0f, 0f, 0f, 0f,
+            0f, 1.0f, 0f, 0f, 0f,
+            0f, 0f, 0.88f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Cool =>
         [
-            0.393f, 0.769f, 0.189f, 0, 0,
-            0.349f, 0.686f, 0.168f, 0, 0,
-            0.272f, 0.534f, 0.131f, 0, 0,
-            0, 0, 0, 1, 0,
-        ]),
-        ColorFilter.Warm => SKColorFilter.CreateColorMatrix(
+            // Tông lạnh trong trẻo: giảm nhẹ sắc đỏ ấm, nâng nhẹ sắc lam và xanh ngọc.
+            0.91f, 0.02f, 0f, 0f, 0f,
+            0f, 1.01f, 0.02f, 0f, 0f,
+            0f, 0.04f, 1.08f, 0f, 0.01f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Bright =>
         [
-            1.08f, 0, 0, 0, 0,
-            0, 1.0f, 0, 0, 0,
-            0, 0, 0.88f, 0, 0,
-            0, 0, 0, 1, 0,
-        ]),
+            // Tươi sáng: nâng độ sáng đều ba kênh kèm tăng nhẹ độ trong và độ tươi màu, tránh cháy sáng.
+            1.13f, -0.06f, -0.01f, 0f, 0.035f,
+            -0.02f, 1.09f, -0.01f, 0f, 0.035f,
+            -0.02f, -0.06f, 1.14f, 0f, 0.035f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Pastel =>
+        [
+            // Dịu nhẹ: giảm nhẹ độ bão hòa gắt, nâng vùng tối mềm mại theo phong cách kem phấn.
+            0.82f, 0.11f, 0.02f, 0f, 0.065f,
+            0.04f, 0.87f, 0.03f, 0f, 0.055f,
+            0.04f, 0.10f, 0.81f, 0f, 0.060f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.SoftRose =>
+        [
+            // Hồng phấn: nâng nhẹ sắc hồng đào (Red + chút Blue), giúp tông da hồng hào cho tiệc cưới/sinh nhật.
+            1.05f, 0.03f, 0.02f, 0f, 0.025f,
+            0.01f, 0.96f, 0.01f, 0f, 0.010f,
+            0.03f, 0.02f, 0.98f, 0f, 0.020f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.GoldenHour =>
+        [
+            // Nắng vàng: ánh vàng hổ phách (Red + Green) ấm áp và mềm mại của buổi hoàng hôn.
+            1.09f, 0.06f, 0f, 0f, 0.025f,
+            0.03f, 1.01f, 0f, 0f, 0.015f,
+            0f, 0f, 0.82f, 0f, -0.010f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Film =>
+        [
+            // Màu phim analog: giữ đa sắc màu với tương phản rõ, vùng tối ánh xanh phim mờ, vùng sáng ấm dịu.
+            1.12f, -0.04f, -0.02f, 0f, -0.010f,
+            -0.02f, 1.07f, 0.01f, 0f, -0.010f,
+            -0.01f, -0.04f, 1.02f, 0f, 0.015f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Cinematic =>
+        [
+            // Điện ảnh (Teal & Orange): tương phản sâu, vùng tối ngả xanh cổ vịt, vùng sáng và màu da nổi bật.
+            1.18f, -0.06f, -0.04f, 0f, -0.045f,
+            -0.04f, 1.12f, 0.02f, 0f, -0.025f,
+            -0.06f, 0.04f, 1.14f, 0f, -0.010f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Moody =>
+        [
+            // Trầm nghệ thuật: giảm độ bão hòa vừa phải (~25%), hạ nhẹ độ sáng và tăng chiều sâu vùng tối.
+            0.74f, 0.16f, 0.02f, 0f, -0.030f,
+            0.06f, 0.82f, 0.03f, 0f, -0.030f,
+            0.06f, 0.15f, 0.72f, 0f, -0.020f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Sepia =>
+        [
+            0.393f, 0.769f, 0.189f, 0f, 0f,
+            0.349f, 0.686f, 0.168f, 0f, 0f,
+            0.272f, 0.534f, 0.131f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
+        ColorFilter.Grayscale =>
+        [
+            0.2126f, 0.7152f, 0.0722f, 0f, 0f,
+            0.2126f, 0.7152f, 0.0722f, 0f, 0f,
+            0.2126f, 0.7152f, 0.0722f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        ],
         _ => null,
     };
 
     public static SKColor ToColor(string? hex) =>
         HexColor.TryParse(hex, out var argb) ? new SKColor(argb) : SKColors.Transparent;
 
-    private static void DrawSlot(SKCanvas canvas, TemplateSlot slot, Action<SKCanvas, TemplateSlot, SKRect> drawSlotContent)
+    private static void DrawSlot(SKCanvas canvas, int slotIndex, TemplateSlot slot, Action<SKCanvas, int, TemplateSlot, SKRect> drawSlotContent)
     {
         var rect = SKRect.Create(slot.X, slot.Y, slot.Width, slot.Height);
         var radius = ClampRadius(slot.CornerRadius, rect);
@@ -126,7 +198,7 @@ internal static class TemplateRenderer
             canvas.DrawRect(rect, background);
         }
 
-        drawSlotContent(canvas, slot, rect);
+        drawSlotContent(canvas, slotIndex, slot, rect);
         canvas.Restore();
 
         if (slot.BorderWidth > 0)

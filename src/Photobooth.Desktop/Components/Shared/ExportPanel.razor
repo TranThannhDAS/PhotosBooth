@@ -1,0 +1,187 @@
+@inherits SessionScreenBase
+@inject ExportFolderService ExportFolder
+@inject WindowsShellService Shell
+@inject ILogger<ExportPanel> Logger
+
+@* Xuất JPEG/PNG/PDF từ MỘT phiên bản thành phẩm đã lưu (Version = null: xác nhận thành phẩm đang xem). *@
+<section class="panel-section">
+    <h2 class="panel-title">Lưu ảnh</h2>
+    <div class="format-group">
+        @foreach (var format in Enum.GetValues<ExportFormat>())
+        {
+            var value = format;
+            <label class="format-option">
+                <input type="checkbox" checked="@_formats.Contains(value)" disabled="@(Disabled || IsExporting)"
+                       @onchange="e => ToggleFormat(value, e.Value is true)" />
+                <span>
+                    <strong>@UiText.FormatLabel(value)</strong>
+                    <small>@FormatDescription(value)</small>
+                </span>
+            </label>
+        }
+    </div>
+
+    <div class="folder-row">
+        <span class="folder-label">Lưu vào</span>
+        <span class="folder-path" title="@ExportFolder.CurrentFolder">@ExportFolder.CurrentFolder</span>
+        @if (AllowFolderChange)
+        {
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@(Disabled || IsExporting)" @onclick="PickFolderAsync">Đổi thư mục</button>
+        }
+    </div>
+
+    @if (ShowSaveButton)
+    {
+        <button type="button" class="btn btn-primary" disabled="@(!CanExport)" @onclick="ExportAsync">
+            @if (IsExporting)
+            {
+                <span class="spinner spinner-sm" aria-hidden="true"></span>
+                <span>Đang lưu…</span>
+            }
+            else
+            {
+                <span>Lưu ảnh</span>
+            }
+        </button>
+    }
+
+    @if (_message is not null)
+    {
+        <StatusMessage Status="@_message" />
+    }
+
+    @if (_results is { Count: > 0 })
+    {
+        <ul class="export-results" aria-live="polite">
+            @foreach (var result in _results)
+            {
+                <li class="@(result.Result.Succeeded ? "is-success" : "is-error")">
+                    <span class="export-icon" aria-hidden="true">@(result.Result.Succeeded ? "✓" : "✕")</span>
+                    <span>
+                        <strong>@UiText.FormatLabel(result.Format):</strong>
+                        @(result.Result.Succeeded ? Path.GetFileName(result.Result.FilePath) : UiText.ForExportError(result.Result.Error))
+                    </span>
+                </li>
+            }
+        </ul>
+        @if (_lastSavedFile is not null)
+        {
+            <button type="button" class="btn btn-secondary" @onclick="RevealSavedFile">Mở thư mục</button>
+        }
+    }
+</section>
+
+@code {
+    private readonly HashSet<ExportFormat> _formats = [ExportFormat.Jpeg, ExportFormat.Pdf];
+    private IReadOnlyList<FormatExportResult>? _results;
+    private string? _lastSavedFile;
+    private StatusInfo? _message;
+
+    /// <summary>Phiên bản cần xuất; null = thành phẩm đang xem (được lưu thành phiên bản trước khi xuất).</summary>
+    [Parameter]
+    public int? Version { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>Hiện nút "Lưu ảnh" trong khung (Kiosk đặt nút này ở thanh hành động).</summary>
+    [Parameter]
+    public bool ShowSaveButton { get; set; } = true;
+
+    /// <summary>
+    /// Cho đổi thư mục lưu bằng hộp thoại Windows. Kiosk đặt false: hộp thoại cho duyệt/đổi tên/xóa file ở mọi thư mục
+    /// (kể cả ảnh của khách khác) nên chỉ dành cho quản trị viên.
+    /// </summary>
+    [Parameter]
+    public bool AllowFolderChange { get; set; } = true;
+
+    /// <summary>Báo cho màn hình cha khi trạng thái đang xuất thay đổi (để cập nhật nút ở thanh hành động).</summary>
+    [Parameter]
+    public EventCallback OnStateChanged { get; set; }
+
+    public bool IsExporting { get; private set; }
+
+    public bool CanExport => !Disabled && !IsExporting && _formats.Count > 0
+        && (Version is { } v ? Session?.FindVersion(v) is not null : Session?.Composed is not null);
+
+    private string FormatDescription(ExportFormat format)
+    {
+        var output = Version is { } v ? Session?.FindVersion(v) : null;
+        var (width, height, dpi) = output is not null
+            ? (output.WidthPixels, output.HeightPixels, output.Dpi)
+            : Session?.Template?.Canvas is { } canvas ? (canvas.WidthPixels, canvas.HeightPixels, canvas.Dpi) : (0, 0, 0);
+        return format switch
+        {
+            ExportFormat.Jpeg => "Ảnh dung lượng nhỏ, dễ chia sẻ",
+            ExportFormat.Png => "Chất lượng cao, không nén mất dữ liệu",
+            ExportFormat.Pdf when dpi > 0 => $"Để in, khổ {width / (double)dpi:0.##}×{height / (double)dpi:0.##} inch",
+            _ => "Để in ấn",
+        };
+    }
+
+    private void ToggleFormat(ExportFormat format, bool selected)
+    {
+        if (selected)
+        {
+            _formats.Add(format);
+        }
+        else
+        {
+            _formats.Remove(format);
+        }
+
+        _ = OnStateChanged.InvokeAsync();
+    }
+
+    private async Task PickFolderAsync()
+    {
+        if (await ExportFolder.PickFolderAsync())
+        {
+            _message = null;
+        }
+    }
+
+    /// <summary>Xuất các định dạng đã chọn (gọi được từ nút ở thanh hành động của màn hình cha).</summary>
+    public async Task ExportAsync()
+    {
+        if (!CanExport)
+        {
+            return;
+        }
+
+        IsExporting = true;
+        _message = null;
+        _results = null;
+        _lastSavedFile = null;
+        await OnStateChanged.InvokeAsync();
+        StateHasChanged();
+        try
+        {
+            _results = await Sessions.ExportAsync(_formats.ToArray(), ExportFolder.CurrentFolder, version: Version);
+            _lastSavedFile = _results.LastOrDefault(r => r.Result.Succeeded)?.Result.FilePath;
+            _message = _results.All(r => r.Result.Succeeded)
+                ? new StatusInfo(StatusKind.Success, "Đã lưu ảnh thành công.", "Có thể lưu thêm định dạng khác.")
+                : new StatusInfo(StatusKind.Error, "Một số file chưa lưu được.", "Ảnh đã chụp và các file đã lưu vẫn được giữ nguyên.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Lỗi ngoài dự kiến khi xuất ảnh");
+            _message = UiText.UnexpectedError;
+        }
+        finally
+        {
+            IsExporting = false;
+        }
+
+        await OnStateChanged.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private void RevealSavedFile()
+    {
+        if (_lastSavedFile is not null && !Shell.RevealFile(_lastSavedFile))
+        {
+            _message = new StatusInfo(StatusKind.Warning, "Không mở được thư mục chứa ảnh.", "File có thể đã bị di chuyển hoặc xóa.");
+        }
+    }
+}

@@ -1,0 +1,138 @@
+@inherits SessionScreenBase
+
+@*
+    Chi tiết một phiên đã lưu: xem đúng file phiên bản thành phẩm (phóng to được), thông tin phiên,
+    chỉnh sửa lại (nếu còn dữ liệu nguồn), xuất và in lại đúng phiên bản đang chọn, lịch sử in.
+*@
+@if (Session is { IsArchived: true } session)
+{
+    <div class="result-layout">
+        <section class="result-preview detail-viewer @(_zoomed ? "is-zoomed" : null)" aria-label="Ảnh thành phẩm">
+            @if (SelectedVersion is { } version)
+            {
+                <div class="detail-scroll">
+                    <ImageView Class="detail-image" Key="@($"{session.SessionId}-{version.Version}-{_zoomed}")"
+                               Alt="@($"Ảnh thành phẩm phiên bản {version.Version}")"
+                               Loader="@(ct => Sessions.GetVersionPreviewAsync(version.Version, _zoomed ? 2400 : 1200, ct))" />
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm detail-zoom" @onclick="() => _zoomed = !_zoomed">
+                    @(_zoomed ? "Thu nhỏ" : "Phóng to")
+                </button>
+            }
+            else
+            {
+                <div class="center-state"><p>Phiên này chưa có ảnh thành phẩm.</p></div>
+            }
+        </section>
+
+        <aside class="side-panel" aria-label="Thông tin phiên">
+            <section class="panel-section">
+                <h2 class="panel-title">Thông tin phiên</h2>
+                <dl class="detail-info">
+                    <dt>Thời gian chụp</dt>
+                    <dd>@UiText.LocalTime(session.CreatedAt)</dd>
+                    <dt>Khung ảnh</dt>
+                    <dd>@(session.Template?.Name ?? "Không còn bản lưu template")</dd>
+                    <dt>Số ảnh nguồn</dt>
+                    <dd>@session.RequiredPhotoCount</dd>
+                </dl>
+                @if (session.Versions.Count > 0)
+                {
+                    <p class="panel-hint">Phiên bản thành phẩm (đang xem: v@(SelectedVersion?.Version))</p>
+                    <div class="chip-group" role="radiogroup" aria-label="Phiên bản thành phẩm">
+                        @foreach (var v in session.Versions)
+                        {
+                            var value = v.Version;
+                            var active = SelectedVersion?.Version == value;
+                            <button type="button" class="chip @(active ? "is-active" : null)" role="radio" aria-checked="@(active ? "true" : "false")"
+                                    title="@UiText.LocalTime(v.CreatedAt)" @onclick="() => _version = value">
+                                v@(value)@(value == session.LatestVersion?.Version ? " (mới nhất)" : null)
+                            </button>
+                        }
+                    </div>
+                }
+                @if (!session.CanEdit)
+                {
+                    <StatusMessage Status="@(new StatusInfo(StatusKind.Warning, "Không thể chỉnh sửa phiên này.", Archived.EditUnavailableReason))" />
+                }
+                else
+                {
+                    <button type="button" class="btn btn-primary" @onclick="() => OnEdit.InvokeAsync(SelectedVersion?.Version)">
+                        @(SelectedVersion is null ? "Ghép và chỉnh sửa" : $"Chỉnh sửa từ v{SelectedVersion.Version}")
+                    </button>
+                }
+            </section>
+
+            @if (SelectedVersion is { } selected)
+            {
+                <PrintPanel Version="selected.Version" />
+                <ExportPanel Version="selected.Version" />
+            }
+
+            <section class="panel-section">
+                <h2 class="panel-title">Lịch sử in</h2>
+                @if (session.PrintJobs.Count == 0)
+                {
+                    <p class="panel-hint">Chưa có yêu cầu in.</p>
+                }
+                else
+                {
+                    <ul class="print-history">
+                        @foreach (var job in session.PrintJobs.Reverse())
+                        {
+                            var item = job;
+                            <li>
+                                <span class="print-history-main">
+                                    <strong>v@(item.OutputVersion) · @item.Copies bản</strong> — @UiText.PrintStatusLabel(item.Status)
+                                </span>
+                                <small>@UiText.LocalTime(item.CreatedAt) · @item.PrinterName</small>
+                                @if (item.ErrorMessage is not null)
+                                {
+                                    <small class="gallery-problem">@item.ErrorMessage</small>
+                                }
+                                @if (item.Status == Photobooth.Application.Printing.PrintJobStatus.Submitted)
+                                {
+                                    <span class="print-history-actions">
+                                        <button type="button" class="btn btn-ghost btn-sm" @onclick="() => SetStatusAsync(item, Photobooth.Application.Printing.PrintJobStatus.Completed)">Xác nhận đã in xong</button>
+                                        <button type="button" class="btn btn-ghost btn-sm" @onclick="() => SetStatusAsync(item, Photobooth.Application.Printing.PrintJobStatus.Failed)">Báo in lỗi</button>
+                                    </span>
+                                }
+                                else if (item.Status is Photobooth.Application.Printing.PrintJobStatus.Pending or Photobooth.Application.Printing.PrintJobStatus.Failed)
+                                {
+                                    <span class="print-history-actions">
+                                        <button type="button" class="btn btn-ghost btn-sm" @onclick="() => SetStatusAsync(item, Photobooth.Application.Printing.PrintJobStatus.Cancelled)">Đánh dấu đã xử lý (không in lại)</button>
+                                    </span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        </aside>
+    </div>
+
+    <div class="detail-footer">
+        <button type="button" class="btn btn-secondary" @onclick="OnBack">Quay lại danh sách</button>
+    </div>
+}
+
+@code {
+    private int? _version;
+    private bool _zoomed;
+
+    [Parameter, EditorRequired]
+    public ArchivedSession Archived { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnBack { get; set; }
+
+    /// <summary>Bắt đầu chỉnh sửa từ phiên bản (null = phiên chưa có thành phẩm).</summary>
+    [Parameter, EditorRequired]
+    public EventCallback<int?> OnEdit { get; set; }
+
+    private OutputVersion? SelectedVersion =>
+        Session is { } s ? (_version is { } v ? s.FindVersion(v) : null) ?? s.LatestVersion : null;
+
+    private Task SetStatusAsync(Photobooth.Application.Printing.PrintJob job, Photobooth.Application.Printing.PrintJobStatus status) =>
+        Sessions.UpdatePrintJobStatusAsync(job.PrintJobId, status);
+}

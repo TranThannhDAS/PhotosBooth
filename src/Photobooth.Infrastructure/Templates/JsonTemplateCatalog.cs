@@ -75,9 +75,13 @@ public sealed class JsonTemplateCatalog : ITemplateCatalog
         }
 
         template = template with { AssetDirectory = Path.GetDirectoryName(Path.GetFullPath(filePath)) };
-        var validation = TemplateValidator.Validate(template).Concat(CheckFiles(template));
+        var validation = ValidateWithFiles(template);
         return (validation.IsValid ? template : null, validation);
     }
+
+    /// <summary>Kiểm tra nội dung (TemplateValidator) và file asset/font trong <see cref="PhotoTemplate.AssetDirectory"/>.</summary>
+    public static TemplateValidationResult ValidateWithFiles(PhotoTemplate template) =>
+        TemplateValidator.Validate(template).Concat(CheckFiles(template));
 
     private static TemplateValidationResult Fail(string path, string message) =>
         new([new TemplateValidationIssue(ValidationSeverity.Error, path, message)]);

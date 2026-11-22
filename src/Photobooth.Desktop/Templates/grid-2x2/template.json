@@ -5,10 +5,51 @@
   "description": "Bốn ảnh xếp lưới, tiêu đề phía trên.",
   "canvas": { "widthPixels": 1200, "heightPixels": 1800, "dpi": 300, "backgroundColor": "#FFF7ED" },
   "slots": [
-    { "id": "photo-1", "photoIndex": 0, "x": 60, "y": 250, "width": 520, "height": 640, "cornerRadius": 24, "borderWidth": 10, "borderColor": "#FFFFFF" },
-    { "id": "photo-2", "photoIndex": 1, "x": 620, "y": 250, "width": 520, "height": 640, "cornerRadius": 24, "borderWidth": 10, "borderColor": "#FFFFFF" },
-    { "id": "photo-3", "photoIndex": 2, "x": 60, "y": 930, "width": 520, "height": 640, "cornerRadius": 24, "borderWidth": 10, "borderColor": "#FFFFFF" },
-    { "id": "photo-4", "photoIndex": 3, "x": 620, "y": 930, "width": 520, "height": 640, "cornerRadius": 24, "borderWidth": 10, "borderColor": "#FFFFFF" }
+    {
+      "id": "photo-1",
+      "photoIndex": 0,
+      "x": 60,
+      "y": 250,
+      "width": 520,
+      "height": 640,
+      "cornerRadius": 24,
+      "borderWidth": 10,
+      "borderColor": "#FFFFFF"
+    },
+    {
+      "id": "photo-2",
+      "photoIndex": 1,
+      "x": 620,
+      "y": 250,
+      "width": 520,
+      "height": 640,
+      "cornerRadius": 24,
+      "borderWidth": 10,
+      "borderColor": "#FFFFFF"
+    },
+    {
+      "id": "photo-3",
+      "photoIndex": 2,
+      "x": 60,
+      "y": 930,
+      "width": 520,
+      "height": 640,
+      "cornerRadius": 24,
+      "borderWidth": 10,
+      "borderColor": "#FFFFFF"
+    },
+    {
+      "id": "photo-4",
+      "photoIndex": 3,
+      "x": 620,
+      "y": 930,
+      "width": 520,
+      "height": 640,
+      "cornerRadius": 24,
+      "borderWidth": 10,
+      "borderColor": "#FFFFFF",
+      "fit": "contain"
+    }
   ],
   "decorations": [
     { "id": "blob-top", "type": "ellipse", "x": -120, "y": -140, "width": 420, "height": 420, "color": "#FED7AA", "zIndex": -10 },

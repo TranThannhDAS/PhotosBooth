@@ -1,12 +1,13 @@
-@* Màn hình chào: một hành động chính duy nhất. Camera chưa được bật ở đây. *@
+@* Màn hình chào: một hành động chính duy nhất. Camera chưa được bật ở đây.
+   Nút "Quản trị" nhỏ ở góc (theo yêu cầu chủ sản phẩm) mở hộp thoại PIN để vào lại Admin. *@
 <div class="welcome">
+    @if (OnAdmin.HasDelegate)
+    {
+        <button type="button" class="btn btn-ghost btn-sm welcome-admin" @onclick="OnAdmin">Quản trị</button>
+    }
     <div class="welcome-card">
         <div class="welcome-logo" aria-hidden="true">
-            <svg viewBox="0 0 64 64" width="72" height="72">
-                <rect x="6" y="16" width="52" height="38" rx="8" fill="none" stroke="currentColor" stroke-width="4" />
-                <path d="M22 16l4-7h12l4 7" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round" />
-                <circle cx="32" cy="35" r="10" fill="none" stroke="currentColor" stroke-width="4" />
-            </svg>
+            <BrandLogo Size="104" />
         </div>
         <h1 class="welcome-title">Photobooth Mini</h1>
         <p class="welcome-lead">Tự chụp ảnh lưu niệm chỉ với một lần chạm.</p>
@@ -15,6 +16,11 @@
                 disabled="@_starting" @onclick="StartAsync">
             Bắt đầu chụp
         </button>
+
+        @if (Error is not null)
+        {
+            <StatusMessage Status="@(new StatusInfo(StatusKind.Error, Error))" />
+        }
 
         <p class="welcome-note">Máy ảnh chỉ được bật khi bạn bắt đầu chụp.</p>
     </div>
@@ -26,6 +32,14 @@
     [Parameter, EditorRequired]
     public EventCallback OnStart { get; set; }
 
+    /// <summary>Lỗi khi tạo phiên (ví dụ mất thư mục sự kiện).</summary>
+    [Parameter]
+    public string? Error { get; set; }
+
+    /// <summary>Nhân viên bấm "Quản trị" (giao diện cha hiển thị hộp thoại PIN).</summary>
+    [Parameter]
+    public EventCallback OnAdmin { get; set; }
+
     private async Task StartAsync()
     {
         // Chống bấm liên tục tạo nhiều phiên.
@@ -36,5 +50,6 @@
 
         _starting = true;
         await OnStart.InvokeAsync();
+        _starting = false;
     }
 }

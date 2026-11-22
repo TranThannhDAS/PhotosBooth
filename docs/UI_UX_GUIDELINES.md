@@ -27,7 +27,7 @@
 | Xử lý lỗi | Thông báo dễ hiểu, có nút thử lại | Có thông tin kỹ thuật cần thiết để chẩn đoán |
 
 - **Không hiện chức năng quản trị trong luồng khách** nếu nó không cần cho thao tác chụp ảnh.
-- Cơ chế mở và bảo vệ Admin (ví dụ PIN, phím tắt hoặc menu ẩn) **CHƯA CHỐT**; không tạo mật khẩu mặc định yếu hoặc phụ thuộc Internet.
+- Cơ chế mở Admin (đã chốt 19/11/2026 theo yêu cầu chủ sản phẩm): nút ở màn khởi động, và nút nhỏ **"Quản trị"** ở góc trên phải màn hình chào của Kiosk; cả hai đều mở bàn phím PIN. Nút ở màn hình chào chỉ có khi không có phiên chụp dang dở. Không phụ thuộc Internet. PIN cố định `1234` là rủi ro đã biết (`BUSINESS_RULES.md` mục 9).
 - Không khóa hệ điều hành ở mức khiến quản trị viên không thể thoát an toàn. Cơ chế kiosk/fullscreen phải được kiểm thử trên Windows.
 
 ## 3. Cấu trúc điều hướng Kiosk
@@ -66,13 +66,14 @@ Hoàn thành → Phiên mới
 
 - Hiển thị mẫu preview có thể nhận biết bố cục, tên mẫu và trạng thái đang chọn.
 - Mẫu đang chọn cần có viền/trạng thái rõ; không chỉ dùng màu để biểu thị lựa chọn.
-- Nếu template không phù hợp số ảnh được cấu hình, đánh dấu không thể chọn và giải thích lý do.
+- Mỗi template hiển thị số ảnh cần chụp. Template vượt giới hạn an toàn số ảnh được đánh dấu không thể chọn và giải thích lý do.
 - Có nút **Tiếp tục** và **Quay lại**.
 - Không tự tải template hoặc phông chữ từ Internet.
 
 ### 4.3 Camera preview (`Camera`)
 
-- Khung preview chiếm diện tích đủ lớn; tỉ lệ video tự nhiên, không kéo méo hình người.
+- Khung preview chiếm diện tích đủ lớn; tỉ lệ video tự nhiên, không kéo méo hình người; hiển thị **toàn bộ** khung hình camera (`object-fit: contain`, không dùng `cover`).
+- **Khung hướng dẫn vùng ảnh thành phẩm:** viền nét đứt + nhãn ngắn, phần ngoài làm tối bán trong suốt (vẫn thấy hình); nằm đúng trên vùng nội dung video (không tính dải trống), cập nhật theo ảnh đang chụp, không chặn thao tác (`pointer-events: none`), nằm dưới số đếm ngược/thông báo.
 - Hiển thị thông tin **Ảnh X/Y**, trạng thái camera, nút **Bắt đầu chụp** và **Quay lại/Hủy** khi phù hợp.
 - Khi đếm ngược, con số lớn, độ tương phản cao; không che toàn bộ khuôn hình nếu không cần.
 - Sau một ảnh thành công, có phản hồi ngắn (ví dụ thumbnail hoặc thông báo đã chụp), không chuyển bước âm thầm.
@@ -101,8 +102,10 @@ Hoàn thành → Phiên mới
 - Nhóm cài đặt theo chủ đề: Camera, Phiên chụp, Template, Xuất file, Lưu trữ.
 - Với mỗi thiết lập có label, giá trị hiện tại, mô tả đơn giản và kiểm tra dữ liệu hợp lệ.
 - Khi thay đổi cấu hình ảnh hưởng phiên đang chạy, phải hiển thị thời điểm áp dụng hoặc khóa chỉnh sửa hợp lý.
-- Gallery có thể hiển thị danh sách phiên theo ngày, xem thumbnail, mở ảnh/thư mục; dữ liệu lấy từ ổ đĩa/local metadata.
+- Gallery có thể hiển thị danh sách phiên theo ngày, xem thumbnail, mở ảnh/thư mục; dữ liệu lấy từ ổ đĩa/local metadata. Có ô chọn **"Sự kiện"** ở đầu danh sách (sự kiện đang dùng được ghi "(đang dùng)", sự kiện không truy cập được bị vô hiệu kèm lý do, "Tất cả sự kiện" khi có từ 2 sự kiện); lựa chọn được giữ khi mở rồi đóng một phiên.
 - Diagnostics hiển thị trạng thái thiết bị và mã lỗi tóm tắt, không hiện stack trace đầy đủ cho khách.
+- **Khung ảnh — Template Manager (Phase 3):** lưới thẻ có thumbnail, tên, kích thước canvas/DPI, số ảnh cần chụp, số ô/trang trí, công tắc "Hiện trên Kiosk" và các nút Chỉnh sửa/Sao chép/Đổi tên/Xuất .zip/Xóa. Template lỗi vẫn hiện thẻ đỏ kèm lỗi cụ thể. Có trạng thái đang tải, trống, lỗi đọc. Xóa luôn qua hộp thoại xác nhận (nút an toàn được focus). Kết quả nhập hiển thị danh sách lỗi theo vị trí thuộc tính.
+- **Visual Template Editor:** ba vùng — trái: thêm phần tử + danh sách lớp (trên cùng ở đầu, nút ▲▼, nền canvas cố định dưới cùng); giữa: canvas (zoom −/+, "vừa khung", Ctrl + con lăn, lưới bắt dính); phải: thuộc tính phần tử đang chọn hoặc thông tin template/canvas, và khối "Kiểm tra" theo validator của Engine. Tay nắm đổi kích thước có vùng chạm 24 px; nhãn tọa độ/kích thước (pixel canvas) hiện khi chọn. Phím tắt: Ctrl+Z/Ctrl+Y, Ctrl+D, Delete, phím mũi tên (Shift = 10 px), Ctrl+S, Esc (bỏ chọn); không kích hoạt khi đang gõ trong ô nhập. Số liệu chỉ ghi nhận khi rời ô/Enter (một bước Undo). Khi đang chỉnh, các mục Admin khác bị khóa; đóng khi chưa lưu phải xác nhận. "Xem thử" mở ảnh render bằng Photo Composer (ảnh mẫu hoặc ô đánh số).
 
 ## 5. Responsive và kích thước màn hình
 
@@ -123,6 +126,17 @@ Hoàn thành → Phiên mới
 - Điều hướng bàn phím và focus phải hợp lý cho laptop: Enter/Space kích hoạt nút, Tab di chuyển qua phần tử tương tác.
 - Khi mở dialog, focus nằm trong dialog, đóng xong trả về vị trí hợp lý nếu framework hỗ trợ.
 - Không dựa hoàn toàn vào màu sắc: lỗi/thành công cần có text hoặc icon phù hợp.
+
+### 6.1 Kiosk là màn cảm ứng (đã chốt 19/11/2026)
+
+Chế độ khách được thiết kế cho **màn cảm ứng 100%**; chuột/bàn phím chỉ là phương án phụ.
+
+- WebView2 tắt **chụm hai ngón phóng to cả trang** (`IsPinchZoomEnabled = false`) và **vuốt ngang để quay lại trang** (`IsSwipeNavigationEnabled = false`). Cử chỉ chụm chỉ có tác dụng trong vùng tự xử lý (`touch-action: none`), như trình chỉnh vùng cắt.
+- **Manual Crop:** một ngón kéo ảnh; **hai ngón chụm/mở để thu nhỏ/phóng to**, điểm ảnh dưới hai ngón tay đứng yên; nhấc một ngón thì tiếp tục kéo bằng ngón còn lại mà ảnh không nhảy. Có thêm nút **−/+** (56 px, bước 10%) và thanh trượt có nút kéo 36 px (vùng chạm 48 px). Con lăn chuột vẫn dùng được trên laptop. Ngón "kẹt" (mất sự kiện nhấc tay) được tự bỏ khi chạm lại.
+- **Ô ảnh chạm được:** trên thiết bị không có rê chuột (`@media (hover: none)`), mỗi ô ảnh trong khung thành phẩm luôn có viền nét đứt mảnh và sáng lên khi chạm. Viền hover chỉ áp dụng cho chuột, tránh viền "dính" sau khi chạm. Danh sách chip "Các ô ảnh" vẫn là cách thay thế cho ô nhỏ.
+- **Không mở hộp thoại Windows trong Kiosk:** màn thành phẩm của khách không có nút "Đổi thư mục" lưu ảnh, vì hộp thoại chọn thư mục cho phép duyệt/đổi tên/xóa file ở mọi nơi, kể cả ảnh của khách khác. Thư mục xuất do quản trị viên đổi trong Admin.
+- Kiosk không có ô nhập chữ (không cần bàn phím ảo).
+- Ngoài phạm vi ứng dụng: cử chỉ vuốt từ mép màn hình của Windows (Action Center, chuyển ứng dụng) phải tắt bằng cấu hình kiosk của Windows (Assigned Access/Group Policy) khi triển khai thật.
 - Countdown/tiến trình không gây chớp nháy mạnh; tôn trọng `prefers-reduced-motion` nếu có animation.
 
 ## 7. Hệ thống thiết kế (design tokens)

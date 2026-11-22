@@ -7,7 +7,13 @@
     <ChildContent>
         <div class="page-heading">
             <h1>Chọn khung ảnh</h1>
-            <p>Chạm vào một mẫu rồi nhấn “Tiếp tục”. Bạn sẽ chụp @Sessions.Options.PhotosPerSession ảnh.</p>
+            <p>
+                Chạm vào một mẫu rồi nhấn “Tiếp tục”.
+                @if (_selected is not null)
+                {
+                    <span>Với khung “@_selected.Name”, bạn sẽ chụp <strong>@_selected.RequiredPhotoCount ảnh</strong>.</span>
+                }
+            </p>
         </div>
 
         @if (_templates is null)
@@ -24,7 +30,7 @@
                 @foreach (var template in _templates)
                 {
                     var item = template;
-                    var compatible = Sessions.IsTemplateCompatible(item);
+                    var compatible = Sessions.IsTemplateSupported(item);
                     var selected = _selected?.Id == item.Id;
                     <button type="button"
                             class="template-card @(selected ? "is-selected" : null)"
@@ -43,9 +49,10 @@
                             }
                             @item.Name
                         </span>
+                        <span class="template-note">@item.RequiredPhotoCount ảnh</span>
                         @if (!compatible)
                         {
-                            <span class="template-note">Cần @item.RequiredPhotoCount ảnh — không khớp cấu hình @Sessions.Options.PhotosPerSession ảnh.</span>
+                            <span class="template-note">Vượt giới hạn @Sessions.Options.MaxPhotosPerSession ảnh mỗi phiên của máy này.</span>
                         }
                         else if (!string.IsNullOrEmpty(item.Description))
                         {
@@ -72,7 +79,7 @@
     protected override async Task OnInitializedAsync()
     {
         _templates = await Catalog.GetTemplatesAsync();
-        _selected = _templates.FirstOrDefault(Sessions.IsTemplateCompatible);
+        _selected = _templates.FirstOrDefault(Sessions.IsTemplateSupported);
     }
 
     private async Task<byte[]?> LoadPreviewAsync(PhotoTemplate template, CancellationToken cancellationToken) =>

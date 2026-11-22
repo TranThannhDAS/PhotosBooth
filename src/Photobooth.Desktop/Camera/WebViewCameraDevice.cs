@@ -34,7 +34,13 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
 
     public event EventHandler<CameraError>? Faulted;
 
+    /// <summary>Kích thước khung hình camera thay đổi (cũng là kích thước ảnh sẽ chụp: chụp từ chính video).</summary>
+    public event EventHandler? FrameSizeChanged;
+
     public bool IsActive { get; private set; }
+
+    /// <summary>Kích thước khung hình hiện tại của camera (null khi chưa mở).</summary>
+    public (int Width, int Height)? FrameSize { get; private set; }
 
     /// <summary>Gắn phần tử &lt;video&gt; dùng để hiển thị preview. Phải gọi trước <see cref="StartAsync"/>.</summary>
     public void AttachPreview(ElementReference videoElement) => _previewElement = videoElement;
@@ -49,6 +55,7 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
 
         _selfReference ??= DotNetObjectReference.Create(this);
         IsActive = false;
+        FrameSize = null;
 
         JsStartResult result;
         try
@@ -69,6 +76,7 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
         if (result.Ok)
         {
             IsActive = true;
+            FrameSize = result.Width > 0 && result.Height > 0 ? (result.Width, result.Height) : null;
             _logger.LogInformation("Camera đã sẵn sàng ({Width}x{Height})", result.Width, result.Height);
             return CameraStartResult.Success();
         }
@@ -87,6 +95,7 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
     {
         var wasActive = IsActive;
         IsActive = false;
+        FrameSize = null;
         try
         {
             // Giới hạn thời gian chờ: khi WebView đang đóng, lời gọi JS có thể không bao giờ được phản hồi.
@@ -158,6 +167,20 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
                 throw new CameraException(CameraError.CaptureFailed, "Không nhận được dữ liệu ảnh từ camera.", ex);
             }
         }
+    }
+
+    /// <summary>Được camera.js gọi khi kích thước khung hình camera thay đổi.</summary>
+    [JSInvokable]
+    public void OnVideoResized(int width, int height)
+    {
+        if (!IsActive || width <= 0 || height <= 0 || FrameSize == (width, height))
+        {
+            return;
+        }
+
+        FrameSize = (width, height);
+        _logger.LogInformation("Khung hình camera đổi thành {Width}x{Height}", width, height);
+        FrameSizeChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Được camera.js gọi khi track video kết thúc ngoài ý muốn (rút camera, bị chiếm quyền...).</summary>

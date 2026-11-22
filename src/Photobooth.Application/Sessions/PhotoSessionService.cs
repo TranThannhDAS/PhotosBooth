@@ -2,7 +2,9 @@ using Microsoft.Extensions.Logging;
 using Photobooth.Application.Camera;
 using Photobooth.Application.Composition;
 using Photobooth.Application.Export;
+using Photobooth.Application.Events;
 using Photobooth.Application.Photos;
+using Photobooth.Application.Printing;
 using Photobooth.Application.Templates;
 
 namespace Photobooth.Application.Sessions;
@@ -14,8 +16,10 @@ namespace Photobooth.Application.Sessions;
 /// <remarks>
 /// Đăng ký singleton để trạng thái phiên tồn tại độc lập với vòng đời Razor Component và WebView.
 /// Camera được truyền vào từng lần chụp vì adapter camera có thể gắn với vòng đời UI.
+/// Mỗi phiên thuộc Event Workspace tại thời điểm tạo và được lưu lâu dài qua <see cref="ISessionArchive"/>
+/// (xem PhotoSessionService.Archive.cs: phiên bản thành phẩm, mở lại, in).
 /// </remarks>
-public sealed class PhotoSessionService
+public sealed partial class PhotoSessionService
 {
     private static readonly TimeSpan CountdownTick = TimeSpan.FromSeconds(1);
 
@@ -26,28 +30,42 @@ public sealed class PhotoSessionService
     private readonly IPhotoComposer _composer;
     private readonly IImagePreviewRenderer _previewRenderer;
     private readonly IComposedPhotoExporter _exporter;
+    private readonly ISessionArchive _archive;
+    private readonly IPrinterProvider _printers;
+    private readonly PrintOptions _printOptions;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PhotoSessionService> _logger;
     private readonly Lock _gate = new();
     private readonly SemaphoreSlim _exportGate = new(1, 1);
     private PhotoSession? _current;
+    private PhotoSessionState _preComposeState = PhotoSessionState.Reviewing;
+    private CancellationTokenSource? _composeCts;
+    private long _composeGeneration;
 
     public PhotoSessionService(
         IOriginalPhotoStore originalStore,
         IPhotoComposer composer,
         IImagePreviewRenderer previewRenderer,
         IComposedPhotoExporter exporter,
+        ISessionArchive archive,
+        IPrinterProvider printers,
         CaptureOptions options,
+        PrintOptions printOptions,
         TimeProvider timeProvider,
         ILogger<PhotoSessionService> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(printOptions);
         options.Validate();
+        printOptions.Validate();
 
         _originalStore = originalStore;
         _composer = composer;
         _previewRenderer = previewRenderer;
         _exporter = exporter;
+        _archive = archive;
+        _printers = printers;
+        _printOptions = printOptions;
         _timeProvider = timeProvider;
         _logger = logger;
         Options = options;
@@ -57,6 +75,14 @@ public sealed class PhotoSessionService
     public event EventHandler? SessionChanged;
 
     public CaptureOptions Options { get; }
+
+    public PrintOptions PrintOptions => _printOptions;
+
+    /// <summary>Máy in đang cấu hình (null = chưa cấu hình, không thể in).</summary>
+    public IPrinter? Printer => _printers.Current;
+
+    /// <summary>Đang có phiên Kiosk chưa kết thúc (không được đổi Event Workspace lúc này).</summary>
+    public bool HasActiveSession => Current is { IsEnded: false, IsArchived: false };
 
     public PhotoSession? Current
     {
@@ -71,49 +97,91 @@ public sealed class PhotoSessionService
 
     // ---------------------------------------------------------------- Vòng đời phiên
 
-    /// <summary>Kết thúc phiên đang có (nếu còn) và tạo phiên mới hoàn toàn.</summary>
-    public PhotoSession StartNewSession()
+    /// <summary>
+    /// Kết thúc phiên đang có (nếu còn) và tạo phiên mới trong Event Workspace hiện tại.
+    /// Trả về null nếu chưa có Event Workspace hợp lệ — không bao giờ lưu sang thư mục khác thay thế.
+    /// </summary>
+    public PhotoSession? StartNewSession()
     {
+        var sessionId = Guid.NewGuid();
+        var createdAt = _timeProvider.GetUtcNow();
+        SessionLocation location;
+        try
+        {
+            location = _archive.CreateSessionLocation(sessionId, createdAt);
+        }
+        catch (EventWorkspaceUnavailableException ex)
+        {
+            _logger.LogError(ex, "Không tạo được phiên chụp: Event Workspace không khả dụng");
+            return null;
+        }
+
         PhotoSession created;
+        PhotoSession? ended;
         lock (_gate)
         {
-            EndCurrentLocked();
-            created = PhotoSession.Create(Guid.NewGuid(), _timeProvider.GetUtcNow(), Options.PhotosPerSession, Options.MirrorByDefault);
+            ended = EndCurrentLocked();
+            created = PhotoSession.Create(sessionId, createdAt, Options.MirrorByDefault) with
+            {
+                Directory = location.Directory,
+                EventId = location.EventId,
+            };
             _current = created;
         }
 
-        _logger.LogInformation("Bắt đầu phiên chụp {SessionId} ({PhotoCount} ảnh)", created.SessionId, created.RequiredPhotoCount);
+        AfterSessionEnded(ended);
+        _logger.LogInformation("Bắt đầu phiên chụp {SessionId}", created.SessionId);
         RaiseSessionChanged();
         return created;
     }
 
     /// <summary>
-    /// Hủy/kết thúc phiên hiện tại. Không xóa ảnh: Completed nếu đã xuất file, ngược lại Cancelled.
+    /// Hủy/kết thúc phiên Kiosk hiện tại. Không xóa ảnh: Completed nếu đã có thành phẩm được lưu/xuất, ngược lại Cancelled.
+    /// Với phiên đã lưu được mở lại (Admin), chỉ đóng lại — không đổi dữ liệu đã lưu.
     /// </summary>
     public void EndCurrentSession()
     {
-        bool changed;
+        PhotoSession? ended;
         lock (_gate)
         {
-            changed = EndCurrentLocked();
+            ended = EndCurrentLocked();
         }
 
-        if (changed)
+        if (ended is not null)
         {
+            AfterSessionEnded(ended);
             RaiseSessionChanged();
         }
     }
 
-    /// <summary>Hoàn tất phiên sau khi đã xuất ít nhất một file thành công.</summary>
-    public bool CompleteSession()
+    /// <summary>
+    /// Hoàn tất phiên Kiosk: xác nhận ảnh thành phẩm hiện tại thành một phiên bản lưu trong Event Workspace
+    /// (dùng lại phiên bản đã có nếu không đổi gì), rồi chuyển sang Completed.
+    /// </summary>
+    public async Task<bool> CompleteSessionAsync(CancellationToken cancellationToken = default)
     {
+        if (Current is not { State: PhotoSessionState.Ready, IsArchived: false })
+        {
+            return false;
+        }
+
+        if (await ConfirmOutputAsync(cancellationToken).ConfigureAwait(false) is null)
+        {
+            return false;
+        }
+
         var completed = TryTransition(
-            s => s.State == PhotoSessionState.Ready && s.Exports.Count > 0,
+            s => s.State == PhotoSessionState.Ready && !s.IsArchived && s.Versions.Count > 0,
             s => s with { State = PhotoSessionState.Completed });
 
         if (completed)
         {
             _logger.LogInformation("Hoàn tất phiên {SessionId}", Current?.SessionId);
+            await PersistCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (Current is { } session)
+            {
+                await DeleteDraftsSafelyAsync(session).ConfigureAwait(false);
+            }
         }
 
         return completed;
@@ -121,33 +189,56 @@ public sealed class PhotoSessionService
 
     // ---------------------------------------------------------------- Template
 
-    /// <summary>Template chỉ dùng được khi số ảnh cần chụp khớp cấu hình số ảnh mỗi phiên.</summary>
-    public bool IsTemplateCompatible(PhotoTemplate template) =>
-        template.RequiredPhotoCount == Options.PhotosPerSession;
+    /// <summary>
+    /// Template cần số ảnh nằm trong giới hạn an toàn <see cref="CaptureOptions.MaxPhotosPerSession"/>.
+    /// Số ảnh do template quyết định (BR-T01); đây chỉ là giới hạn tài nguyên.
+    /// </summary>
+    public bool IsTemplateSupported(PhotoTemplate template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        return template.RequiredPhotoCount is > 0 && template.RequiredPhotoCount <= Options.MaxPhotosPerSession;
+    }
 
     /// <summary>
-    /// Chọn template trước khi chụp. Giả định Giai đoạn 2: không đổi template sau khi đã có ảnh
-    /// (quy tắc chính thức CHƯA CHỐT).
+    /// Template đang được một phiên chụp CHƯA KẾT THÚC (không phải phiên đã lưu đang xem lại) sử dụng.
+    /// Template Manager không cho xóa/lưu đè template trong trường hợp này.
+    /// </summary>
+    public bool IsTemplateInActiveSession(string templateId)
+    {
+        var session = Current;
+        return session is { IsArchived: false, IsEnded: false } && session.Template?.Id == templateId;
+    }
+
+    /// <summary>
+    /// Chọn (hoặc đổi) template trước khi chụp ảnh đầu tiên. Phiên lưu snapshot template và chốt số ảnh
+    /// cần chụp = <see cref="PhotoTemplate.RequiredPhotoCount"/> (BR-T04). Không đổi template khi đã có ảnh.
     /// </summary>
     public bool SelectTemplate(PhotoTemplate template)
     {
         ArgumentNullException.ThrowIfNull(template);
-        if (!IsTemplateCompatible(template) || !TemplateValidator.Validate(template).IsValid)
+        if (!IsTemplateSupported(template) || !TemplateValidator.Validate(template).IsValid)
         {
             return false;
         }
+
+        // Sao chép danh sách để phiên không bị ảnh hưởng nếu đối tượng template gốc bị thay đổi sau này.
+        var snapshot = template with { Slots = [.. template.Slots], Decorations = [.. template.Decorations] };
+        var photoCount = snapshot.RequiredPhotoCount;
 
         var selected = TryTransition(
             s => s.State is PhotoSessionState.Created or PhotoSessionState.Previewing && s.Photos.Count == 0,
             s => s with
             {
-                Template = template,
-                PendingPositions = Enumerable.Range(0, s.RequiredPhotoCount).ToArray(),
+                Template = snapshot,
+                Slots = new CapturedPhoto?[photoCount],
+                SlotCrops = new SlotCrop?[snapshot.Slots.Count],
+                PendingPositions = Enumerable.Range(0, photoCount).ToArray(),
+                Composed = null,
             });
 
         if (selected)
         {
-            _logger.LogInformation("Chọn template {TemplateId}", template.Id);
+            _logger.LogInformation("Chọn template {TemplateId} ({PhotoCount} ảnh)", template.Id, photoCount);
         }
 
         return selected;
@@ -157,7 +248,7 @@ public sealed class PhotoSessionService
     public bool ReturnToTemplateSelection() =>
         TryTransition(
             s => s.State is PhotoSessionState.Created or PhotoSessionState.Previewing && s.Photos.Count == 0,
-            s => s with { State = PhotoSessionState.Created, Template = null, PendingPositions = [] });
+            s => s with { State = PhotoSessionState.Created, Template = null, Slots = [], SlotCrops = [], PendingPositions = [] });
 
     // ---------------------------------------------------------------- Camera / chụp
 
@@ -245,6 +336,8 @@ public sealed class PhotoSessionService
                     return CaptureSequenceResult.Failed(captured, CaptureFailureReason.Cancelled);
                 }
 
+                // Ghi metadata ngay sau mỗi ảnh để mở lại được phiên kể cả khi ứng dụng dừng đột ngột.
+                await PersistCurrentAsync(CancellationToken.None).ConfigureAwait(false);
                 captured++;
                 progress?.Report(Progress(CaptureStage.Saved, 0));
 
@@ -282,6 +375,7 @@ public sealed class PhotoSessionService
     {
         var retake = TryTransition(
             s => s.State is PhotoSessionState.Reviewing or PhotoSessionState.Ready
+                 && !s.IsArchived // phiên mở lại trong Admin không có camera: chỉ chỉnh sửa/in lại
                  && (position is null || (position >= 0 && position < s.RequiredPhotoCount)),
             s => s with
             {
@@ -306,15 +400,21 @@ public sealed class PhotoSessionService
     // ---------------------------------------------------------------- Ghép ảnh
 
     /// <summary>
-    /// Ghép ảnh thành phẩm với bộ lọc chỉ định. Nếu thành phẩm hiện tại đã đúng đầu vào thì dùng lại.
-    /// Lỗi ghép không làm mất ảnh gốc và đưa phiên về trạng thái trước đó.
+    /// Ghép ảnh thành phẩm với bộ lọc chỉ định (null = bộ lọc đang chọn của phiên) và Manual Crop đã xác nhận.
+    /// Nếu thành phẩm hiện tại đã đúng mọi đầu vào thì dùng lại. Thành phẩm này là nguồn duy nhất cho cả
+    /// ảnh xem trước và mọi định dạng xuất. Lỗi ghép không làm mất ảnh gốc và đưa phiên về trạng thái trước đó.
     /// </summary>
-    public async Task<CompositionOutcome> ComposeAsync(ColorFilter filter, CancellationToken cancellationToken = default)
+    public async Task<CompositionOutcome> ComposeAsync(ColorFilter? filter = null, CancellationToken cancellationToken = default)
     {
         PhotoSessionState previousState;
         CompositionRequest? request;
         Guid[] photoIds;
         string templateId;
+        ColorFilter effectiveFilter;
+        SlotCrop?[] crops;
+        long generation;
+        CancellationTokenSource? previousCts = null;
+        CancellationTokenSource? linkedCts = null;
         lock (_gate)
         {
             if (_current is null)
@@ -322,13 +422,23 @@ public sealed class PhotoSessionService
                 return CompositionOutcome.NotReady;
             }
 
+            effectiveFilter = filter ?? _current.Filter;
             if (_current.State == PhotoSessionState.Composing)
             {
-                return CompositionOutcome.Busy;
+                // Đang ghép cùng bộ lọc: báo bận để chống bấm trùng.
+                // Nếu người dùng chuyển sang bộ lọc khác: hủy lượt ghép cũ và ghép bộ lọc mới nhất.
+                if (filter is null || effectiveFilter == _current.Filter)
+                {
+                    return CompositionOutcome.Busy;
+                }
+            }
+            else if (_current.State is not (PhotoSessionState.Reviewing or PhotoSessionState.Ready))
+            {
+                return CompositionOutcome.NotReady;
             }
 
-            if (_current.State is not (PhotoSessionState.Reviewing or PhotoSessionState.Ready)
-                || _current.Template is null
+            if (_current.Template is null
+                || !_current.CanEdit
                 || !_current.AllSlotsFilled)
             {
                 return CompositionOutcome.NotReady;
@@ -337,28 +447,56 @@ public sealed class PhotoSessionService
             var photos = _current.Slots.Select(p => p!).ToArray();
             photoIds = photos.Select(p => p.PhotoId).ToArray();
             templateId = _current.Template.Id;
-            previousState = _current.State;
+            if (_current.State != PhotoSessionState.Composing)
+            {
+                _preComposeState = _current.State;
+            }
 
-            var canReuse = _current.Composed is { } existing
-                && existing.Filter == filter
+            previousState = _preComposeState;
+            crops = [.. _current.SlotCrops];
+
+            var canReuse = _current.State != PhotoSessionState.Composing
+                && _current.Composed is { } existing
+                && existing.Filter == effectiveFilter
                 && existing.TemplateId == templateId
-                && existing.PhotoIds.SequenceEqual(photoIds);
+                && existing.PhotoIds.SequenceEqual(photoIds)
+                && existing.SlotCrops.SequenceEqual(crops);
+
+            generation = ++_composeGeneration;
+            previousCts = _composeCts;
 
             if (canReuse)
             {
+                _composeCts = null;
                 request = null;
-                _current = _current with { State = PhotoSessionState.Ready };
+                _current = _current with { State = PhotoSessionState.Ready, Filter = effectiveFilter };
             }
             else
             {
+                linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                _composeCts = linkedCts;
                 request = new CompositionRequest(
                     _current.SessionId,
                     _current.Template,
                     photos.Select(p => new CompositionPhoto(p.OriginalFilePath, p.Mirrored)).ToArray(),
-                    filter,
-                    TimeZoneInfo.ConvertTime(_current.CreatedAt, _timeProvider.LocalTimeZone));
-                _current = _current with { State = PhotoSessionState.Composing, LastCompositionFailed = false };
+                    effectiveFilter,
+                    TimeZoneInfo.ConvertTime(_current.CreatedAt, _timeProvider.LocalTimeZone),
+                    crops);
+                _current = _current with { State = PhotoSessionState.Composing, Composed = null, LastCompositionFailed = false, Filter = effectiveFilter };
             }
+        }
+
+        if (previousCts is not null)
+        {
+            try
+            {
+                previousCts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
+            previousCts.Dispose();
         }
 
         RaiseSessionChanged();
@@ -367,29 +505,128 @@ public sealed class PhotoSessionService
             return CompositionOutcome.Succeeded;
         }
 
-        _logger.LogInformation("Ghép ảnh phiên {SessionId}, template {TemplateId}, bộ lọc {Filter}", request.SessionId, templateId, filter);
+        _logger.LogInformation(
+            "Ghép ảnh phiên {SessionId}, template {TemplateId}, bộ lọc {Filter}, {CropCount} ô chỉnh tay",
+            request.SessionId, templateId, effectiveFilter, crops.Count(c => c is not null));
 
         try
         {
-            var image = await _composer.ComposeAsync(request, cancellationToken).ConfigureAwait(false);
-            var result = new ComposedResult(image.FilePath, image.WidthPixels, image.HeightPixels, templateId, filter, photoIds, _timeProvider.GetUtcNow());
-            Mutate(s => s.SessionId == request.SessionId && s.State == PhotoSessionState.Composing
-                ? s with { State = PhotoSessionState.Ready, Composed = result }
-                : null);
+            var image = await _composer.ComposeAsync(request, linkedCts!.Token).ConfigureAwait(false);
+            var result = new ComposedResult(image.FilePath, image.WidthPixels, image.HeightPixels, templateId, effectiveFilter, photoIds, _timeProvider.GetUtcNow(), crops);
+            var applied = false;
+            Mutate(s =>
+            {
+                if (s.SessionId != request.SessionId || s.State != PhotoSessionState.Composing || _composeGeneration != generation)
+                {
+                    return null;
+                }
+
+                applied = true;
+                return s with { State = PhotoSessionState.Ready, Composed = result };
+            });
+
+            if (!applied)
+            {
+                return CompositionOutcome.Failed;
+            }
+
             _logger.LogInformation("Đã ghép ảnh {Width}x{Height} cho phiên {SessionId}", image.WidthPixels, image.HeightPixels, request.SessionId);
             return CompositionOutcome.Succeeded;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (linkedCts!.IsCancellationRequested)
         {
-            RestoreAfterComposition(request.SessionId, previousState, failed: false);
+            RestoreAfterComposition(request.SessionId, generation, previousState, failed: false);
             return CompositionOutcome.Failed;
         }
         catch (Exception ex) when (ex is CompositionException or IOException or UnauthorizedAccessException)
         {
             _logger.LogError(ex, "Ghép ảnh thất bại ở phiên {SessionId}", request.SessionId);
-            RestoreAfterComposition(request.SessionId, previousState, failed: true);
+            RestoreAfterComposition(request.SessionId, generation, previousState, failed: true);
             return CompositionOutcome.Failed;
         }
+        finally
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_composeCts, linkedCts))
+                {
+                    _composeCts = null;
+                }
+            }
+
+            linkedCts?.Dispose();
+        }
+    }
+
+    // ---------------------------------------------------------------- Manual Crop
+
+    /// <summary>
+    /// Xác nhận Manual Crop cho ô <paramref name="slotIndex"/> (chỉ số trong <c>Template.Slots</c>, không phải photoIndex)
+    /// rồi ghép lại. <paramref name="crop"/> = null hoặc trùng Auto Crop → khôi phục Auto Crop cho ô đó.
+    /// Chỉ ô <c>cover</c> được chỉnh. Dữ liệu chỉ nằm trong phiên; template và ảnh gốc không đổi.
+    /// Thành phẩm cũ bị bỏ ngay khi crop đổi để không bao giờ xem/xuất nhầm kết quả cũ.
+    /// </summary>
+    /// <returns><see cref="CompositionOutcome.NotReady"/> nếu trạng thái/ô/dữ liệu crop không hợp lệ (không thay đổi gì).</returns>
+    public Task<CompositionOutcome> ApplySlotCropAsync(int slotIndex, SlotCrop? crop, CancellationToken cancellationToken = default)
+    {
+        var accepted = false;
+        Mutate(s =>
+        {
+            if (s.State is not (PhotoSessionState.Reviewing or PhotoSessionState.Ready)
+                || s.Template is null
+                || !s.CanEdit
+                || slotIndex < 0
+                || slotIndex >= s.SlotCrops.Count)
+            {
+                return null;
+            }
+
+            var slot = s.Template.Slots[slotIndex];
+            if (crop is not null && (!SlotCrop.IsSupported(slot) || !crop.IsValid))
+            {
+                return null;
+            }
+
+            accepted = true;
+            var normalized = crop == SlotCrop.AutoFor(slot) ? null : crop;
+            if (s.SlotCrops[slotIndex] == normalized)
+            {
+                return null;
+            }
+
+            var crops = s.SlotCrops.ToArray();
+            crops[slotIndex] = normalized;
+            return s with { SlotCrops = crops, Composed = null };
+        });
+
+        if (!accepted)
+        {
+            _logger.LogWarning("Không áp dụng được chỉnh vùng cắt cho ô #{SlotIndex}", slotIndex);
+            return Task.FromResult(CompositionOutcome.NotReady);
+        }
+
+        _logger.LogInformation("Chỉnh vùng cắt ô #{SlotIndex}: {Mode}", slotIndex, crop is null ? "Auto Crop" : "thủ công");
+        return ComposeAsync(null, cancellationToken);
+    }
+
+    /// <summary>Khôi phục Auto Crop cho mọi ô rồi ghép lại.</summary>
+    public Task<CompositionOutcome> ResetAllSlotCropsAsync(CancellationToken cancellationToken = default)
+    {
+        var accepted = false;
+        Mutate(s =>
+        {
+            if (s.State is not (PhotoSessionState.Reviewing or PhotoSessionState.Ready) || s.Template is null || !s.CanEdit)
+            {
+                return null;
+            }
+
+            accepted = true;
+            return s.SlotCrops.All(c => c is null)
+                ? null
+                : s with { SlotCrops = new SlotCrop?[s.SlotCrops.Count], Composed = null };
+        });
+
+        return accepted ? ComposeAsync(null, cancellationToken) : Task.FromResult(CompositionOutcome.NotReady);
     }
 
     // ---------------------------------------------------------------- Xuất file
@@ -397,11 +634,14 @@ public sealed class PhotoSessionService
     /// <summary>
     /// Xuất ảnh thành phẩm ra các định dạng yêu cầu vào thư mục chỉ định. Mỗi định dạng thành công/thất bại
     /// độc lập; lỗi không ảnh hưởng ảnh gốc, ảnh thành phẩm hay các file đã xuất.
+    /// <paramref name="version"/> = null: xác nhận thành phẩm đang xem thành một phiên bản (hoặc dùng lại phiên bản trùng)
+    /// rồi xuất đúng file phiên bản đó; ngược lại xuất đúng phiên bản đã lưu được chỉ định.
     /// </summary>
     public async Task<IReadOnlyList<FormatExportResult>> ExportAsync(
         IReadOnlyCollection<ExportFormat> formats,
         string destinationDirectory,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? version = null)
     {
         ArgumentNullException.ThrowIfNull(formats);
         var requested = formats.Distinct().Order().ToArray();
@@ -413,20 +653,17 @@ public sealed class PhotoSessionService
 
         try
         {
-            Guid sessionId;
-            ComposedResult? composed;
-            TemplateCanvas? canvas;
-            lock (_gate)
-            {
-                sessionId = _current?.SessionId ?? Guid.Empty;
-                composed = _current is { State: PhotoSessionState.Ready } ? _current.Composed : null;
-                canvas = _current?.Template?.Canvas;
-            }
+            var sessionId = Current?.SessionId ?? Guid.Empty;
+            var output = version is { } requestedVersion
+                ? Current?.FindVersion(requestedVersion)
+                : await ConfirmOutputAsync(cancellationToken).ConfigureAwait(false);
 
-            if (composed is null || canvas is null)
+            if (output is null || !File.Exists(output.FilePath))
             {
                 return requested.Select(f => new FormatExportResult(f, ExportResult.Failure(ExportError.NothingToSave))).ToArray();
             }
+
+            var canvas = new TemplateCanvas { WidthPixels = output.WidthPixels, HeightPixels = output.HeightPixels, Dpi = output.Dpi };
 
             var baseName = PhotoFileNaming.SuggestBaseFileName(_timeProvider.GetUtcNow(), _timeProvider.LocalTimeZone);
             var results = new List<FormatExportResult>(requested.Length);
@@ -440,14 +677,14 @@ public sealed class PhotoSessionService
                 else
                 {
                     result = await _exporter
-                        .ExportAsync(new ExportRequest(composed.FilePath, format, destinationDirectory, baseName, canvas), cancellationToken)
+                        .ExportAsync(new ExportRequest(output.FilePath, format, destinationDirectory, baseName, canvas), cancellationToken)
                         .ConfigureAwait(false);
                 }
 
                 results.Add(new FormatExportResult(format, result));
                 if (result is { Succeeded: true, FilePath: { } path })
                 {
-                    var exported = new ExportedFile(format, path, _timeProvider.GetUtcNow());
+                    var exported = new ExportedFile(format, path, _timeProvider.GetUtcNow()) { Version = output.Version };
                     Mutate(s => s.SessionId == sessionId ? s with { Exports = [.. s.Exports, exported] } : null);
                     _logger.LogInformation("Đã xuất {Format} cho phiên {SessionId}", format, sessionId);
                 }
@@ -457,6 +694,7 @@ public sealed class PhotoSessionService
                 }
             }
 
+            await PersistCurrentAsync(CancellationToken.None).ConfigureAwait(false);
             return results;
         }
         finally
@@ -491,6 +729,23 @@ public sealed class PhotoSessionService
 
         return await _previewRenderer
             .RenderPreviewAsync(composed.FilePath, mirror: false, maxWidthPixels, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ảnh xem trước thu nhỏ cho bộ lọc <paramref name="filter"/>, tạo từ ảnh chụp đầu tiên đang chọn của phiên
+    /// bằng đúng thuật toán màu của Photo Composer.
+    /// </summary>
+    public async Task<byte[]?> GetFilterPreviewAsync(ColorFilter filter, int maxWidthPixels, CancellationToken cancellationToken = default)
+    {
+        var photo = Current?.Slots.FirstOrDefault(p => p is not null);
+        if (photo is null)
+        {
+            return null;
+        }
+
+        return await _previewRenderer
+            .RenderPreviewAsync(photo.OriginalFilePath, photo.Mirrored, maxWidthPixels, filter, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -545,9 +800,21 @@ public sealed class PhotoSessionService
             var slots = s.Slots.ToArray();
             slots[photo.Position] = photo;
             assigned = true;
+
+            // Ảnh mới thay ảnh cũ: vùng cắt thủ công chỉnh cho ảnh cũ không còn ý nghĩa → các ô dùng ảnh này về Auto Crop.
+            var crops = s.SlotCrops.ToArray();
+            for (var i = 0; i < crops.Length && s.Template is not null; i++)
+            {
+                if (s.Template.Slots[i].PhotoIndex == photo.Position)
+                {
+                    crops[i] = null;
+                }
+            }
+
             return s with
             {
                 Slots = slots,
+                SlotCrops = crops,
                 Photos = [.. s.Photos, photo],
                 PendingPositions = s.PendingPositions.Where(p => p != photo.Position).ToArray(),
 
@@ -566,8 +833,8 @@ public sealed class PhotoSessionService
             }
             : null);
 
-    private void RestoreAfterComposition(Guid sessionId, PhotoSessionState previousState, bool failed) =>
-        Mutate(s => s.SessionId == sessionId && s.State == PhotoSessionState.Composing
+    private void RestoreAfterComposition(Guid sessionId, long generation, PhotoSessionState previousState, bool failed) =>
+        Mutate(s => s.SessionId == sessionId && s.State == PhotoSessionState.Composing && _composeGeneration == generation
             ? s with { State = previousState, LastCompositionFailed = failed }
             : null);
 
@@ -613,17 +880,32 @@ public sealed class PhotoSessionService
         }
     }
 
-    private bool EndCurrentLocked()
+    /// <summary>Kết thúc phiên hiện tại dưới khóa; trả về ảnh chụp phiên đã kết thúc (null nếu không có gì thay đổi).</summary>
+    private PhotoSession? EndCurrentLocked()
     {
-        if (_current is null || _current.IsEnded)
+        if (_current is null)
         {
-            return false;
+            return null;
         }
 
-        var endState = _current.Exports.Count > 0 ? PhotoSessionState.Completed : PhotoSessionState.Cancelled;
+        if (_current.IsArchived)
+        {
+            // Phiên mở lại để xem/chỉnh: chỉ đóng, dữ liệu đã lưu giữ nguyên.
+            var closed = _current;
+            _current = null;
+            _logger.LogInformation("Đóng phiên đã lưu {SessionId}", closed.SessionId);
+            return closed;
+        }
+
+        if (_current.IsEnded)
+        {
+            return null;
+        }
+
+        var endState = _current.Exports.Count > 0 || _current.Versions.Count > 0 ? PhotoSessionState.Completed : PhotoSessionState.Cancelled;
         _logger.LogInformation("Kết thúc phiên {SessionId} với trạng thái {State}", _current.SessionId, endState);
         _current = _current with { State = endState };
-        return true;
+        return _current;
     }
 
     private void RaiseSessionChanged()

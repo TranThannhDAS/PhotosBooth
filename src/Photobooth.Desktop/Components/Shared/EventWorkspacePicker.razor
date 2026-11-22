@@ -1,0 +1,197 @@
+@implements IDisposable
+@inject EventWorkspaceService Workspaces
+@inject PhotoSessionService Sessions
+@inject WindowsShellService Shell
+@inject ILogger<EventWorkspacePicker> Logger
+
+@*
+    Chọn/tạo/mở lại sự kiện (Event Workspace) bằng hộp thoại chọn thư mục của Windows — không gõ đường dẫn.
+    Dùng ở màn khởi động và trong Admin.
+*@
+<div class="event-picker">
+    @if (Workspaces.Status is { Workspace: { } workspace } status)
+    {
+        <div class="event-current">
+            <p class="event-label">Sự kiện hiện tại</p>
+            @if (AllowRename)
+            {
+                <div class="event-name-row">
+                    <label class="visually-hidden" for="event-name">Tên sự kiện</label>
+                    <input id="event-name" class="text-input" type="text" maxlength="120" @bind="_name" @bind:event="oninput" disabled="@Busy" />
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(Busy || !CanSaveName)" @onclick="SaveNameAsync">Lưu và áp dụng</button>
+                </div>
+            }
+            else
+            {
+                <p class="event-name">@workspace.Info.Name</p>
+            }
+            <p class="event-path" title="@workspace.RootDirectory">@workspace.RootDirectory</p>
+            @if (status.FreeBytes is { } free)
+            {
+                <p class="event-meta">Dung lượng trống: @FormatBytes(free)</p>
+            }
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(Workspaces.Status.Folder))
+    {
+        <StatusMessage Status="@(new StatusInfo(StatusKind.Error, Workspaces.Status.Problem ?? "Thư mục sự kiện không dùng được.", Workspaces.Status.Folder))">
+            <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="RecheckAsync">Thử lại</button>
+        </StatusMessage>
+    }
+    else
+    {
+        <StatusMessage Status="@(new StatusInfo(StatusKind.Info, "Chưa chọn sự kiện.", "Chọn hoặc tạo một thư mục riêng cho sự kiện này để lưu toàn bộ ảnh."))" />
+    }
+
+    @if (_pending is { } pending)
+    {
+        <div class="event-new">
+            <p class="event-label">Tạo sự kiện mới trong thư mục</p>
+            <p class="event-path" title="@pending">@pending</p>
+            <label class="event-label" for="new-event-name">Tên sự kiện</label>
+            <input id="new-event-name" class="text-input" type="text" maxlength="120" @bind="_newName" @bind:event="oninput" disabled="@Busy" />
+            <div class="event-actions">
+                <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => _pending = null">Hủy</button>
+                <button type="button" class="btn btn-primary" disabled="@(Busy || string.IsNullOrWhiteSpace(_newName))" @onclick="CreateAsync">Tạo sự kiện</button>
+            </div>
+        </div>
+    }
+
+    @if (_message is not null)
+    {
+        <StatusMessage Status="@_message" />
+    }
+
+    <div class="event-actions">
+        <button type="button" class="btn btn-secondary" disabled="@(Busy || Locked)" @onclick="PickAsync">
+            @(Workspaces.Current is null ? "Chọn thư mục sự kiện" : "Đổi sự kiện khác")
+        </button>
+        @if (Workspaces.Current is { } current)
+        {
+            <button type="button" class="btn btn-ghost" disabled="@Busy" @onclick="() => OpenInExplorer(current.RootDirectory)">Mở thư mục</button>
+        }
+    </div>
+    @if (Locked)
+    {
+        <p class="panel-hint">Không thể đổi sự kiện khi đang có phiên chụp chưa kết thúc.</p>
+    }
+</div>
+
+@code {
+    private string? _pending;
+    private string _newName = string.Empty;
+    private string _name = string.Empty;
+    private StatusInfo? _message;
+    private bool _busy;
+
+    /// <summary>Cho phép đổi tên sự kiện (Admin).</summary>
+    [Parameter]
+    public bool AllowRename { get; set; }
+
+    private bool Busy => _busy;
+
+    /// <summary>Không đổi sự kiện khi một phiên chụp đang ghi dữ liệu.</summary>
+    private bool Locked => Sessions.HasActiveSession;
+
+    private bool CanSaveName =>
+        Workspaces.Current is { } w && !string.IsNullOrWhiteSpace(_name) && !string.Equals(_name.Trim(), w.Info.Name, StringComparison.Ordinal);
+
+    protected override void OnInitialized()
+    {
+        Workspaces.Changed += OnWorkspaceChanged;
+        _name = Workspaces.Current?.Info.Name ?? string.Empty;
+    }
+
+    private async Task PickAsync()
+    {
+        _message = null;
+        var folder = await FolderPicker.PickAsync(
+            "Chọn hoặc tạo thư mục cho sự kiện",
+            Workspaces.Current?.RootDirectory is { } root ? Path.GetDirectoryName(root) : null);
+        if (folder is null)
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var inspected = await Workspaces.InspectAsync(folder);
+            if (inspected.Problem is not null)
+            {
+                _message = new StatusInfo(StatusKind.Error, inspected.Problem, folder);
+            }
+            else if (inspected.IsNewEvent)
+            {
+                // Thư mục chưa phải sự kiện: xác nhận tên trước khi tạo event.json.
+                _pending = folder;
+                _newName = Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
+            }
+            else
+            {
+                await ApplyResultAsync(await Workspaces.OpenAsync(folder), "Đã mở lại sự kiện.");
+            }
+        });
+    }
+
+    private Task CreateAsync() => RunAsync(async () =>
+    {
+        if (_pending is { } folder)
+        {
+            await ApplyResultAsync(await Workspaces.OpenAsync(folder, _newName), "Đã tạo sự kiện mới.");
+            _pending = null;
+        }
+    });
+
+    private Task SaveNameAsync() => RunAsync(async () =>
+        await ApplyResultAsync(await Workspaces.RenameAsync(_name), "Đã lưu tên sự kiện."));
+
+    private Task RecheckAsync() => RunAsync(async () =>
+        await ApplyResultAsync(await Workspaces.RecheckAsync(), "Thư mục sự kiện đã sẵn sàng."));
+
+    private Task ApplyResultAsync(WorkspaceStatus status, string successTitle)
+    {
+        _message = status.IsReady
+            ? new StatusInfo(StatusKind.Success, successTitle)
+            : new StatusInfo(StatusKind.Error, status.Problem ?? "Thư mục sự kiện không dùng được.", status.Folder);
+        _name = Workspaces.Current?.Info.Name ?? _name;
+        return Task.CompletedTask;
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        if (_busy || Locked)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Logger.LogError(ex, "Lỗi khi chọn sự kiện");
+            _message = new StatusInfo(StatusKind.Error, "Không mở được thư mục sự kiện.", "Kiểm tra ổ đĩa và quyền truy cập.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OpenInExplorer(string folder)
+    {
+        if (!Shell.OpenFolder(folder))
+        {
+            _message = new StatusInfo(StatusKind.Warning, "Không mở được thư mục.", "Thư mục có thể đã bị di chuyển hoặc xóa.");
+        }
+    }
+
+    private static string FormatBytes(long bytes) =>
+        bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.#} GB" : $"{bytes / (double)(1L << 20):0} MB";
+
+    private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Workspaces.Changed -= OnWorkspaceChanged;
+}

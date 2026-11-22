@@ -6,7 +6,11 @@
 
 ## 1. Vị trí và cách thêm template
 
-Mỗi template là **một thư mục** trong `src/Photobooth.Desktop/Templates/` (khi chạy: `Templates/` cạnh `Photobooth.exe`):
+**Template Library (Phase 3, đã chốt 19/11/2026):** ứng dụng dùng thư viện template **dùng chung cho mọi sự kiện** tại `%LOCALAPPDATA%\Photobooth\Templates` (ghi được, không nằm trong Event Workspace). Lần chạy đầu tiên, thư viện được tạo bằng cách **chép một lần** các template đi kèm ứng dụng (`src/Photobooth.Desktop/Templates/`, khi chạy là `Templates/` cạnh `Photobooth.exe`). Thư viện đã tồn tại thì không bao giờ bị chép đè; template mẫu mới của bản cập nhật sau phải được nhập bằng Template Manager.
+
+Quản trị viên tạo/sửa template bằng **Admin › Khung ảnh** (Template Manager + Visual Template Editor, mục 11), không cần viết JSON. Vẫn có thể thêm thư mục bằng tay rồi bấm "Tải lại".
+
+Mỗi template là **một thư mục** trong thư viện:
 
 ```text
 Templates/
@@ -19,19 +23,22 @@ Templates/
         └── logo.png
 ```
 
-Thêm template mới:
+Thêm template mới bằng tay (không dùng Editor):
 
-1. Tạo thư mục mới (nên đặt tên thư mục trùng `id`; khác tên chỉ bị cảnh báo).
+1. Tạo thư mục mới trong thư viện (nên đặt tên thư mục trùng `id`; khác tên chỉ bị cảnh báo).
 2. Tạo `template.json` theo cấu trúc bên dưới; đặt ảnh trang trí trong thư mục đó.
-3. Khởi động lại ứng dụng. **Không cần sửa code.**
-4. Xem kết quả kiểm tra trong log `%LOCALAPPDATA%\Photobooth\Logs\photobooth-yyyyMMdd.log` (dòng `JsonTemplateCatalog`).
+3. Bấm "Tải lại" ở Admin › Khung ảnh (hoặc khởi động lại ứng dụng). **Không cần sửa code.**
+4. Lỗi/cảnh báo hiện ngay trên thẻ template và trong log `%LOCALAPPDATA%\Photobooth\Logs\photobooth-yyyyMMdd.log`.
+
+Ngoài các thư mục template, thư viện có file `library.json` (`{ "disabledTemplates": [...] }`) lưu template nào đang **tắt trên Kiosk**. Đây là trạng thái của thư viện, **không** thuộc cấu trúc template. Thư mục bắt đầu bằng `.` (ví dụ `.staging` khi đang nhập) bị bỏ qua.
 
 Quy tắc:
 
 - Template **lỗi** (Error) bị bỏ qua, không làm dừng ứng dụng. Template có **cảnh báo** (Warning) vẫn được dùng.
-- File `*.json` đặt trực tiếp trong `Templates/` (cấu trúc cũ) **không được nạp** và chỉ được báo trong log. Ứng dụng không sửa, xóa hay chuyển đổi các file này.
-- Ứng dụng **không bao giờ ghi** vào `template.json`.
-- Template chỉ được chọn khi số ảnh cần chụp (`photoIndex` lớn nhất + 1) bằng cấu hình `photosPerSession` (mặc định 4).
+- File `*.json` đặt trực tiếp trong `Templates/` đi kèm ứng dụng (cấu trúc cũ) **không được nạp** và không được chép vào thư viện. Ứng dụng không sửa, xóa hay chuyển đổi các file này.
+- Chỉ Template Manager/Editor ghi `template.json`, và chỉ sau khi template **hợp lệ hoàn toàn** (kể cả asset); ghi theo kiểu tạm-rồi-đổi-tên nên lỗi giữa chừng không làm hỏng bản đang có. Việc nạp template, chụp, ghép, Manual Crop không bao giờ ghi vào `template.json`.
+- Phiên chụp dùng **snapshot** template riêng trong Event Workspace, nên sửa/xóa template trong thư viện không làm đổi phiên đã chụp.
+- **Số ảnh cần chụp do template quyết định** = `photoIndex` lớn nhất + 1 (không phải số ô). Chọn template 1 ảnh thì chụp 1 ảnh, 6 ảnh thì chụp 6 ảnh (BUSINESS_RULES.md mục 6.1). Template cần nhiều ảnh hơn giới hạn an toàn `capture.maxPhotosPerSession` (mặc định 10) vẫn hiển thị nhưng không chọn được.
 - Có thể sao chép nguyên thư mục template sang máy khác: mọi đường dẫn asset đều tương đối với thư mục template.
 
 ## 2. Quy ước chung
@@ -76,7 +83,7 @@ Ví dụ: 1200×1800 px ở 300 DPI = 4×6 inch → trang PDF 288×432 point.
 | Thuộc tính | Bắt buộc | Mặc định | Ý nghĩa / ràng buộc |
 |---|---|---|---|
 | `id` | Không | không có | Mã phần tử |
-| `photoIndex` | Có | — | Ảnh nguồn theo thứ tự chụp (0 = ảnh đầu tiên), 0..9. **Nhiều ô có thể dùng chung một ảnh** |
+| `photoIndex` | Có | — | Ảnh nguồn theo thứ tự chụp (0 = ảnh đầu tiên), 0..19. **Nhiều ô có thể dùng chung một ảnh**. Các giá trị dùng trong template phải **liên tục từ 0** (`[0, 0, 1]` hợp lệ → 2 ảnh; `[0, 2]` lỗi vì thiếu 1) |
 | `x`, `y` | Có | — | Góc trên trái của ô |
 | `width`, `height` | Có | — | Phải > 0 |
 | `cornerRadius` | Không | `0` | ≥ 0. Lớn hơn nửa cạnh ngắn → cảnh báo và tự giới hạn khi vẽ |
@@ -186,8 +193,8 @@ Khi nạp, mỗi vấn đề được báo kèm **vị trí thuộc tính**, ví
 
 | Mức | Ví dụ |
 |---|---|
-| **Lỗi** (template không được dùng) | JSON sai cú pháp (có số dòng/cột); thiếu thuộc tính bắt buộc; thuộc tính lạ; `type`/`fit`/`textAlign` không hỗ trợ; canvas hoặc DPI ngoài giới hạn; ô/trang trí có kích thước ≤ 0; `photoIndex` ngoài 0..9; `focalPoint` ngoài 0..1; `cornerRadius` âm; `zIndex` ngoài −1000..1000; mã màu sai; `id` trùng; asset không an toàn, không tồn tại hoặc hỏng; trùng `id` template |
-| **Cảnh báo** (vẫn dùng được) | Phần tử tràn hoặc nằm ngoài canvas; `cornerRadius` lớn hơn nửa cạnh ngắn; cỡ chữ lớn hơn chiều cao khung chữ; font không có trên máy; có ảnh được chụp nhưng không ô nào dùng; `id` khác tên thư mục |
+| **Lỗi** (template không được dùng) | JSON sai cú pháp (có số dòng/cột); thiếu thuộc tính bắt buộc; thuộc tính lạ; `type`/`fit`/`textAlign` không hỗ trợ; canvas hoặc DPI ngoài giới hạn; ô/trang trí có kích thước ≤ 0; `photoIndex` ngoài 0..19 hoặc không liên tục từ 0; `focalPoint` ngoài 0..1; `cornerRadius` âm; `zIndex` ngoài −1000..1000; mã màu sai; `id` trùng; asset không an toàn, không tồn tại hoặc hỏng; trùng `id` template |
+| **Cảnh báo** (vẫn dùng được) | Phần tử tràn hoặc nằm ngoài canvas; `cornerRadius` lớn hơn nửa cạnh ngắn; cỡ chữ lớn hơn chiều cao khung chữ; font không có trên máy; `id` khác tên thư mục |
 
 ## 10. Ví dụ hoàn chỉnh
 
@@ -215,4 +222,31 @@ Template `party-overlay` đi kèm ứng dụng: ảnh nền, 4 ô ảnh, khung P
 }
 ```
 
-Các template mẫu khác: `strip-four` (hai dải 4 ảnh, mỗi ảnh dùng ở 2 ô), `grid-2x2` (lưới 2×2, hình trang trí `zIndex` âm tràn mép), `hero-three` (ảnh lớn có `focalPoint`, 3 ảnh nhỏ).
+Các template mẫu khác: `single-photo` (1 ảnh lớn), `strip-four` (hai dải 4 ảnh, mỗi ảnh dùng ở 2 ô), `grid-2x2` (lưới 2×2, hình trang trí `zIndex` âm tràn mép), `hero-three` (ảnh lớn có `focalPoint`, 3 ảnh nhỏ).
+
+## 11. Template Manager và Visual Template Editor (Phase 3)
+
+Cả hai chỉ đọc/ghi **đúng cấu trúc JSON ở trên**: không có định dạng thứ hai, không thêm `schemaVersion`, `photoCount` hay thuộc tính riêng của Editor.
+
+**Template Manager** (Admin › Khung ảnh):
+
+| Thao tác | Hành vi |
+|---|---|
+| Tạo | Tên, mô tả, khổ gợi ý 2×6 / 4×6 / 6×4 inch hoặc tùy chỉnh; pixel = inch × DPI (4×6 inch ở 300 DPI = 1200×1800 px). Id tạo từ tên (bỏ dấu, `a-z0-9-`, thêm `-2`, `-3`… nếu trùng). Có sẵn **một ô ảnh** `photoIndex 0` gần kín canvas để template hợp lệ ngay |
+| Sao chép | Id mới (`…-ban-sao`), tên "… (bản sao)", chép `template.json`, `thumbnail.png` và **bản riêng** của các asset đang dùng; bản gốc không đổi |
+| Đổi tên | Chỉ đổi `name`/`description`; `id` và thư mục giữ nguyên |
+| Xóa | Có hộp thoại xác nhận; xóa hẳn thư mục của template đó (không có thùng rác). Không ảnh hưởng template khác (asset không dùng chung) và phiên đã lưu (snapshot) |
+| Nhập | Từ thư mục chứa `template.json` hoặc gói `.zip` (`template.json` ở gốc gói hoặc trong một thư mục con duy nhất). Kiểm tra đầy đủ như khi nạp; lỗi → không ghi gì. Id trùng → tự đặt id mới, không ghi đè. Chỉ chép `template.json` (ghi lại từ model), `thumbnail.png` và asset đang dùng. Gói `.zip`: từ chối đường dẫn tuyệt đối/`..`/ra ngoài thư mục đích, giới hạn 500 tệp và 200 MB sau giải nén |
+| Xuất | Gói `.zip`: `template.json`, `thumbnail.png` (nếu có), asset đang dùng — nhập lại được |
+| Bật/tắt | Template tắt không hiện ở màn chọn khung của Kiosk nhưng vẫn sửa được. Template **mới tạo/sao chép/nhập mặc định tắt** cho đến khi quản trị viên bật |
+
+**Visual Template Editor:**
+
+- Canvas HTML chỉ để thao tác; phần tử đặt theo **% của canvas template**, kéo/đổi kích thước được đổi về pixel canvas (`CanvasGeometry.ToCanvasDelta` = độ dời CSS ÷ tỉ lệ hiển thị), nên zoom và kích thước cửa sổ không làm đổi tọa độ lưu. Không lưu tọa độ màn hình.
+- Thêm ô ảnh, chữ, hình chữ nhật, elip, ảnh/PNG. Ảnh thêm vào được chép vào `assets/` của template với tên mới không trùng (`logo-3f9a2c1b.png`), dùng đường dẫn tương đối. Ảnh thêm trong lúc chỉnh nhưng không có trong bản đã lưu được dọn khi lưu/đóng; asset có từ trước không bị xóa.
+- **Lớp:** danh sách lớp chính là thứ tự vẽ của Photo Composer (mục 6). Khi lưu, ô ảnh và trang trí được ghi theo thứ tự lớp và `zIndex` được tính lại tối thiểu để `zIndex`/quy tắc "cùng zIndex: ô ảnh trước, rồi theo thứ tự khai báo" cho đúng thứ tự đó (giữ nguyên giá trị cũ khi có thể). Nhập `zIndex` trực tiếp thì lớp được xếp lại theo đúng quy tắc vẽ. Nền canvas luôn dưới cùng.
+- `photoIndex` sửa trực tiếp; số ảnh = `photoIndex` lớn nhất + 1, cho phép nhiều ô dùng chung. Thiếu chỉ số trung gian → báo lỗi và có nút "Đánh lại photoIndex liên tục" (giữ các ô đang dùng chung).
+- `focalPoint` là cấu hình **mặc định của template**; Manual Crop của phiên không bao giờ được ghi vào template.
+- Undo/Redo trong phiên chỉnh (tối đa 100 bước); cảnh báo khi đóng mà chưa lưu.
+- **Lưu:** kiểm tra bằng `TemplateValidator` + kiểm tra asset/font của Engine; có lỗi thì không ghi gì. Sau khi lưu, `thumbnail.png` được **tạo lại** bằng Photo Composer (ô ảnh đánh số), thay ảnh đại diện cũ.
+- **Xem thử:** render bằng chính `TemplateRenderer` của Photo Composer với ảnh mẫu 16:9 tự sinh (hoặc ô đánh số), không cần webcam. Canvas HTML là gần đúng (chữ không tự thu nhỏ, font hiển thị bằng trình duyệt); ảnh "Xem thử" mới là kết quả chuẩn.

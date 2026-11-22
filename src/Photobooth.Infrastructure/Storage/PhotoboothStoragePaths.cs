@@ -1,11 +1,17 @@
+using System.Collections.Concurrent;
+
 namespace Photobooth.Infrastructure.Storage;
 
 /// <summary>
 /// Vị trí dữ liệu cục bộ của ứng dụng. Mặc định: %LOCALAPPDATA%\Photobooth
 /// (không ghi dữ liệu vào thư mục cài đặt/build).
+/// Thư mục của từng phiên chụp nằm trong Event Workspace và được đăng ký qua <see cref="RegisterSessionDirectory"/>.
 /// </summary>
 public sealed class PhotoboothStoragePaths
 {
+    private readonly ConcurrentDictionary<Guid, string> _sessionDirectories = new();
+    private readonly ConcurrentDictionary<string, byte> _allowedRoots = new(StringComparer.OrdinalIgnoreCase);
+
     public PhotoboothStoragePaths(string rootDirectory)
     {
         if (string.IsNullOrWhiteSpace(rootDirectory) || !Path.IsPathFullyQualified(rootDirectory))
@@ -28,8 +34,38 @@ public sealed class PhotoboothStoragePaths
     public static PhotoboothStoragePaths CreateDefault() =>
         new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Photobooth"));
 
+    /// <summary>
+    /// Thư mục phiên: thư mục đã đăng ký trong Event Workspace; phiên chưa đăng ký (chỉ dùng trong kiểm thử/dữ liệu cũ)
+    /// nằm dưới <see cref="SessionsDirectory"/>.
+    /// </summary>
     public string GetSessionDirectory(Guid sessionId) =>
-        Path.Combine(SessionsDirectory, sessionId.ToString("N"));
+        _sessionDirectories.TryGetValue(sessionId, out var directory)
+            ? directory
+            : Path.Combine(SessionsDirectory, sessionId.ToString("N"));
+
+    /// <summary>Gắn phiên với thư mục của nó trong Event Workspace (cố định suốt vòng đời phiên).</summary>
+    public void RegisterSessionDirectory(Guid sessionId, string directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Path.IsPathFullyQualified(directory))
+        {
+            throw new ArgumentException("Thư mục phiên phải là đường dẫn tuyệt đối.", nameof(directory));
+        }
+
+        _sessionDirectories[sessionId] = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+    }
+
+    /// <summary>Cho phép đọc ảnh trong một Event Workspace (thư mục gốc của sự kiện).</summary>
+    public void AllowRoot(string directory)
+    {
+        if (!string.IsNullOrWhiteSpace(directory) && Path.IsPathFullyQualified(directory))
+        {
+            _allowedRoots.TryAdd(Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)), 0);
+        }
+    }
+
+    /// <summary>File nháp (bản ghép tạm khi đang chỉnh sửa), tách khỏi phiên bản thành phẩm đã xác nhận.</summary>
+    public string GetDraftsDirectory(Guid sessionId) =>
+        Path.Combine(GetSessionDirectory(sessionId), "Drafts");
 
     public string GetOriginalsDirectory(Guid sessionId) =>
         Path.Combine(GetSessionDirectory(sessionId), "Originals");
@@ -41,7 +77,10 @@ public sealed class PhotoboothStoragePaths
     /// <summary>File cấu hình tùy chọn (không bắt buộc tồn tại).</summary>
     public string SettingsFilePath => Path.Combine(RootDirectory, "settings.json");
 
-    /// <summary>Kiểm tra đường dẫn nằm trong thư mục dữ liệu ứng dụng (chống path traversal).</summary>
+    /// <summary>
+    /// Kiểm tra đường dẫn nằm trong thư mục dữ liệu ứng dụng, một Event Workspace đã mở hoặc thư mục phiên đã đăng ký
+    /// (chống path traversal / đọc file tùy ý).
+    /// </summary>
     public bool IsInsideRoot(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
@@ -50,8 +89,12 @@ public sealed class PhotoboothStoragePaths
         }
 
         var fullPath = Path.GetFullPath(path);
-        var rootWithSeparator = RootDirectory + Path.DirectorySeparatorChar;
-        return fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
+        return IsUnder(fullPath, RootDirectory)
+            || _allowedRoots.Keys.Any(root => IsUnder(fullPath, root))
+            || _sessionDirectories.Values.Any(root => IsUnder(fullPath, root));
     }
+
+    private static bool IsUnder(string fullPath, string root) =>
+        fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 }
 

@@ -1,0 +1,190 @@
+@implements IDisposable
+@inject AdminAccessService Admin
+@inject EventGalleryService Gallery
+@inject EventWorkspaceService Workspaces
+@inject ILogger<AdminScreen> Logger
+
+@*
+    Chế độ quản trị (chỉ vào được từ màn khởi động bằng PIN): quản lý sự kiện, thư viện ảnh thành phẩm
+    của sự kiện hiện tại (xem/chỉnh sửa lại/xuất/in lại), thư viện template (Template Manager/Editor) và máy in.
+    Khách ở Kiosk không truy cập được.
+*@
+<div class="screen admin">
+    <header class="screen-header">
+        <span class="brand-name">
+            <BrandLogo Size="34" />
+            <span>Quản trị @(Workspaces.Current is { } w ? $"— {w.Info.Name}" : null)</span>
+        </span>
+        <nav class="admin-tabs" aria-label="Mục quản trị">
+            @foreach (var tab in Enum.GetValues<AdminTab>())
+            {
+                var value = tab;
+                <button type="button" class="chip @(_tab == value ? "is-active" : null)" disabled="@Busy"
+                        aria-current="@(_tab == value ? "page" : null)" @onclick="() => SelectTab(value)">
+                    @TabLabel(value)
+                </button>
+            }
+        </nav>
+        <button type="button" class="btn btn-ghost" disabled="@Busy" @onclick="Exit">Thoát quản trị</button>
+    </header>
+
+    <main class="screen-body @(_tab == AdminTab.Templates && _editingTemplate is not null ? "is-editor" : null)">
+        @if (_error is not null)
+        {
+            <StatusMessage Status="@_error" />
+        }
+
+        @switch (_tab)
+        {
+            case AdminTab.Event:
+                <div class="admin-narrow">
+                    <EventWorkspacePicker AllowRename="true" />
+                </div>
+                break;
+
+            case AdminTab.Gallery when _archived is { } archived && _editing:
+                <SessionEditorPanel OnDone="StopEditing" />
+                break;
+
+            case AdminTab.Gallery when _archived is { } archived:
+                <SessionDetailPanel Archived="archived" OnBack="CloseSession" OnEdit="StartEditing" />
+                break;
+
+            case AdminTab.Gallery:
+                <GalleryPanel OnOpen="OpenSessionAsync" Opening="@_opening" @bind-EventFilter="_galleryFilter" />
+                break;
+
+            case AdminTab.Templates when _editingTemplate is { } templateKey:
+                <TemplateEditorPanel @key="templateKey" TemplateKey="@templateKey" OnClose="() => _editingTemplate = null" />
+                break;
+
+            case AdminTab.Templates:
+                <TemplateManagerPanel OnEdit="key => _editingTemplate = key" />
+                break;
+
+            case AdminTab.Printer:
+                <div class="admin-narrow">
+                    <PrinterPanel />
+                </div>
+                break;
+        }
+    </main>
+</div>
+
+@code {
+    private enum AdminTab
+    {
+        Event,
+        Gallery,
+        Templates,
+        Printer,
+    }
+
+    private AdminTab _tab = AdminTab.Event;
+    private ArchivedSession? _archived;
+    private bool _editing;
+    private string? _editingTemplate;
+
+    // Bộ lọc sự kiện của Thư viện ảnh: giữ khi mở rồi đóng một phiên.
+    private string? _galleryFilter;
+    private bool _opening;
+    private StatusInfo? _error;
+
+    protected override void OnInitialized()
+    {
+        Workspaces.Changed += OnWorkspaceChanged;
+        if (Workspaces.Current is not null)
+        {
+            _tab = AdminTab.Gallery;
+        }
+    }
+
+    private static string TabLabel(AdminTab tab) => tab switch
+    {
+        AdminTab.Event => "Sự kiện",
+        AdminTab.Gallery => "Thư viện ảnh",
+        AdminTab.Templates => "Khung ảnh",
+        _ => "Máy in",
+    };
+
+    /// <summary>Đang chỉnh sửa (ảnh hoặc template): khóa chuyển mục/thoát để không mất thay đổi.</summary>
+    private bool Busy => _editing || _editingTemplate is not null;
+
+    private void SelectTab(AdminTab tab)
+    {
+        _error = null;
+        if (tab != AdminTab.Gallery)
+        {
+            CloseSession();
+        }
+
+        _tab = tab;
+    }
+
+    private async Task OpenSessionAsync(ArchivedSessionSummary summary)
+    {
+        if (_opening)
+        {
+            return;
+        }
+
+        _opening = true;
+        _error = null;
+        try
+        {
+            _archived = await Gallery.OpenAsync(summary.SessionKey, summary.EventKey);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or DirectoryNotFoundException or IOException or UnauthorizedAccessException or InvalidOperationException or Photobooth.Application.Events.EventWorkspaceUnavailableException)
+        {
+            Logger.LogWarning(ex, "Không mở được phiên đã lưu");
+            _error = new StatusInfo(StatusKind.Error, "Không mở được phiên này.", "Dữ liệu phiên bị thiếu hoặc hỏng; các phiên khác không bị ảnh hưởng.");
+        }
+        finally
+        {
+            _opening = false;
+        }
+    }
+
+    private void StartEditing(int? version)
+    {
+        if (version is { } v && !Sessions.BeginEditFromVersion(v))
+        {
+            _error = new StatusInfo(StatusKind.Warning, "Không thể chỉnh sửa phiên bản này.");
+            return;
+        }
+
+        _error = null;
+        _editing = true;
+    }
+
+    private void StopEditing() => _editing = false;
+
+    private void CloseSession()
+    {
+        _editing = false;
+        _archived = null;
+        Gallery.Close();
+    }
+
+    private void Exit()
+    {
+        CloseSession();
+        Admin.Lock();
+    }
+
+    [Inject]
+    private PhotoSessionService Sessions { get; set; } = default!;
+
+    private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = InvokeAsync(() =>
+    {
+        // Đổi sự kiện: đóng phiên đang xem của sự kiện cũ để không lẫn dữ liệu.
+        if (_archived is not null && !_editing)
+        {
+            CloseSession();
+        }
+
+        StateHasChanged();
+    });
+
+    public void Dispose() => Workspaces.Changed -= OnWorkspaceChanged;
+}

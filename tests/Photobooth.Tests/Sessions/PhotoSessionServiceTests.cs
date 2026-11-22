@@ -4,10 +4,12 @@ using Photobooth.Application.Composition;
 using Photobooth.Application.Export;
 using Photobooth.Application.Photos;
 using Photobooth.Application.Sessions;
+using Photobooth.Application.Templates;
 using Photobooth.Infrastructure.Export;
 using Photobooth.Infrastructure.Imaging;
 using Photobooth.Infrastructure.Storage;
 using Photobooth.Tests.TestSupport;
+using SkiaSharp;
 
 namespace Photobooth.Tests.Sessions;
 
@@ -29,14 +31,13 @@ public sealed class PhotoSessionServiceTests : IDisposable
         IOriginalPhotoStore? store = null,
         CaptureOptions? options = null,
         IPhotoComposer? composer = null) =>
-        new(
-            store ?? new LocalOriginalPhotoStore(_paths),
-            composer ?? new SkiaPhotoComposer(_paths, NullLogger<SkiaPhotoComposer>.Instance),
-            new SkiaImagePreviewRenderer(_paths),
-            new ComposedPhotoExporter(new ExportOptions(), NullLogger<ComposedPhotoExporter>.Instance),
-            options ?? new CaptureOptions(),
-            timeProvider ?? FakeTimeProvider.Immediate(),
-            NullLogger<PhotoSessionService>.Instance);
+        TestSessions.Create(
+            _paths,
+            TestSessions.OpenWorkspace(_paths, Path.Combine(_temp.Path, "Sự kiện")),
+            options,
+            store,
+            composer,
+            timeProvider);
 
     /// <summary>Phiên đã chọn template 4 ảnh và camera sẵn sàng.</summary>
     private PhotoSessionService CreatePreviewingService(TimeProvider? timeProvider = null, IOriginalPhotoStore? store = null, IPhotoComposer? composer = null)
@@ -84,11 +85,10 @@ public sealed class PhotoSessionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CaptureSequence_UsesConfiguredCountdownAndPhotoCount()
+    public async Task CaptureSequence_UsesConfiguredCountdown_IndependentOfPhotoCount()
     {
-        var service = CreateService(options: new CaptureOptions { CountdownSeconds = 5, PhotosPerSession = 2 });
+        var service = CreateService(options: new CaptureOptions { CountdownSeconds = 5 });
         service.StartNewSession();
-        Assert.False(service.SelectTemplate(TestTemplates.FourSlots()));
         Assert.True(service.SelectTemplate(TestTemplates.TwoSlots()));
         service.MarkPreviewReady();
         var progress = new RecordingProgress<CaptureProgress>();
@@ -97,6 +97,174 @@ public sealed class PhotoSessionServiceTests : IDisposable
 
         Assert.Equal(2, result.CapturedCount);
         Assert.Equal([5, 4, 3, 2, 1], progress.Values.Where(p => p.Position == 0 && p.Stage == CaptureStage.Countdown).Select(p => p.SecondsRemaining));
+    }
+
+    // ------------------------------------------------------------ Số ảnh theo template (BR-T01..T07)
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(6)]
+    public async Task CaptureSequence_CapturesExactlyTheTemplatePhotoCount(int photoCount)
+    {
+        var service = CreateService();
+        service.StartNewSession();
+        Assert.Equal(0, service.Current!.RequiredPhotoCount);
+
+        Assert.True(service.SelectTemplate(TestTemplates.WithPhotoIndexes([.. Enumerable.Range(0, photoCount)])));
+        Assert.Equal(photoCount, service.Current!.RequiredPhotoCount);
+        Assert.Equal(Enumerable.Range(0, photoCount), service.Current.PendingPositions);
+        Assert.True(service.MarkPreviewReady());
+        var progress = new RecordingProgress<CaptureProgress>();
+
+        var result = await service.CaptureSequenceAsync(_camera, progress);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(photoCount, result.CapturedCount);
+        Assert.Equal(photoCount, _camera.CaptureCount);
+        Assert.Equal(PhotoSessionState.Reviewing, service.Current!.State);
+        Assert.True(service.Current.AllSlotsFilled);
+        Assert.Equal(photoCount, service.Current.Photos.Count);
+
+        // Tiến trình "Ảnh x/N" theo template.
+        Assert.All(progress.Values, p => Assert.Equal((photoCount, photoCount), (p.PhotoCount, p.ShotCount)));
+        Assert.Equal(Enumerable.Range(1, photoCount), progress.Values.Where(p => p.Stage == CaptureStage.Saved).Select(p => p.ShotNumber));
+    }
+
+    [Fact]
+    public async Task SharedPhotoIndex_CapturesEachSourcePhotoOnce()
+    {
+        var service = CreateService();
+        service.StartNewSession();
+        Assert.True(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 0, 1, 1)));
+        service.MarkPreviewReady();
+
+        var result = await service.CaptureSequenceAsync(_camera, null);
+
+        Assert.Equal(2, result.CapturedCount);
+        Assert.Equal(2, _camera.CaptureCount);
+        Assert.Equal(2, service.Current!.Slots.Count);
+        Assert.Equal(PhotoSessionState.Reviewing, service.Current.State);
+    }
+
+    [Fact]
+    public void ChangingTemplateBeforeCapture_UpdatesPhotoCount()
+    {
+        var service = CreateService();
+        service.StartNewSession();
+
+        Assert.True(service.SelectTemplate(TestTemplates.FourSlots()));
+        Assert.Equal(4, service.Current!.RequiredPhotoCount);
+        Assert.True(service.MarkPreviewReady());
+
+        // Đổi thẳng sang template khác khi chưa có ảnh.
+        Assert.True(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 1, 2)));
+        Assert.Equal(3, service.Current!.RequiredPhotoCount);
+        Assert.Equal([0, 1, 2], service.Current.PendingPositions);
+
+        // Quay lại màn chọn khung rồi chọn template 1 ảnh.
+        Assert.True(service.ReturnToTemplateSelection());
+        Assert.Equal(0, service.Current!.RequiredPhotoCount);
+        Assert.Empty(service.Current.PendingPositions);
+        Assert.True(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0)));
+        Assert.Equal(1, service.Current!.RequiredPhotoCount);
+    }
+
+    [Fact]
+    public async Task ActiveSession_PhotoCountIsNotChangedByTemplateEdits()
+    {
+        var service = CreateService();
+        service.StartNewSession();
+        var template = TestTemplates.WithPhotoIndexes(0, 1, 2);
+        Assert.True(service.SelectTemplate(template));
+        service.MarkPreviewReady();
+
+        // Đối tượng template gốc bị sửa sau khi chọn (ví dụ nạp lại/sửa file): phiên dùng snapshot.
+        ((List<TemplateSlot>)template.Slots).Add(new TemplateSlot { PhotoIndex = 3, X = 10, Y = 400, Width = 100, Height = 100 });
+        Assert.Equal(4, template.RequiredPhotoCount);
+        Assert.Equal(3, service.Current!.RequiredPhotoCount);
+        Assert.Equal(3, service.Current.Template!.Slots.Count);
+
+        // Đã có ảnh: không được đổi sang template có cấu trúc khác.
+        _camera.NextFrame = n => n == 2 ? throw new CameraException(CameraError.CaptureFailed, "x") : new CapturedFrame(TestImages.CreateSplitJpeg(), JpegImageInfo.ContentType);
+        await service.CaptureSequenceAsync(_camera, null);
+        Assert.False(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 1, 2, 3, 4, 5)));
+        Assert.Equal(3, service.Current!.RequiredPhotoCount);
+        Assert.Equal("test-indexes", service.Current.Template!.Id);
+    }
+
+    [Fact]
+    public async Task MissingPhotos_SessionDoesNotComplete_UntilAllCaptured()
+    {
+        var service = CreateService();
+        service.StartNewSession();
+        service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 1, 2));
+        service.MarkPreviewReady();
+        _camera.NextFrame = n => n == 3 ? throw new CameraException(CameraError.CaptureFailed, "x") : new CapturedFrame(TestImages.CreateSplitJpeg(), JpegImageInfo.ContentType);
+
+        var first = await service.CaptureSequenceAsync(_camera, null);
+
+        Assert.False(first.Succeeded);
+        Assert.Equal(2, first.CapturedCount);
+        Assert.Equal(PhotoSessionState.Previewing, service.Current!.State);
+        Assert.False(service.Current.AllSlotsFilled);
+        Assert.Equal([2], service.Current.PendingPositions);
+        Assert.Equal(CompositionOutcome.NotReady, await service.ComposeAsync(ColorFilter.None));
+
+        _camera.NextFrame = _ => new CapturedFrame(TestImages.CreateSplitJpeg(), JpegImageInfo.ContentType);
+        var second = await service.CaptureSequenceAsync(_camera, null);
+
+        Assert.Equal(1, second.CapturedCount);
+        Assert.Equal(PhotoSessionState.Reviewing, service.Current!.State);
+        Assert.True(service.Current.AllSlotsFilled);
+    }
+
+    [Fact]
+    public void TemplatesOverSafetyLimitOrInvalid_CannotStartSession()
+    {
+        var service = CreateService(options: new CaptureOptions { MaxPhotosPerSession = 3 });
+        service.StartNewSession();
+
+        Assert.False(service.IsTemplateSupported(TestTemplates.FourSlots()));
+        Assert.False(service.SelectTemplate(TestTemplates.FourSlots()));
+        Assert.False(service.SelectTemplate(TestTemplates.WithPhotoIndexes()));
+        Assert.False(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 2)));
+        Assert.Null(service.Current!.Template);
+        Assert.True(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 1, 2)));
+    }
+
+    [Fact]
+    public async Task RetakeSharedPhoto_ReplacesOnlyThatPhoto_AndAllItsSlotsUseIt()
+    {
+        SKColor[] colors = [new(220, 20, 20), new(20, 160, 20), new(20, 20, 220)];
+        _camera.NextFrame = n => new CapturedFrame(TestImages.CreateSolid(320, 240, colors[Math.Min(n, 3) - 1], SKEncodedImageFormat.Jpeg), JpegImageInfo.ContentType);
+        var service = CreateService();
+        service.StartNewSession();
+        Assert.True(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 1, 0)));
+        service.MarkPreviewReady();
+        Assert.True((await service.CaptureSequenceAsync(_camera, null)).Succeeded);
+        var oldSecond = service.Current!.Slots[1];
+
+        // Chụp lại ảnh 1 (photoIndex 0) → ảnh thứ 3 (xanh dương) thay thế, ảnh 2 giữ nguyên.
+        Assert.True(service.BeginRetake(0));
+        Assert.Equal([0], service.Current!.PendingPositions);
+        Assert.Equal(1, (await service.CaptureSequenceAsync(_camera, null)).CapturedCount);
+        Assert.Same(oldSecond, service.Current!.Slots[1]);
+        Assert.Equal(3, service.Current.Slots[0]!.Sequence);
+
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ComposeAsync(ColorFilter.None));
+        var composed = service.Current!.Composed!.FilePath;
+        Assert.True(TestImages.IsClose(PixelAtSlot(composed, 0), colors[2]));
+        Assert.True(TestImages.IsClose(PixelAtSlot(composed, 1), colors[1]));
+        Assert.True(TestImages.IsClose(PixelAtSlot(composed, 2), colors[2]));
+
+        static SKColor PixelAtSlot(string file, int slot)
+        {
+            var (x, y) = TestTemplates.SlotCenter(slot);
+            return TestImages.PixelAt(file, x, y);
+        }
     }
 
     [Fact]
@@ -361,7 +529,7 @@ public sealed class PhotoSessionServiceTests : IDisposable
         Assert.Equal(3, Directory.GetFiles(output).Length);
         Assert.Equal(3, service.Current!.Exports.Count);
 
-        Assert.True(service.CompleteSession());
+        Assert.True(await service.CompleteSessionAsync());
         Assert.Equal(PhotoSessionState.Completed, service.Current!.State);
         Assert.All(service.Current.Photos, p => Assert.True(File.Exists(p.OriginalFilePath)));
     }
@@ -389,7 +557,9 @@ public sealed class PhotoSessionServiceTests : IDisposable
         Assert.Equal(ExportError.DirectoryNotFound, results.Single().Result.Error);
         Assert.Equal(PhotoSessionState.Ready, service.Current!.State);
         Assert.Empty(service.Current.Exports);
-        Assert.False(service.CompleteSession());
+
+        // Xuất lỗi không ảnh hưởng: thành phẩm vẫn được lưu vào thư mục sự kiện khi hoàn tất.
+        Assert.True(await service.CompleteSessionAsync());
     }
 
     [Fact]
@@ -410,7 +580,7 @@ public sealed class PhotoSessionServiceTests : IDisposable
         var service = await CreateReviewingServiceAsync();
         var previous = service.Current!;
 
-        var next = service.StartNewSession();
+        var next = service.StartNewSession()!;
 
         Assert.NotEqual(previous.SessionId, next.SessionId);
         Assert.Equal(PhotoSessionState.Created, next.State);
@@ -436,7 +606,8 @@ public sealed class PhotoSessionServiceTests : IDisposable
     public void Constructor_InvalidOptions_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => CreateService(options: new CaptureOptions { CountdownSeconds = 0 }));
-        Assert.Throws<ArgumentOutOfRangeException>(() => CreateService(options: new CaptureOptions { PhotosPerSession = 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CreateService(options: new CaptureOptions { MaxPhotosPerSession = 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CreateService(options: new CaptureOptions { MaxPhotosPerSession = CaptureOptions.AbsoluteMaxPhotosPerSession + 1 }));
         Assert.Throws<ArgumentOutOfRangeException>(() => CreateService(options: new CaptureOptions { JpegQuality = 1.5 }));
     }
 }

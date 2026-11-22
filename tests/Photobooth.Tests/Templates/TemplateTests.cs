@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Photobooth.Application.Composition;
+using Photobooth.Application.Sessions;
 using Photobooth.Application.Templates;
 using Photobooth.Infrastructure.Templates;
 using Photobooth.Tests.TestSupport;
@@ -163,7 +164,7 @@ public class TemplateValidatorTests
 
     [Theory]
     [InlineData(-1)]
-    [InlineData(10)]
+    [InlineData(CaptureOptions.AbsoluteMaxPhotosPerSession)]
     public void Slot_InvalidPhotoIndex_IsError(int photoIndex) =>
         AssertError(WithSlot(FirstSlot with { PhotoIndex = photoIndex }), "slots[0].photoIndex");
 
@@ -201,16 +202,50 @@ public class TemplateValidatorTests
     }
 
     [Fact]
-    public void SamePhotoInManySlots_IsAllowed_UnusedPhotoIsWarning()
+    public void SamePhotoInManySlots_IsAllowed_GapInPhotoIndexIsError()
     {
         var shared = Valid with { Slots = [.. Valid.Slots, Valid.Slots[0] with { X = 20, Y = 700 }] };
         Assert.True(TemplateValidator.Validate(shared).IsValid);
 
         var gap = Valid with { Slots = [FirstSlot, FirstSlot with { PhotoIndex = 2, X = 310 }] };
         var result = TemplateValidator.Validate(gap);
-        Assert.True(result.IsValid);
-        Assert.Contains(result.Warnings, w => w.Message.Contains("photoIndex 1", StringComparison.Ordinal));
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Path == "slots" && e.Message.Contains("photoIndex 1", StringComparison.Ordinal));
     }
+
+    // BR-T01/T03: số ảnh = max(photoIndex)+1, không phải số ô; chỉ số phải liên tục từ 0.
+    [Theory]
+    [InlineData(new[] { 0 }, 1)]
+    [InlineData(new[] { 0, 1 }, 2)]
+    [InlineData(new[] { 0, 1, 2 }, 3)]
+    [InlineData(new[] { 0, 1, 2, 3 }, 4)]
+    [InlineData(new[] { 0, 1, 2, 3, 4, 5 }, 6)]
+    [InlineData(new[] { 0, 0, 1 }, 2)]
+    [InlineData(new[] { 0, 0, 1, 1 }, 2)]
+    [InlineData(new[] { 2, 0, 1, 0 }, 3)]
+    public void RequiredPhotoCount_ComesFromDistinctPhotoIndexes(int[] photoIndexes, int expected)
+    {
+        var template = WithPhotoIndexes(photoIndexes);
+
+        Assert.True(TemplateValidator.Validate(template).IsValid, string.Join(Environment.NewLine, TemplateValidator.Validate(template).Errors));
+        Assert.Equal(expected, template.RequiredPhotoCount);
+    }
+
+    [Theory]
+    [InlineData(new[] { 0, 2 })]
+    [InlineData(new[] { 1 })]
+    [InlineData(new[] { 1, 2, 3 })]
+    [InlineData(new[] { 0, 0, 3 })]
+    public void NonContiguousPhotoIndexes_AreErrors(int[] photoIndexes) =>
+        AssertError(WithPhotoIndexes(photoIndexes), "slots");
+
+    private static PhotoTemplate WithPhotoIndexes(int[] photoIndexes) =>
+        Valid with
+        {
+            Slots = photoIndexes
+                .Select((index, i) => FirstSlot with { Id = $"s{i}", PhotoIndex = index, X = 10 + ((i % 4) * 140), Y = 20 + ((i / 4) * 140), Width = 120, Height = 120 })
+                .ToArray(),
+        };
 
     [Fact]
     public void DuplicateIds_AreErrors()
@@ -402,11 +437,11 @@ public sealed class JsonTemplateCatalogTests : IDisposable
         var templates = await catalog.GetTemplatesAsync();
         var diagnostics = await catalog.GetDiagnosticsAsync();
 
-        Assert.Equal(["grid-2x2", "hero-three", "party-overlay", "strip-four"], templates.Select(t => t.Id));
+        Assert.Equal(["grid-2x2", "hero-three", "party-overlay", "single-photo", "strip-four"], templates.Select(t => t.Id));
+        Assert.Equal([4, 4, 4, 1, 4], templates.Select(t => t.RequiredPhotoCount));
         Assert.All(templates, t =>
         {
             Assert.True(TemplateValidator.Validate(t).IsValid);
-            Assert.Equal(4, t.RequiredPhotoCount);
             Assert.Equal((1200, 1800, 300), (t.Canvas.WidthPixels, t.Canvas.HeightPixels, t.Canvas.Dpi));
         });
 

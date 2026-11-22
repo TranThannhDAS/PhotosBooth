@@ -28,24 +28,27 @@ Người dùng thao tác trực tiếp trên giao diện: bắt đầu, chọn t
 
 ### Người quản lý — Chế độ Admin
 
-Cấu hình camera, thời gian đếm ngược, số ảnh một phiên, template mặc định, thư mục lưu, chất lượng xuất ảnh và xem lịch sử phiên chụp. Trong V1, Admin chỉ quản lý thiết bị và dữ liệu cục bộ.
+Cấu hình camera, thời gian đếm ngược, giới hạn an toàn số ảnh một phiên, template mặc định, thư mục lưu, chất lượng xuất ảnh và xem lịch sử phiên chụp. Trong V1, Admin chỉ quản lý thiết bị và dữ liệu cục bộ.
+Đã có (19/11/2026): chọn sự kiện (Event Workspace) ở màn khởi động, vào Admin bằng PIN; thư viện ảnh thành phẩm của sự kiện, chỉnh sửa lại (Manual Crop/bộ lọc) thành phiên bản mới, xuất và in lại; chọn máy in (giả lập hoặc máy in Windows).
 
 ## 3. Phạm vi chức năng V1
 
 | Nhóm chức năng | Bắt buộc trong V1 | Mô tả |
 |---|---|---|
 | Màn hình chào | Có | Bắt đầu phiên mới, chuyển sang màn hình chọn mẫu |
-| Chọn template | Có | Chọn từ các mẫu đi kèm ứng dụng |
+| Chọn template | Có | Chọn từ các template đang bật trong Template Library |
+| Quản lý/thiết kế template | Có (Phase 3) | Template Manager và Visual Template Editor trong Admin: tạo, sao chép, đổi tên, xóa, nhập/xuất `.zip`, bật/tắt, kéo-thả ô ảnh/chữ/hình/PNG, lớp, xem thử bằng Photo Composer — không cần viết JSON |
 | Webcam preview | Có | Hiển thị hình ảnh trực tiếp từ webcam laptop |
-| Chụp ảnh | Có | Mặc định 4 ảnh/phiên; đếm ngược trước mỗi ảnh |
+| Chụp ảnh | Có | Số ảnh/phiên theo template đã chọn; đếm ngược trước mỗi ảnh |
 | Xem lại/chụp lại | Có | Xem kết quả trung gian; có thể chụp lại theo chính sách đã chọn |
 | Ghép ảnh | Có | Tạo ảnh thành phẩm theo cấu hình template |
 | Lưu ảnh gốc | Có | Không sửa hoặc ghi đè ảnh gốc |
 | Xuất ảnh | Có | JPEG, PNG, PDF lưu cục bộ |
 | Thư viện ảnh | Có | Xem các phiên/ảnh trước đó, mở file xuất |
-| Cài đặt | Có | Camera, số ảnh, thời gian đếm ngược, thư mục lưu, chất lượng xuất |
+| Cài đặt | Có | Camera, giới hạn số ảnh, thời gian đếm ngược, thư mục lưu, chất lượng xuất |
 | Nhật ký lỗi | Có | Ghi nhận lỗi có thể chẩn đoán, không log nội dung ảnh |
-| Máy in vật lý | Chưa | Mô phỏng/hàng đợi in chỉ khi cần, chưa xác nhận tương thích |
+| Máy in vật lý | Chưa | Đã có chọn số bản, Print Job, in lại, máy in giả lập và gửi lệnh qua máy in Windows (chỉ đến mức "Windows đã tiếp nhận"); chưa thử máy in ảnh thật, chưa dùng SDK hãng |
+| Lưu trữ theo sự kiện | Có | Mỗi sự kiện một thư mục riêng (`docs/EVENT_STORAGE.md`) |
 | QR/cloud/payment | Chưa | Không thuộc phạm vi V1 |
 
 **Chú ý:** Danh sách chức năng V1 là **đích đến**, không yêu cầu triển khai toàn bộ ngay trong task đầu tiên.
@@ -55,13 +58,13 @@ Cấu hình camera, thời gian đếm ngược, số ảnh một phiên, templa
 1. **Chào mừng:** hiển thị nút “Bắt đầu”.
 2. **Chọn khung ảnh:** chọn layout/màu khung; xem trước mẫu.
 3. **Mở camera:** hiển thị webcam; nếu lỗi, hướng dẫn chọn lại/kiểm tra quyền truy cập.
-4. **Chụp ảnh:** đếm ngược mặc định 3 giây, chụp lần lượt 4 ảnh; có phản hồi rõ ràng sau mỗi lần.
+4. **Chụp ảnh:** đếm ngược mặc định 3 giây, chụp lần lượt đủ số ảnh template yêu cầu; có phản hồi rõ ràng sau mỗi lần.
 5. **Xem lại:** xem ảnh đã chụp, chụp lại nếu được phép; không tự động xóa ảnh thành công khi một bước sau bị lỗi.
 6. **Ghép ảnh:** xử lý thành một thành phẩm theo template.
 7. **Xuất file:** chọn JPEG/PNG/PDF; hiển thị vị trí đã lưu.
 8. **Hoàn tất:** trở về màn hình chào, bắt đầu phiên mới.
 
-Các con số 3 giây/4 ảnh là **giá trị mặc định cấu hình được**, không hardcode trong nhiều component.
+Thời gian 3 giây là **giá trị mặc định cấu hình được**; số ảnh **do template quyết định** (xem `BUSINESS_RULES.md` mục 6.1). Không hardcode trong nhiều component.
 
 ## 5. Nguyên tắc nghiệp vụ
 
@@ -113,7 +116,7 @@ Các con số 3 giây/4 ảnh là **giá trị mặc định cấu hình đượ
 
 ### Mốc 2 — Phiên chụp nhiều ảnh
 
-- Đếm ngược, chụp 4 ảnh, có xem lại và tùy chọn chụp lại.
+- Đếm ngược, chụp đủ số ảnh theo template, có xem lại và tùy chọn chụp lại.
 - Xử lý khi người dùng hủy phiên hoặc camera bị ngắt.
 
 ### Mốc 3 — Template và xuất ảnh

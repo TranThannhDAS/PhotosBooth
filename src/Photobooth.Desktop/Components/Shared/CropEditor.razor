@@ -1,0 +1,297 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject PhotoSessionService Sessions
+@inject ILogger<CropEditor> Logger
+
+@*
+    Chỉnh vùng cắt cho MỘT ô ảnh (Manual Crop). Bản nháp chỉ nằm trong component này:
+    "Áp dụng" mới gửi về phiên; "Hủy"/đóng thì bỏ toàn bộ thay đổi dang dở.
+    Hình trong khung chỉ là xem trước tạm (CSS); thành phẩm được Photo Composer render lại sau khi áp dụng.
+*@
+<div class="dialog-backdrop">
+    <div class="dialog crop-dialog" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+        <h2 id="crop-title" class="dialog-title">Chỉnh ảnh — @SlotLabel</h2>
+        <p class="dialog-message">Kéo ảnh bằng một ngón tay để đổi vị trí. Chụm hoặc mở hai ngón tay (hoặc dùng nút −/+) để thu nhỏ, phóng to.</p>
+
+        <div class="crop-stage">
+            <div @ref="_viewport" class="crop-viewport" style="@ViewportStyle" aria-label="Vùng ảnh hiển thị trong ô">
+                <img @ref="_image" class="crop-image" alt="" draggable="false" />
+                @if (_loadState != LoadState.Ready)
+                {
+                    <div class="image-view-overlay @(_loadState == LoadState.Failed ? "image-view-error" : null)">
+                        @if (_loadState == LoadState.Failed)
+                        {
+                            <span>Không tải được ảnh để chỉnh.</span>
+                        }
+                        else
+                        {
+                            <span class="spinner spinner-sm" aria-hidden="true"></span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="crop-controls">
+            <div class="crop-zoom">
+                <button type="button" class="btn btn-secondary crop-step" aria-label="Thu nhỏ"
+                        disabled="@(_loadState != LoadState.Ready || ZoomPercent <= ZoomPercentMin)" @onclick="() => StepZoomAsync(-ZoomStepPercent)">−</button>
+                <input type="range" aria-label="Mức phóng to" min="@ZoomPercentMin" max="@ZoomPercentMax" step="1" value="@ZoomPercent"
+                       disabled="@(_loadState != LoadState.Ready)" @oninput="OnZoomInputAsync" aria-valuetext="@($"{ZoomPercent}%")" />
+                <button type="button" class="btn btn-secondary crop-step" aria-label="Phóng to"
+                        disabled="@(_loadState != LoadState.Ready || ZoomPercent >= ZoomPercentMax)" @onclick="() => StepZoomAsync(ZoomStepPercent)">+</button>
+                <output>@ZoomPercent%</output>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@(_loadState != LoadState.Ready || _isAuto)" @onclick="ResetToAutoAsync">
+                Khôi phục Auto Crop
+            </button>
+        </div>
+
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" @onclick="OnCancel">Hủy</button>
+            <button type="button" class="btn btn-primary" disabled="@(_loadState != LoadState.Ready)" @onclick="ApplyAsync">Áp dụng</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int ZoomPercentMin = (int)(SlotCrop.MinZoom * 100);
+    private const int ZoomPercentMax = (int)(SlotCrop.MaxZoom * 100);
+    private const int ZoomStepPercent = 10;
+    private static readonly TimeSpan JsCleanupTimeout = TimeSpan.FromSeconds(2);
+
+    private enum LoadState
+    {
+        Loading,
+        Ready,
+        Failed,
+    }
+
+    private ElementReference _viewport;
+    private ElementReference _image;
+    private DotNetObjectReference<CropEditor>? _selfReference;
+    private readonly CancellationTokenSource _cts = new();
+    private LoadState _loadState = LoadState.Loading;
+    private int? _editorId;
+    private double _zoom;
+    private double _focalX;
+    private double _focalY;
+
+    // true = bản nháp đang là Auto Crop của template (áp dụng sẽ xóa chỉnh thủ công của ô).
+    private bool _isAuto;
+    private bool _disposed;
+
+    /// <summary>Template của phiên (snapshot).</summary>
+    [Parameter, EditorRequired]
+    public PhotoTemplate Template { get; set; } = default!;
+
+    /// <summary>Chỉ số ô trong Template.Slots (không phải photoIndex).</summary>
+    [Parameter, EditorRequired]
+    public int SlotIndex { get; set; }
+
+    /// <summary>Ảnh nguồn đang được chọn cho ô (theo photoIndex của ô).</summary>
+    [Parameter, EditorRequired]
+    public CapturedPhoto Photo { get; set; } = default!;
+
+    /// <summary>Manual Crop đã xác nhận của ô (null = Auto Crop).</summary>
+    [Parameter]
+    public SlotCrop? Confirmed { get; set; }
+
+    /// <summary>Khách bấm "Áp dụng": null = Auto Crop.</summary>
+    [Parameter, EditorRequired]
+    public EventCallback<SlotCrop?> OnApply { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback OnCancel { get; set; }
+
+    private TemplateSlot Slot => Template.Slots[SlotIndex];
+
+    private string SlotLabel => UiText.SlotLabel(SlotIndex, Slot);
+
+    private int ZoomPercent => (int)Math.Round(_zoom * 100);
+
+    private string ViewportStyle => string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"--crop-aspect: {Slot.Width} / {Slot.Height}; --crop-ratio: {(double)Slot.Width / Slot.Height}; " +
+        $"border-radius: {100.0 * Slot.CornerRadius / Slot.Width}% / {100.0 * Slot.CornerRadius / Slot.Height}%;");
+
+    protected override void OnInitialized()
+    {
+        var initial = Confirmed ?? SlotCrop.AutoFor(Slot);
+        (_zoom, _focalX, _focalY) = (initial.Zoom, initial.FocalX, initial.FocalY);
+        _isAuto = Confirmed is null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            // Ảnh xem trước của ảnh nguồn đã lật đúng hướng khách thấy lúc chụp — cùng hệ tọa độ với SlotCrop.
+            var bytes = await Sessions.GetSlotPreviewAsync(Photo.Position, 1600, _cts.Token);
+            if (bytes is null || _disposed)
+            {
+                _loadState = LoadState.Failed;
+                return;
+            }
+
+            using (var stream = new DotNetStreamReference(new MemoryStream(bytes)))
+            {
+                await JS.InvokeVoidAsync("photoboothPhotoView.show", _cts.Token, _image, stream, "image/jpeg");
+            }
+
+            _selfReference = DotNetObjectReference.Create(this);
+            var attached = await JS.InvokeAsync<EditorState>(
+                "photoboothCropEditor.attach",
+                _cts.Token,
+                _viewport,
+                _image,
+                _selfReference,
+                new
+                {
+                    imageWidth = Photo.WidthPixels,
+                    imageHeight = Photo.HeightPixels,
+                    targetWidth = Slot.Width,
+                    targetHeight = Slot.Height,
+                    zoom = _zoom,
+                    fx = _focalX,
+                    fy = _focalY,
+                    minZoom = SlotCrop.MinZoom,
+                    maxZoom = SlotCrop.MaxZoom,
+                });
+            _editorId = attached.Id;
+            Store(attached);
+            _loadState = LoadState.Ready;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or CompositionException or JSException or JSDisconnectedException)
+        {
+            Logger.LogWarning(ex, "Không mở được trình chỉnh vùng cắt cho ô #{SlotIndex}", SlotIndex);
+            _loadState = LoadState.Failed;
+        }
+        finally
+        {
+            if (!_disposed)
+            {
+                StateHasChanged();
+            }
+        }
+    }
+
+    /// <summary>JS báo trạng thái chuẩn hóa sau khi kéo/zoom bằng con lăn.</summary>
+    [JSInvokable]
+    public void OnCropChanged(double zoom, double focalX, double focalY)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        (_zoom, _focalX, _focalY) = (zoom, focalX, focalY);
+        _isAuto = false;
+        StateHasChanged();
+    }
+
+    private async Task OnZoomInputAsync(ChangeEventArgs e)
+    {
+        if (_editorId is not { } id
+            || !double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var percent))
+        {
+            return;
+        }
+
+        _isAuto = false;
+        await SetEditorStateAsync(id, percent / 100, null, null);
+    }
+
+    /// <summary>Nút −/+ (dễ dùng trên màn cảm ứng hơn thanh trượt).</summary>
+    private async Task StepZoomAsync(int deltaPercent)
+    {
+        if (_editorId is not { } id)
+        {
+            return;
+        }
+
+        _isAuto = false;
+        var percent = Math.Clamp(ZoomPercent + deltaPercent, ZoomPercentMin, ZoomPercentMax);
+        await SetEditorStateAsync(id, percent / 100.0, null, null);
+    }
+
+    private async Task ResetToAutoAsync()
+    {
+        if (_editorId is not { } id)
+        {
+            return;
+        }
+
+        var auto = SlotCrop.AutoFor(Slot);
+        await SetEditorStateAsync(id, auto.Zoom, auto.FocalX, auto.FocalY);
+        _isAuto = true;
+    }
+
+    private async Task SetEditorStateAsync(int id, double? zoom, double? focalX, double? focalY)
+    {
+        try
+        {
+            var state = await JS.InvokeAsync<EditorState?>("photoboothCropEditor.setState", _cts.Token, id, zoom, focalX, focalY);
+            if (state is not null)
+            {
+                Store(state);
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+            Logger.LogDebug(ex, "Không cập nhật được trình chỉnh vùng cắt");
+        }
+    }
+
+    private Task ApplyAsync()
+    {
+        // Kẹp về miền hợp lệ để sai số dấu phẩy động từ JS không làm crop bị từ chối.
+        SlotCrop? crop = _isAuto
+            ? null
+            : new SlotCrop(Math.Clamp(_zoom, SlotCrop.MinZoom, SlotCrop.MaxZoom), Math.Clamp(_focalX, 0, 1), Math.Clamp(_focalY, 0, 1));
+        return OnApply.InvokeAsync(crop);
+    }
+
+    private void Store(EditorState state) => (_zoom, _focalX, _focalY) = (state.Zoom, state.Fx, state.Fy);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        await _cts.CancelAsync();
+        try
+        {
+            using var timeout = new CancellationTokenSource(JsCleanupTimeout);
+            if (_editorId is { } id)
+            {
+                await JS.InvokeVoidAsync("photoboothCropEditor.detach", timeout.Token, id);
+            }
+
+            await JS.InvokeVoidAsync("photoboothPhotoView.clear", timeout.Token, _image);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException or ObjectDisposedException)
+        {
+            // WebView đang đóng: listener và object URL được giải phóng cùng trang.
+        }
+        finally
+        {
+            _selfReference?.Dispose();
+            _cts.Dispose();
+        }
+    }
+
+    private sealed record EditorState(int Id, double Zoom, double Fx, double Fy);
+}

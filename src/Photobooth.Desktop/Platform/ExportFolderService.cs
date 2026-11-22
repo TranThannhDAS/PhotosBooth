@@ -1,5 +1,4 @@
 using System.IO;
-using Microsoft.Win32;
 using Photobooth.Application.Export;
 
 namespace Photobooth.Desktop.Platform;
@@ -26,20 +25,9 @@ public sealed class ExportFolderService
     /// <summary>Mở hộp thoại chọn thư mục. Trả về false nếu người dùng đóng hộp thoại.</summary>
     public async Task<bool> PickFolderAsync()
     {
-        var dispatcher = System.Windows.Application.Current.Dispatcher;
-        var selected = await dispatcher.InvokeAsync(() =>
-        {
-            var dialog = new OpenFolderDialog
-            {
-                Title = "Chọn thư mục lưu ảnh",
-                Multiselect = false,
-                InitialDirectory = Directory.Exists(CurrentFolder) ? CurrentFolder : _defaultFolder,
-            };
-
-            var owner = System.Windows.Application.Current.MainWindow;
-            var accepted = owner is not null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
-            return accepted == true ? dialog.FolderName : null;
-        });
+        var selected = await FolderPicker.PickAsync(
+            "Chọn thư mục lưu ảnh",
+            Directory.Exists(CurrentFolder) ? CurrentFolder : _defaultFolder);
 
         if (string.IsNullOrWhiteSpace(selected))
         {

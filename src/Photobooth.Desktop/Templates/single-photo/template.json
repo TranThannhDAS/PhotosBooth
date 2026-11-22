@@ -1,0 +1,26 @@
+// Một ảnh lớn trên khổ 4×6 inch: phiên chụp chỉ cần 1 ảnh (photoIndex lớn nhất = 0).
+{
+  "id": "single-photo",
+  "name": "Một ảnh lớn",
+  "description": "Chụp 1 ảnh, in khổ lớn kèm tiêu đề và ngày.",
+  "canvas": { "widthPixels": 1200, "heightPixels": 1800, "dpi": 300, "backgroundColor": "#FFFFFF" },
+  "slots": [
+    {
+      "id": "photo",
+      "photoIndex": 0,
+      "x": 60,
+      "y": 60,
+      "width": 1080,
+      "height": 1440,
+      "cornerRadius": 16,
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.4
+      }
+    }
+  ],
+  "decorations": [
+    { "id": "title", "type": "text", "x": 60, "y": 1550, "width": 1080, "height": 120, "text": "Photobooth", "fontSizePixels": 80, "bold": true, "color": "#0F172A" },
+    { "id": "date", "type": "text", "x": 60, "y": 1675, "width": 1080, "height": 70, "text": "{date}", "fontSizePixels": 40, "color": "#64748B" }
+  ]
+}

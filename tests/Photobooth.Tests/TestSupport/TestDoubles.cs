@@ -39,6 +39,27 @@ internal static class TestImages
             canvas.DrawRect(SKRect.Create(width / 2f, 0, width / 2f, height), right);
         });
 
+    public static readonly SKColor TopLeft = new(220, 20, 20);
+    public static readonly SKColor TopRight = new(20, 160, 20);
+    public static readonly SKColor BottomLeft = new(20, 20, 220);
+    public static readonly SKColor BottomRight = new(230, 200, 20);
+
+    /// <summary>Ảnh 4 góc phần tư khác màu — kiểm tra hướng kéo/zoom và lật gương của vùng cắt.</summary>
+    public static byte[] CreateQuadrants(int width = 640, int height = 480, SKEncodedImageFormat format = SKEncodedImageFormat.Jpeg) =>
+        Encode(width, height, format, canvas =>
+        {
+            void Fill(float x, float y, SKColor color)
+            {
+                using var paint = new SKPaint { Color = color };
+                canvas.DrawRect(SKRect.Create(x, y, width / 2f, height / 2f), paint);
+            }
+
+            Fill(0, 0, TopLeft);
+            Fill(width / 2f, 0, TopRight);
+            Fill(0, height / 2f, BottomLeft);
+            Fill(width / 2f, height / 2f, BottomRight);
+        });
+
     public static byte[] CreateSolid(int width, int height, SKColor color, SKEncodedImageFormat format = SKEncodedImageFormat.Png) =>
         Encode(width, height, format, canvas => canvas.Clear(color));
 
@@ -117,7 +138,24 @@ internal static class TestTemplates
         Decorations = [new TemplateDecoration { Type = DecorationKind.Text, X = 20, Y = 500, Width = 560, Height = 80, Text = "Photobooth {date}" }],
     };
 
-    public static string ShippedTemplatesDirectory => Path.Combine(AppContext.BaseDirectory, "Templates");
+    /// <summary>
+    /// Template có một ô cho mỗi phần tử của <paramref name="photoIndexes"/> (lưới 4 cột, ô 180×180, bước 190 px).
+    /// Ô thứ i có Id "s{i}" và nằm tại (10 + (i % 4) × 190, 10 + (i / 4) × 190).
+    /// </summary>
+    public static PhotoTemplate WithPhotoIndexes(params int[] photoIndexes) => new()
+    {
+        Id = "test-indexes",
+        Name = "Kiểm thử photoIndex",
+        Canvas = new TemplateCanvas { WidthPixels = 800, HeightPixels = 800, Dpi = 100, BackgroundColor = "#FFFFFF" },
+        Slots = photoIndexes
+            .Select((index, i) => new TemplateSlot { Id = $"s{i}", PhotoIndex = index, X = 10 + ((i % 4) * 190), Y = 10 + ((i / 4) * 190), Width = 180, Height = 180 })
+            .ToList(),
+    };
+
+    /// <summary>Tâm ô thứ <paramref name="slot"/> của <see cref="WithPhotoIndexes"/>.</summary>
+    public static (int X, int Y) SlotCenter(int slot) => (100 + ((slot % 4) * 190), 100 + ((slot / 4) * 190));
+
+    public static string ShippedTemplatesDirectory =>Path.Combine(AppContext.BaseDirectory, "Templates");
 }
 
 /// <summary>Tạo thư mục template tạm (Templates/{folder}/template.json) cho test.</summary>
@@ -199,6 +237,9 @@ internal sealed class FailingComposer : IPhotoComposer
 
     public Task<byte[]> RenderTemplatePreviewAsync(PhotoTemplate template, int maxWidthPixels, CancellationToken cancellationToken = default) =>
         Task.FromResult(Array.Empty<byte>());
+
+    public Task<byte[]> RenderTemplateSampleAsync(PhotoTemplate template, TemplateSampleContent content, int maxWidthPixels, CancellationToken cancellationToken = default) =>
+        throw new CompositionException("Lỗi ghép giả lập.");
 }
 
 /// <summary>

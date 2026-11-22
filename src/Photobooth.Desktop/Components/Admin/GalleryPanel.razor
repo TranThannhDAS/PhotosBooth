@@ -1,0 +1,179 @@
+@using Photobooth.Application.Events
+@inject EventGalleryService Gallery
+@inject EventWorkspaceService Workspaces
+@inject ILogger<GalleryPanel> Logger
+
+@*
+    Thư viện ảnh thành phẩm (mới nhất trước), lọc theo sự kiện: sự kiện hiện tại (mặc định), một sự kiện khác
+    đã mở trên máy này, hoặc tất cả. Lọc chỉ để xem — không đổi sự kiện Kiosk đang lưu ảnh. Chỉ tải ảnh thu nhỏ, theo từng trang.
+*@
+<div class="gallery">
+    <div class="gallery-toolbar">
+        <div class="gallery-filter">
+            <label for="gallery-event">Sự kiện</label>
+            <select id="gallery-event" class="text-input" disabled="@_loading" value="@SelectValue" @onchange="OnFilterChangedAsync">
+                @if (_events.Count > 1)
+                {
+                    <option value="@EventGalleryService.AllEvents">Tất cả sự kiện</option>
+                }
+                @foreach (var known in _events)
+                {
+                    <option value="@known.EventKey" disabled="@(!known.IsAvailable)">
+                        @known.Name@(known.IsCurrent ? " (đang dùng)" : null)@(known.IsAvailable ? null : " — không truy cập được")
+                    </option>
+                }
+            </select>
+        </div>
+        <p class="panel-hint">
+            @if (_sessions is not null)
+            {
+                <span>@_sessions.Count phiên</span>
+            }
+        </p>
+        <button type="button" class="btn btn-ghost btn-sm" disabled="@_loading" @onclick="LoadAsync">Tải lại</button>
+    </div>
+
+    @if (_events.Count == 0)
+    {
+        <StatusMessage Status="@(new StatusInfo(StatusKind.Warning, "Chưa có sự kiện nào.", "Mở mục “Sự kiện” để chọn thư mục sự kiện."))" />
+    }
+    else if (_loading && _sessions is null)
+    {
+        <div class="center-state"><span class="spinner spinner-dark" aria-hidden="true"></span><p>Đang tải danh sách ảnh…</p></div>
+    }
+    else if (_error is not null)
+    {
+        <StatusMessage Status="@_error" />
+    }
+    else if (_sessions is { Count: 0 })
+    {
+        <div class="center-state"><p>@(IsAll ? "Chưa có ảnh nào trong các sự kiện." : "Sự kiện này chưa có ảnh nào.")</p></div>
+    }
+    else if (_sessions is not null)
+    {
+        <div class="gallery-grid">
+            @foreach (var summary in _sessions.Take(_visible))
+            {
+                var item = summary;
+                <button type="button" class="gallery-card" disabled="@Opening" @onclick="() => OnOpen.InvokeAsync(item)">
+                    @if (item.LatestVersion is not null)
+                    {
+                        <ImageView Class="gallery-thumb" Key="@($"{item.EventKey}-{item.SessionKey}-{item.LatestVersion.Version}")"
+                                   Alt="@($"Ảnh thành phẩm lúc {UiText.LocalTime(item.CreatedAt)}")"
+                                   Loader="@(ct => Gallery.GetThumbnailAsync(item, ThumbnailWidth, ct))" />
+                    }
+                    else
+                    {
+                        <div class="gallery-thumb gallery-thumb-empty" aria-hidden="true">—</div>
+                    }
+                    <span class="gallery-time">@UiText.LocalTime(item.CreatedAt)</span>
+                    @if (IsAll && item.EventName is not null)
+                    {
+                        <span class="gallery-event">@item.EventName</span>
+                    }
+                    <span class="gallery-meta">
+                        @(item.TemplateName ?? "Không rõ khung")
+                        @if (item.VersionCount > 1)
+                        {
+                            <span> · @item.VersionCount phiên bản</span>
+                        }
+                        @if (item.PrintJobCount > 0)
+                        {
+                            <span> · @item.PrintJobCount lần in</span>
+                        }
+                    </span>
+                    @if (item.Problem is not null)
+                    {
+                        <span class="gallery-problem">@item.Problem</span>
+                    }
+                </button>
+            }
+        </div>
+        @if (_sessions.Count > _visible)
+        {
+            <div class="gallery-more">
+                <button type="button" class="btn btn-secondary" @onclick="() => _visible += PageSize">Xem thêm (@(_sessions.Count - _visible))</button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private const int PageSize = 24;
+    private const int ThumbnailWidth = 360;
+    private IReadOnlyList<KnownEvent> _events = [];
+    private IReadOnlyList<ArchivedSessionSummary>? _sessions;
+    private int _visible = PageSize;
+    private bool _loading;
+    private StatusInfo? _error;
+
+    [Parameter, EditorRequired]
+    public EventCallback<ArchivedSessionSummary> OnOpen { get; set; }
+
+    [Parameter]
+    public bool Opening { get; set; }
+
+    /// <summary>Bộ lọc đang chọn: null = sự kiện hiện tại, <see cref="EventGalleryService.AllEvents"/> = tất cả, còn lại = mã sự kiện.
+    /// Do màn Admin giữ để không mất lựa chọn khi mở rồi đóng một phiên.</summary>
+    [Parameter]
+    public string? EventFilter { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> EventFilterChanged { get; set; }
+
+    private bool IsAll => EventFilter == EventGalleryService.AllEvents;
+
+    private string SelectValue => EventFilter ?? _events.FirstOrDefault(e => e.IsCurrent)?.EventKey ?? string.Empty;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnFilterChangedAsync(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        var current = _events.FirstOrDefault(k => k.IsCurrent)?.EventKey;
+        EventFilter = string.IsNullOrEmpty(value) || value == current ? null : value;
+        await EventFilterChanged.InvokeAsync(EventFilter);
+        _sessions = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        try
+        {
+            _events = Gallery.ListEvents();
+
+            // Bộ lọc trỏ tới sự kiện không còn trong danh sách (hoặc chưa có sự kiện hiện tại) → về mặc định hợp lệ.
+            if (EventFilter is not null && !IsAll && _events.All(k => k.EventKey != EventFilter))
+            {
+                EventFilter = null;
+            }
+
+            if (EventFilter is null && Workspaces.Current is null)
+            {
+                EventFilter = _events.FirstOrDefault(k => k.IsAvailable)?.EventKey;
+            }
+
+            _sessions = _events.Count == 0 ? [] : await Gallery.ListAsync(EventFilter);
+            _visible = PageSize;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or EventWorkspaceUnavailableException)
+        {
+            Logger.LogWarning(ex, "Không đọc được danh sách phiên");
+            _sessions = null;
+            _error = new StatusInfo(StatusKind.Error, "Không đọc được thư mục sự kiện.",
+                ex is EventWorkspaceUnavailableException ? ex.Message : "Kiểm tra ổ đĩa và quyền truy cập rồi nhấn “Tải lại”.");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

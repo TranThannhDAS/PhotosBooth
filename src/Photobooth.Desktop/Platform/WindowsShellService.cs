@@ -37,6 +37,19 @@ public sealed class WindowsShellService
         return TryStart(startInfo, "mở thư mục chứa ảnh");
     }
 
+    /// <summary>Mở một thư mục (thư mục sự kiện) trong File Explorer.</summary>
+    public bool OpenFolder(string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath) || !Path.IsPathFullyQualified(folderPath) || !Directory.Exists(folderPath))
+        {
+            return false;
+        }
+
+        var startInfo = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+        startInfo.ArgumentList.Add(Path.GetFullPath(folderPath));
+        return TryStart(startInfo, "mở thư mục sự kiện");
+    }
+
     private bool TryStart(ProcessStartInfo startInfo, string action)
     {
         try

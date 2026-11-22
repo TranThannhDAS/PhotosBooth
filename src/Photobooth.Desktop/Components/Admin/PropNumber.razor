@@ -1,0 +1,48 @@
+@using System.Globalization
+
+@* Ô nhập số cho bảng thuộc tính: chỉ ghi nhận khi rời ô/nhấn Enter (một bước Undo), kẹp trong [Min, Max]. *@
+<label class="prop">
+    <span class="prop-label">@Label</span>
+    <input class="text-input num-input" type="number" min="@Min" max="@Max" step="@Step" value="@Format(Value)" disabled="@Disabled" @onchange="OnChangedAsync" />
+</label>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public double Value { get; set; }
+
+    [Parameter]
+    public double Min { get; set; } = int.MinValue;
+
+    [Parameter]
+    public double Max { get; set; } = int.MaxValue;
+
+    /// <summary>Bước nhảy; 1 = số nguyên.</summary>
+    [Parameter]
+    public double Step { get; set; } = 1;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<double> OnCommit { get; set; }
+
+    private string Format(double value) => Step >= 1
+        ? Math.Round(value).ToString(CultureInfo.InvariantCulture)
+        : value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private async Task OnChangedAsync(ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || double.IsNaN(parsed))
+        {
+            // Giá trị không hợp lệ: hiển thị lại giá trị cũ.
+            StateHasChanged();
+            return;
+        }
+
+        var value = Math.Clamp(Step >= 1 ? Math.Round(parsed) : parsed, Min, Max);
+        await OnCommit.InvokeAsync(value);
+    }
+}

@@ -1,0 +1,351 @@
+@using System.Globalization
+
+@*
+    Visual Template Editor: Công cụ + Lớp (trái) · Canvas (giữa) · Thuộc tính (phải).
+    Tọa độ trên canvas HTML được tính theo phần trăm của canvas template, nên đổi zoom/cửa sổ không đổi tọa độ lưu.
+*@
+@if (_loadError is not null)
+{
+    <StatusMessage Status="@_loadError">
+        <button type="button" class="btn btn-secondary btn-sm" @onclick="OnClose">Quay lại</button>
+    </StatusMessage>
+    return;
+}
+
+@if (_editor is null)
+{
+    <div class="center-state"><span class="spinner spinner-dark" aria-hidden="true"></span><p>Đang mở template…</p></div>
+    return;
+}
+
+<div class="tpl-editor" tabindex="-1" @ref="_root">
+    <div class="tpl-editor-bar">
+        <div class="tpl-editor-title">
+            <strong>@Draft.Name</strong>
+            <span class="tpl-badge">@Draft.RequiredPhotoCount ảnh</span>
+            @if (_editor.HasUnsavedChanges)
+            {
+                <span class="tpl-unsaved">● Chưa lưu</span>
+            }
+        </div>
+        <div class="tpl-editor-actions">
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@(!_editor.CanUndo)" title="Hoàn tác (Ctrl+Z)" @onclick="() => _editor.Undo()">↶ Hoàn tác</button>
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@(!_editor.CanRedo)" title="Làm lại (Ctrl+Y)" @onclick="() => _editor.Redo()">↷ Làm lại</button>
+            <span class="tpl-sep" aria-hidden="true"></span>
+            <button type="button" class="btn btn-ghost btn-sm btn-square" title="Thu nhỏ" @onclick="() => StepZoom(-1)">−</button>
+            <button type="button" class="chip @(_zoom is null ? "is-active" : null)" title="Vừa khung" @onclick="FitZoom">@((Scale * 100).ToString("0", CultureInfo.InvariantCulture))%</button>
+            <button type="button" class="btn btn-ghost btn-sm btn-square" title="Phóng to" @onclick="() => StepZoom(1)">+</button>
+            <button type="button" class="chip @(_snap ? "is-active" : null)" title="Bắt dính lưới 10 px khi kéo" @onclick="() => _snap = !_snap">Lưới</button>
+            <span class="tpl-sep" aria-hidden="true"></span>
+            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="OpenPreview">Xem thử</button>
+            <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || !_editor.HasUnsavedChanges)" title="Lưu (Ctrl+S)" @onclick="SaveAsync">Lưu</button>
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@_busy" @onclick="RequestCloseAsync">Đóng</button>
+        </div>
+    </div>
+
+    @if (_status is not null)
+    {
+        <StatusMessage Status="@_status">
+            @if (_statusIssues.Count > 0)
+            {
+                <ul class="issue-list">
+                    @foreach (var issue in _statusIssues.Take(8))
+                    {
+                        <li class="@(issue.Severity == ValidationSeverity.Error ? "is-error" : null)"><code>@issue.Path</code> @issue.Message</li>
+                    }
+                </ul>
+            }
+            <button type="button" class="btn btn-ghost btn-sm" @onclick="() => _status = null">Đóng</button>
+        </StatusMessage>
+    }
+
+    <div class="tpl-editor-body">
+        @* ---------------- Công cụ + Lớp ---------------- *@
+        <aside class="tpl-side">
+            <h3 class="panel-title">Thêm</h3>
+            <div class="tpl-tools">
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editor.AddSlot()">▣ Ô ảnh</button>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editor.AddText()">T Chữ</button>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editor.AddRectangle()">■ Hình chữ nhật</button>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editor.AddRectangle(ellipse: true)">● Hình elip</button>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="AddImageAsync">🖼 Ảnh / PNG</button>
+            </div>
+
+            <h3 class="panel-title">Lớp <small>(trên cùng ở đầu)</small></h3>
+            <ol class="tpl-layers">
+                @for (var i = Draft.Layers.Count - 1; i >= 0; i--)
+                {
+                    var layer = Draft.Layers[i];
+                    var index = i;
+                    var selected = layer.Key == _editor.SelectedKey;
+                    <li class="tpl-layer @(selected ? "is-selected" : null)">
+                        <button type="button" class="tpl-layer-name" aria-pressed="@(selected ? "true" : "false")" @onclick="() => _editor.Select(layer.Key)">
+                            <span class="tpl-layer-kind kind-@layer.Kind.ToString().ToLowerInvariant()" aria-hidden="true"></span>
+                            @LayerTitle(layer)
+                            <small>z @layer.ZIndex</small>
+                        </button>
+                        <button type="button" class="btn-mini" title="Đưa lên trên" disabled="@(index == Draft.Layers.Count - 1)" @onclick="() => _editor.MoveLayer(layer.Key, +1)">▲</button>
+                        <button type="button" class="btn-mini" title="Đưa xuống dưới" disabled="@(index == 0)" @onclick="() => _editor.MoveLayer(layer.Key, -1)">▼</button>
+                    </li>
+                }
+                <li class="tpl-layer is-fixed"><span class="tpl-layer-name">Nền canvas <small>luôn dưới cùng</small></span></li>
+            </ol>
+        </aside>
+
+        @* ---------------- Canvas ---------------- *@
+        <div class="tpl-viewport" @ref="_viewport">
+            <div class="tpl-canvas" style="@CanvasStyle">
+                @for (var i = 0; i < Draft.Layers.Count; i++)
+                {
+                    var element = Draft.Layers[i];
+                    var selected = element.Key == _editor.SelectedKey;
+                    <div @key="element.Key" class="tpl-el kind-@element.Kind.ToString().ToLowerInvariant() @(selected ? "is-selected" : null)"
+                         data-key="@element.Key" style="@ElementStyle(element, i)">
+                        @switch (element.Kind)
+                        {
+                            case EditorElementKind.Slot:
+                                var slot = element.Slot!;
+                                <div class="tpl-el-fill tpl-slot" style="@SlotStyle(slot)">
+                                    <span class="tpl-slot-label">Ảnh @(slot.PhotoIndex + 1)@(slot.Fit == ImageFit.Contain ? " · contain" : null)</span>
+                                    @if (slot.Fit == ImageFit.Cover)
+                                    {
+                                        <span class="tpl-focal" style="left: @Percent(slot.FocalPoint.X, 1); top: @Percent(slot.FocalPoint.Y, 1);" aria-hidden="true"></span>
+                                    }
+                                </div>
+                                break;
+                            case EditorElementKind.Text:
+                                var text = element.Decoration!;
+                                <div class="tpl-el-fill tpl-text" style="@TextStyle(text)"><span>@ResolvedText(text)</span></div>
+                                break;
+                            case EditorElementKind.Image:
+                                var image = element.Decoration!;
+                                <ImageView Class="@($"tpl-el-fill tpl-image fit-{image.Fit.ToString().ToLowerInvariant()}")" Key="@image.AssetPath"
+                                           ContentType="@ContentTypeOf(image.AssetPath)" Alt="@(image.AssetPath ?? string.Empty)"
+                                           Loader="@(ct => LoadAssetAsync(image.AssetPath, ct))" />
+                                break;
+                            default:
+                                <div class="tpl-el-fill" style="@ShapeStyle(element.Decoration!)"></div>
+                                break;
+                        }
+                        @if (selected)
+                        {
+                            <span class="tpl-size" aria-hidden="true">@element.Bounds.X, @element.Bounds.Y · @element.Bounds.Width × @element.Bounds.Height</span>
+                            @foreach (var (handle, css) in Handles)
+                            {
+                                <span class="tpl-handle h-@css" data-handle="@handle" aria-hidden="true"></span>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ---------------- Thuộc tính ---------------- *@
+        <aside class="tpl-side tpl-props">
+            @if (_editor.Selected is { } sel)
+            {
+                <h3 class="panel-title">@KindLabel(sel.Kind) <small>@sel.ElementId</small></h3>
+                <div class="prop-grid">
+                    <PropNumber Label="X" Value="sel.Bounds.X" OnCommit="v => SetBound(sel, 'x', v)" />
+                    <PropNumber Label="Y" Value="sel.Bounds.Y" OnCommit="v => SetBound(sel, 'y', v)" />
+                    <PropNumber Label="Rộng" Value="sel.Bounds.Width" Min="1" OnCommit="v => SetBound(sel, 'w', v)" />
+                    <PropNumber Label="Cao" Value="sel.Bounds.Height" Min="1" OnCommit="v => SetBound(sel, 'h', v)" />
+                    <PropNumber Label="zIndex" Value="sel.ZIndex" Min="TemplateValidator.MinZIndex" Max="TemplateValidator.MaxZIndex" OnCommit="v => _editor.SetZIndex(sel.Key, (int)v)" />
+                </div>
+                <div class="prop-row">
+                    <button type="button" class="btn btn-ghost btn-sm" @onclick="() => CenterSelected(true, false)">Giữa ngang</button>
+                    <button type="button" class="btn btn-ghost btn-sm" @onclick="() => CenterSelected(false, true)">Giữa dọc</button>
+                </div>
+
+                @if (sel.Slot is { } slot)
+                {
+                    <div class="prop-grid">
+                        <PropNumber Label="photoIndex" Value="slot.PhotoIndex" Min="0" Max="CaptureOptions.AbsoluteMaxPhotosPerSession - 1"
+                                    OnCommit="v => SetSlot(sel.Key, s => s with { PhotoIndex = (int)v })" />
+                        <PropNumber Label="Bo góc" Value="slot.CornerRadius" Min="0" OnCommit="v => SetSlot(sel.Key, s => s with { CornerRadius = (int)v })" />
+                    </div>
+                    <p class="panel-hint">Ô này dùng <strong>ảnh thứ @(slot.PhotoIndex + 1)</strong>. Nhiều ô có thể dùng chung một ảnh.</p>
+                    <div class="prop">
+                        <span class="prop-label">Cách đặt ảnh (fit)</span>
+                        <div class="chip-group">
+                            <button type="button" class="chip @(slot.Fit == ImageFit.Cover ? "is-active" : null)" @onclick="() => SetSlot(sel.Key, s => s with { Fit = ImageFit.Cover })">cover — lấp đầy, cắt phần dư</button>
+                            <button type="button" class="chip @(slot.Fit == ImageFit.Contain ? "is-active" : null)" @onclick="() => SetSlot(sel.Key, s => s with { Fit = ImageFit.Contain })">contain — thấy cả ảnh</button>
+                        </div>
+                    </div>
+                    @if (slot.Fit == ImageFit.Cover)
+                    {
+                        <div class="prop">
+                            <span class="prop-label">Điểm ưu tiên (focal point) — chạm để chọn</span>
+                            @{ var box = FocalBox(slot); }
+                            <div class="focal-picker" style="@FocalBoxStyle(box)" @onclick="e => SetFocalFromClick(sel.Key, e, box.Width, box.Height)">
+                                <span class="tpl-focal" style="left: @Percent(slot.FocalPoint.X, 1); top: @Percent(slot.FocalPoint.Y, 1);"></span>
+                            </div>
+                        </div>
+                        <div class="prop-grid">
+                            <PropNumber Label="focal x" Value="slot.FocalPoint.X" Min="0" Max="1" Step="0.05" OnCommit="v => SetSlot(sel.Key, s => s with { FocalPoint = s.FocalPoint with { X = v } })" />
+                            <PropNumber Label="focal y" Value="slot.FocalPoint.Y" Min="0" Max="1" Step="0.05" OnCommit="v => SetSlot(sel.Key, s => s with { FocalPoint = s.FocalPoint with { Y = v } })" />
+                        </div>
+                    }
+                    <PropColor Label="Nền trong ô" Value="@slot.BackgroundColor" AllowEmpty="true" DefaultWhenAdded="#FFFFFF" OnCommit="v => SetSlot(sel.Key, s => s with { BackgroundColor = v })" />
+                    <div class="prop-grid">
+                        <PropNumber Label="Viền (px)" Value="slot.BorderWidth" Min="0" OnCommit="v => SetSlotBorder(sel.Key, (int)v)" />
+                    </div>
+                    @if (slot.BorderWidth > 0)
+                    {
+                        <PropColor Label="Màu viền" Value="@slot.BorderColor" OnCommit="v => SetSlot(sel.Key, s => s with { BorderColor = v })" />
+                    }
+                }
+                else if (sel.Decoration is { Type: DecorationKind.Text } text)
+                {
+                    <label class="prop">
+                        <span class="prop-label">Nội dung</span>
+                        <input class="text-input" type="text" maxlength="200" value="@text.Text" @onchange="e => SetDecoration(sel.Key, d => d with { Text = e.Value?.ToString() })" />
+                    </label>
+                    <div class="prop-row">
+                        @foreach (var placeholder in new[] { "{date}", "{time}", "{datetime}" })
+                        {
+                            var token = placeholder;
+                            <button type="button" class="chip" title="Chèn @token" @onclick="() => SetDecoration(sel.Key, d => d with { Text = (d.Text ?? string.Empty) + token })">@token</button>
+                        }
+                    </div>
+                    <label class="prop">
+                        <span class="prop-label">Font</span>
+                        <input class="text-input" type="text" list="tpl-fonts" value="@(text.FontFamily ?? "Segoe UI")" @onchange="e => SetDecoration(sel.Key, d => d with { FontFamily = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim() })" />
+                    </label>
+                    @if (FontMissing(text.FontFamily))
+                    {
+                        <p class="tpl-warning">Máy này không có font “@text.FontFamily”; ảnh thành phẩm sẽ dùng font thay thế.</p>
+                    }
+                    <datalist id="tpl-fonts">
+                        @foreach (var font in _fonts)
+                        {
+                            <option value="@font"></option>
+                        }
+                    </datalist>
+                    <div class="prop-grid">
+                        <PropNumber Label="Cỡ chữ (px)" Value="text.FontSizePixels" Min="1" OnCommit="v => SetDecoration(sel.Key, d => d with { FontSizePixels = (int)v })" />
+                    </div>
+                    <div class="prop-row">
+                        <button type="button" class="chip @(text.Bold ? "is-active" : null)" @onclick="() => SetDecoration(sel.Key, d => d with { Bold = !d.Bold })"><strong>B</strong> Đậm</button>
+                        @foreach (var align in Enum.GetValues<TextAlignment>())
+                        {
+                            var value = align;
+                            <button type="button" class="chip @(text.TextAlign == value ? "is-active" : null)" @onclick="() => SetDecoration(sel.Key, d => d with { TextAlign = value })">
+                                @(value switch { TextAlignment.Left => "Trái", TextAlignment.Right => "Phải", _ => "Giữa" })
+                            </button>
+                        }
+                    </div>
+                    <PropColor Label="Màu chữ" Value="@(text.Color ?? "#000000")" OnCommit="v => SetDecoration(sel.Key, d => d with { Color = v })" />
+                    <p class="panel-hint">Chữ một dòng, căn giữa theo chiều dọc; chữ dài hơn khung sẽ tự thu nhỏ khi ghép ảnh.</p>
+                }
+                else if (sel.Decoration is { Type: DecorationKind.Image } image)
+                {
+                    <div class="prop">
+                        <span class="prop-label">File ảnh</span>
+                        <code class="tpl-asset">@image.AssetPath</code>
+                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => ReplaceImageAsync(sel.Key)">Đổi ảnh…</button>
+                    </div>
+                    <div class="prop">
+                        <span class="prop-label">Cách đặt ảnh</span>
+                        <div class="chip-group">
+                            <button type="button" class="chip @(image.Fit == ImageFit.Contain ? "is-active" : null)" @onclick="() => SetDecoration(sel.Key, d => d with { Fit = ImageFit.Contain })">contain — vừa khung</button>
+                            <button type="button" class="chip @(image.Fit == ImageFit.Cover ? "is-active" : null)" @onclick="() => SetDecoration(sel.Key, d => d with { Fit = ImageFit.Cover })">cover — lấp đầy</button>
+                        </div>
+                    </div>
+                }
+                else if (sel.Decoration is { } shape)
+                {
+                    <PropColor Label="Màu tô" Value="@shape.Color" AllowEmpty="true" DefaultWhenAdded="#F9A8D4" OnCommit="v => SetDecoration(sel.Key, d => d with { Color = v })" />
+                    <div class="prop-grid">
+                        <PropNumber Label="Viền (px)" Value="shape.StrokeWidth" Min="0" OnCommit="v => SetStroke(sel.Key, (int)v)" />
+                        @if (shape.Type == DecorationKind.Rectangle)
+                        {
+                            <PropNumber Label="Bo góc" Value="shape.CornerRadius" Min="0" OnCommit="v => SetDecoration(sel.Key, d => d with { CornerRadius = (int)v })" />
+                        }
+                    </div>
+                    @if (shape.StrokeWidth > 0)
+                    {
+                        <PropColor Label="Màu viền" Value="@shape.StrokeColor" OnCommit="v => SetDecoration(sel.Key, d => d with { StrokeColor = v })" />
+                    }
+                }
+
+                <div class="prop-row">
+                    <button type="button" class="btn btn-secondary btn-sm" title="Ctrl+D" @onclick="() => _editor.DuplicateSelected()">Nhân bản</button>
+                    <button type="button" class="btn btn-danger btn-sm" title="Delete" @onclick="() => _editor.DeleteSelected()">Xóa</button>
+                </div>
+            }
+            else
+            {
+                <h3 class="panel-title">Template</h3>
+                <label class="prop">
+                    <span class="prop-label">Tên</span>
+                    <input class="text-input" type="text" maxlength="120" value="@Draft.Name" @onchange="e => { if (!string.IsNullOrWhiteSpace(e.Value?.ToString())) _editor.SetInfo(e.Value!.ToString()!, Draft.Description); }" />
+                </label>
+                <label class="prop">
+                    <span class="prop-label">Mô tả</span>
+                    <input class="text-input" type="text" maxlength="200" value="@Draft.Description" @onchange="e => _editor.SetInfo(Draft.Name, e.Value?.ToString())" />
+                </label>
+                <h3 class="panel-title">Canvas</h3>
+                <div class="prop-grid">
+                    <PropNumber Label="Rộng (px)" Value="Canvas.WidthPixels" Min="1" Max="TemplateValidator.MaxCanvasPixels" OnCommit="v => SetCanvas(c => c with { WidthPixels = (int)v })" />
+                    <PropNumber Label="Cao (px)" Value="Canvas.HeightPixels" Min="1" Max="TemplateValidator.MaxCanvasPixels" OnCommit="v => SetCanvas(c => c with { HeightPixels = (int)v })" />
+                    <PropNumber Label="DPI" Value="Canvas.Dpi" Min="TemplateValidator.MinDpi" Max="TemplateValidator.MaxDpi" OnCommit="v => SetCanvas(c => c with { Dpi = (int)v })" />
+                </div>
+                <p class="panel-hint">
+                    Khổ in ≈ @((Canvas.WidthPixels / (double)Canvas.Dpi).ToString("0.##", CultureInfo.InvariantCulture)) ×
+                    @((Canvas.HeightPixels / (double)Canvas.Dpi).ToString("0.##", CultureInfo.InvariantCulture)) inch.
+                    Mã template: <code>@Draft.Id</code>
+                </p>
+                <PropColor Label="Màu nền" Value="@Canvas.BackgroundColor" OnCommit="v => SetCanvas(c => c with { BackgroundColor = v ?? c.BackgroundColor })" />
+                <p class="panel-hint">Chọn một phần tử trên canvas hoặc trong danh sách lớp để chỉnh thuộc tính. Kéo góc để đổi kích thước (giữ Shift để giữ tỉ lệ).</p>
+            }
+
+            @* Kiểm tra theo đúng TemplateValidator của Engine. *@
+            @{ var validation = Validation; }
+            <h3 class="panel-title">Kiểm tra</h3>
+            @if (validation.Issues.Count == 0)
+            {
+                <p class="tpl-ok">✓ Hợp lệ — khách sẽ chụp @Draft.RequiredPhotoCount ảnh.</p>
+            }
+            else
+            {
+                <ul class="issue-list">
+                    @foreach (var issue in validation.Issues.Take(10))
+                    {
+                        <li class="@(issue.Severity == ValidationSeverity.Error ? "is-error" : null)"><code>@issue.Path</code> @issue.Message</li>
+                    }
+                </ul>
+                @if (validation.Errors.Any(i => i.Message.Contains("photoIndex", StringComparison.Ordinal) && i.Path == "slots"))
+                {
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editor.RenumberPhotoIndexes()">Đánh lại photoIndex liên tục</button>
+                }
+            }
+        </aside>
+    </div>
+</div>
+
+@if (_preview && _previewTemplate is not null)
+{
+    <div class="dialog-backdrop">
+        <div class="dialog tpl-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+            <h2 id="preview-title" class="dialog-title">Xem thử — render bằng Photo Composer</h2>
+            <div class="chip-group">
+                <button type="button" class="chip @(_previewContent == TemplateSampleContent.SamplePhotos ? "is-active" : null)" @onclick="() => SetPreviewContent(TemplateSampleContent.SamplePhotos)">Ảnh mẫu</button>
+                <button type="button" class="chip @(_previewContent == TemplateSampleContent.Placeholders ? "is-active" : null)" @onclick="() => SetPreviewContent(TemplateSampleContent.Placeholders)">Ô đánh số</button>
+            </div>
+            <ImageView Class="tpl-preview-image" Key="@_previewRevision" ContentType="image/png" Alt="Ảnh xem thử template" Loader="LoadPreviewAsync" />
+            <p class="panel-hint">Ảnh mẫu 16:9 như webcam; vùng cắt đúng theo Auto Crop và focal point. Ngày giờ dùng thời điểm hiện tại.</p>
+            <div class="dialog-actions">
+                <button type="button" class="btn btn-primary" @onclick="() => _preview = false">Đóng</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_confirmClose)
+{
+    <ConfirmDialog Title="Đóng mà không lưu?"
+                   Message="Các thay đổi chưa lưu sẽ bị bỏ. Template trong thư viện giữ nguyên như lần lưu gần nhất."
+                   ConfirmText="Bỏ thay đổi" CancelText="Tiếp tục chỉnh"
+                   OnConfirm="CloseAsync" OnCancel="() => _confirmClose = false" />
+}

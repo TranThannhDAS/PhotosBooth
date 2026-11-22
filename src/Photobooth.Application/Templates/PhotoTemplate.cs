@@ -26,9 +26,12 @@ public sealed record PhotoTemplate
     [JsonIgnore]
     public string? AssetDirectory { get; init; }
 
-    /// <summary>Số ảnh cần chụp = PhotoIndex lớn nhất + 1.</summary>
+    /// <summary>
+    /// Số ảnh nguồn cần chụp = PhotoIndex lớn nhất + 1 (BR-T03). Không dùng số ô: nhiều ô có thể dùng chung ảnh.
+    /// Chỉ đúng nghĩa khi template đã qua <see cref="TemplateValidator"/> (chỉ số liên tục từ 0).
+    /// </summary>
     [JsonIgnore]
-    public int RequiredPhotoCount => Slots.Count == 0 ? 0 : Slots.Max(s => s.PhotoIndex) + 1;
+    public int RequiredPhotoCount => Slots.Count == 0 ? 0 : Math.Max(0, Slots.Max(s => s.PhotoIndex) + 1);
 }
 
 /// <summary>Kích thước canvas và kích thước vật lý (qua DPI).</summary>

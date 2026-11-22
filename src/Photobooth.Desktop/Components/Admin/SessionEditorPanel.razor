@@ -1,0 +1,93 @@
+@inherits SessionScreenBase
+
+@*
+    Chỉnh sửa lại một phiên đã lưu bằng đúng Manual Crop + bộ lọc + Photo Composer của Kiosk.
+    "Lưu phiên bản mới" tạo final-v{N+1}.png (bản cũ giữ nguyên); "Hủy" bỏ mọi thay đổi, không tạo phiên bản.
+*@
+<div class="result-layout">
+    <ComposedPreview @ref="_preview" Disabled="@_saving" OnMessage="ShowMessage" />
+
+    <aside class="side-panel" aria-label="Chỉnh sửa lại">
+        <section class="panel-section">
+            <h2 class="panel-title">Chỉnh sửa lại</h2>
+            <p class="panel-hint">
+                Đang chỉnh từ phiên bản @(Session?.EditBaseVersion is { } v ? $"v{v}" : "chưa có").
+                Thay đổi chỉ được lưu khi nhấn “Lưu phiên bản mới”.
+            </p>
+        </section>
+
+        @if (_message is not null)
+        {
+            <StatusMessage Status="@_message" />
+        }
+
+        <EditToolsPanel Preview="_preview" Disabled="@_saving" OnMessage="ShowMessage" />
+    </aside>
+</div>
+
+<div class="detail-footer">
+    <button type="button" class="btn btn-secondary" disabled="@_saving" @onclick="Cancel">Hủy chỉnh sửa</button>
+    <button type="button" class="btn btn-primary btn-lg" disabled="@(!CanSave)" @onclick="SaveAsync">
+        @if (_saving)
+        {
+            <span class="spinner spinner-sm" aria-hidden="true"></span>
+            <span>Đang lưu…</span>
+        }
+        else
+        {
+            <span>Lưu phiên bản mới</span>
+        }
+    </button>
+</div>
+
+@code {
+    private ComposedPreview? _preview;
+    private StatusInfo? _message;
+    private bool _saving;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnDone { get; set; }
+
+    private bool CanSave => !_saving && Session is { HasUnsavedEdits: true, Composed: not null, State: PhotoSessionState.Ready };
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            StateHasChanged();
+        }
+    }
+
+    private void ShowMessage(StatusInfo? message) => _message = message;
+
+    private async Task Cancel()
+    {
+        Sessions.DiscardEdits();
+        await OnDone.InvokeAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!CanSave)
+        {
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+        try
+        {
+            if (await Sessions.SaveEditsAsync() is null)
+            {
+                _message = new StatusInfo(StatusKind.Error, "Chưa lưu được phiên bản mới.", "Kiểm tra ổ đĩa của thư mục sự kiện rồi thử lại. Các phiên bản cũ vẫn được giữ.");
+                return;
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+
+        await OnDone.InvokeAsync();
+    }
+}

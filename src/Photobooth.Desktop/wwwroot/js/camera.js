@@ -6,6 +6,7 @@
     let stream = null;
     let video = null;
     let dotnetRef = null;
+    let onVideoResize = null;
     // Tăng mỗi lần start/stop để bỏ kết quả của lần start cũ đã bị thay thế.
     let generation = 0;
 
@@ -20,6 +21,10 @@
     }
 
     function detachVideo() {
+        if (video && onVideoResize) {
+            video.removeEventListener('resize', onVideoResize);
+        }
+        onVideoResize = null;
         if (video) {
             try {
                 video.pause();
@@ -130,6 +135,16 @@
             if (myGeneration !== generation) {
                 return { ok: false, errorName: 'Superseded' };
             }
+
+            // Camera đổi độ phân giải/tỉ lệ khi đang chạy: báo C# để cập nhật khung hướng dẫn
+            // (chỉ khi kích thước thay đổi, không chạy theo từng khung hình).
+            onVideoResize = () => {
+                const callback = dotnetRef;
+                if (callback && stream === candidate && videoElement.videoWidth > 0) {
+                    callback.invokeMethodAsync('OnVideoResized', videoElement.videoWidth, videoElement.videoHeight).catch(() => { });
+                }
+            };
+            videoElement.addEventListener('resize', onVideoResize);
 
             return { ok: true, width: videoElement.videoWidth, height: videoElement.videoHeight };
         } catch (err) {

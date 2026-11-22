@@ -1,0 +1,137 @@
+@inherits SessionScreenBase
+
+@* Các công cụ chỉnh sửa thành phẩm: chọn ô để chỉnh vùng cắt, khôi phục chỉnh sửa, bộ lọc màu. *@
+<section class="panel-section">
+    <h2 class="panel-title">Chỉnh sửa ảnh</h2>
+    <p class="panel-hint">Chạm vào một ảnh trong khung (hoặc chọn ô bên dưới) để kéo và phóng to.</p>
+    @if (Session?.Template is { } template)
+    {
+        <div class="chip-group" aria-label="Các ô ảnh">
+            @for (var i = 0; i < template.Slots.Count; i++)
+            {
+                var slotIndex = i;
+                var edited = Session.SlotCrops.ElementAtOrDefault(slotIndex) is not null;
+                <button type="button" class="chip @(edited ? "is-active" : null)"
+                        disabled="@(!CanEdit)" @onclick="() => Preview?.OpenEditor(slotIndex) ?? Task.CompletedTask">
+                    @UiText.SlotLabel(slotIndex, template.Slots[slotIndex])
+                </button>
+            }
+        </div>
+    }
+    <button type="button" class="btn btn-ghost btn-sm" disabled="@(!CanEdit || !HasCrops)" @onclick="() => Preview?.RequestResetAll()">
+        Khôi phục chỉnh sửa
+    </button>
+</section>
+
+<section class="panel-section">
+    <div class="panel-header-row">
+        <h2 class="panel-title">Bộ lọc màu</h2>
+        <span class="filter-active-badge">@UiText.FilterLabel(CurrentFilter)</span>
+    </div>
+    <div class="filter-grid" role="radiogroup" aria-label="Bộ lọc màu">
+        @foreach (var filter in Enum.GetValues<ColorFilter>())
+        {
+            var value = filter;
+            var active = CurrentFilter == value;
+            <button type="button"
+                    class="filter-card @(active ? "is-active" : null)"
+                    role="radio"
+                    aria-checked="@(active ? "true" : "false")"
+                    aria-label="@($"{UiText.FilterLabel(value)} ({UiText.FilterSubtitle(value)})")"
+                    disabled="@(!CanSelectFilter)"
+                    @onclick="() => ApplyFilterAsync(value)">
+                <span class="filter-thumb">
+                    @if (FirstPhotoKey is { } photoKey)
+                    {
+                        <ImageView Class="filter-thumb-image"
+                                   Key="@($"{photoKey}-{value}")"
+                                   Alt="@UiText.FilterLabel(value)"
+                                   Loader="@(ct => Sessions.GetFilterPreviewAsync(value, FilterThumbWidth, ct))" />
+                    }
+                    @if (active)
+                    {
+                        <span class="filter-check" aria-hidden="true">✓</span>
+                    }
+                </span>
+                <span class="filter-name">@UiText.FilterLabel(value)</span>
+                <span class="filter-subtitle">@UiText.FilterSubtitle(value)</span>
+            </button>
+        }
+    </div>
+</section>
+
+@code {
+    private const int FilterThumbWidth = 160;
+
+    private ColorFilter? _pendingFilter;
+    private bool _applyingFilter;
+
+    /// <summary>Khung xem trước đang hiển thị (nơi mở trình chỉnh vùng cắt).</summary>
+    /// <remarks>null ở lần render đầu (tham chiếu @ref chỉ có sau khi render).</remarks>
+    [Parameter]
+    public ComposedPreview? Preview { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<StatusInfo?> OnMessage { get; set; }
+
+    private bool CanEdit => !Disabled && Session is { Composed: not null, CanEdit: true, State: not PhotoSessionState.Composing };
+
+    /// <summary>Cho phép chọn bộ lọc kế tiếp ngay khi đang ghép để thao tác chuyển màu liên tục không bị khựng.</summary>
+    private bool CanSelectFilter => !Disabled && Session is { CanEdit: true, AllSlotsFilled: true } s
+        && (s.Composed is not null || s.State == PhotoSessionState.Composing || _applyingFilter);
+
+    private bool HasCrops => Session?.SlotCrops.Any(c => c is not null) == true;
+
+    private ColorFilter CurrentFilter => _pendingFilter ?? Session?.Filter ?? ColorFilter.None;
+
+    private Guid? FirstPhotoKey => Session?.Slots.FirstOrDefault(p => p is not null)?.PhotoId;
+
+    private async Task ApplyFilterAsync(ColorFilter filter)
+    {
+        if (!CanSelectFilter || filter == CurrentFilter)
+        {
+            return;
+        }
+
+        _pendingFilter = filter;
+        await OnMessage.InvokeAsync(null);
+        if (_applyingFilter)
+        {
+            return;
+        }
+
+        _applyingFilter = true;
+        try
+        {
+            while (!IsDisposed && _pendingFilter is { } target)
+            {
+                var outcome = await Sessions.ComposeAsync(target);
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                // Nếu khách đã chọn bộ lọc khác trong lúc đang ghép, chỉ render bộ lọc cuối cùng.
+                if (_pendingFilter != target)
+                {
+                    continue;
+                }
+
+                _pendingFilter = null;
+                if (outcome == CompositionOutcome.Failed)
+                {
+                    await OnMessage.InvokeAsync(UiText.CompositionFailed);
+                }
+
+                break;
+            }
+        }
+        finally
+        {
+            _applyingFilter = false;
+        }
+    }
+}

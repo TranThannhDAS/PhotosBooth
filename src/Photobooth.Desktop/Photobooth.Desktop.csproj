@@ -15,7 +15,12 @@
     <RootNamespace>Photobooth.Desktop</RootNamespace>
     <AssemblyName>Photobooth</AssemblyName>
     <Product>Photobooth Mini</Product>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.130" />

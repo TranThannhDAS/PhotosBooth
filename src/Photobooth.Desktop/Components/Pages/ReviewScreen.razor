@@ -70,7 +70,7 @@
 
         // Phiên chuyển sang Composing → màn hình thành phẩm hiển thị trạng thái xử lý.
         // Không hủy theo vòng đời component: ghép ảnh nhanh và kết quả cần được giữ.
-        await Sessions.ComposeAsync(Session?.Composed?.Filter ?? ColorFilter.None);
+        await Sessions.ComposeAsync();
         _composing = false;
     }
 }

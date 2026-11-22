@@ -7,13 +7,17 @@ public sealed record CaptureOptions
 {
     public const int DefaultCountdownSeconds = 3;
 
-    public const int DefaultPhotosPerSession = 4;
-
     /// <summary>Giới hạn trên tạm thời (giới hạn chính thức CHƯA CHỐT trong BUSINESS_RULES.md).</summary>
     public const int MaxCountdownSeconds = 30;
 
-    /// <summary>Giới hạn trên tạm thời để tránh cấu hình bất thường.</summary>
-    public const int MaxPhotosPerSession = 10;
+    /// <summary>Giới hạn an toàn mặc định cho số ảnh một phiên (không phải số ảnh mặc định).</summary>
+    public const int DefaultMaxPhotosPerSession = 10;
+
+    /// <summary>
+    /// Trần tuyệt đối của số ảnh/phiên: giới hạn cấu hình không được vượt và validator template
+    /// dùng để chặn <c>photoIndex</c> bất thường.
+    /// </summary>
+    public const int AbsoluteMaxPhotosPerSession = 20;
 
     /// <summary>
     /// Chất lượng nén JPEG khi chụp (0..1]. 0.92 là giá trị tạm thời — giá trị chính thức còn CHƯA CHỐT.
@@ -25,8 +29,11 @@ public sealed record CaptureOptions
 
     public int CountdownSeconds { get; init; } = DefaultCountdownSeconds;
 
-    /// <summary>Số ảnh mỗi phiên. Template phải có đúng số vị trí ảnh này mới được chọn.</summary>
-    public int PhotosPerSession { get; init; } = DefaultPhotosPerSession;
+    /// <summary>
+    /// Giới hạn an toàn số ảnh một phiên. Số ảnh thực tế do template quyết định (BR-T01);
+    /// template cần nhiều ảnh hơn giới hạn này không được chọn, để tránh phiên quá dài/tốn tài nguyên.
+    /// </summary>
+    public int MaxPhotosPerSession { get; init; } = DefaultMaxPhotosPerSession;
 
     public double JpegQuality { get; init; } = DefaultJpegQuality;
 
@@ -50,9 +57,9 @@ public sealed record CaptureOptions
             throw new ArgumentOutOfRangeException(nameof(CountdownSeconds), CountdownSeconds, $"Thời gian đếm ngược phải trong khoảng 1..{MaxCountdownSeconds} giây.");
         }
 
-        if (PhotosPerSession is <= 0 or > MaxPhotosPerSession)
+        if (MaxPhotosPerSession is <= 0 or > AbsoluteMaxPhotosPerSession)
         {
-            throw new ArgumentOutOfRangeException(nameof(PhotosPerSession), PhotosPerSession, $"Số ảnh mỗi phiên phải trong khoảng 1..{MaxPhotosPerSession}.");
+            throw new ArgumentOutOfRangeException(nameof(MaxPhotosPerSession), MaxPhotosPerSession, $"Giới hạn số ảnh mỗi phiên phải trong khoảng 1..{AbsoluteMaxPhotosPerSession}.");
         }
 
         if (JpegQuality is <= 0 or > 1)

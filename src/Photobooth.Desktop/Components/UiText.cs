@@ -3,6 +3,7 @@ using Photobooth.Application.Camera;
 using Photobooth.Application.Composition;
 using Photobooth.Application.Export;
 using Photobooth.Application.Sessions;
+using Photobooth.Application.Templates;
 
 namespace Photobooth.Desktop.Components;
 
@@ -35,12 +36,54 @@ public static class UiText
     public static string PhotoLabel(int position, int count) =>
         string.Create(CultureInfo.InvariantCulture, $"Ảnh {position + 1}/{count}");
 
+    public static string PrintStatusLabel(Photobooth.Application.Printing.PrintJobStatus status) => status switch
+    {
+        Photobooth.Application.Printing.PrintJobStatus.Pending => "Chưa rõ trạng thái",
+        Photobooth.Application.Printing.PrintJobStatus.Submitted => "Windows đã tiếp nhận",
+        Photobooth.Application.Printing.PrintJobStatus.Simulated => "Giả lập (không in thật)",
+        Photobooth.Application.Printing.PrintJobStatus.Completed => "Đã in xong (đã xác nhận)",
+        Photobooth.Application.Printing.PrintJobStatus.Failed => "Thất bại",
+        Photobooth.Application.Printing.PrintJobStatus.Cancelled => "Đã hủy",
+        _ => status.ToString(),
+    };
+
+    public static string LocalTime(DateTimeOffset value) =>
+        value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture);
+
+    /// <summary>Nhãn ô ảnh: số thứ tự ô (theo template) và ảnh nguồn mà ô dùng — tránh nhầm ô với photoIndex.</summary>
+    public static string SlotLabel(int slotIndex, TemplateSlot slot) =>
+        string.Create(CultureInfo.InvariantCulture, $"Ô {slotIndex + 1} (ảnh {slot.PhotoIndex + 1})");
+
     public static string FilterLabel(ColorFilter filter) => filter switch
     {
-        ColorFilter.Grayscale => "Đen trắng",
-        ColorFilter.Sepia => "Hoài cổ",
         ColorFilter.Warm => "Ấm áp",
+        ColorFilter.Cool => "Mát dịu",
+        ColorFilter.Bright => "Tươi sáng",
+        ColorFilter.Pastel => "Dịu nhẹ",
+        ColorFilter.SoftRose => "Hồng phấn",
+        ColorFilter.GoldenHour => "Nắng vàng",
+        ColorFilter.Film => "Màu phim",
+        ColorFilter.Cinematic => "Điện ảnh",
+        ColorFilter.Moody => "Trầm",
+        ColorFilter.Sepia => "Hoài cổ",
+        ColorFilter.Grayscale => "Đen trắng",
         _ => "Gốc",
+    };
+
+    public static string FilterSubtitle(ColorFilter filter) => filter switch
+    {
+        ColorFilter.Warm => "Warm",
+        ColorFilter.Cool => "Cool",
+        ColorFilter.Bright => "Bright",
+        ColorFilter.Pastel => "Pastel",
+        ColorFilter.SoftRose => "Soft Rose",
+        ColorFilter.GoldenHour => "Golden Hour",
+        ColorFilter.Film => "Film",
+        ColorFilter.Cinematic => "Cinematic",
+        ColorFilter.Moody => "Moody",
+        ColorFilter.Sepia => "Vintage",
+        ColorFilter.Grayscale => "B&W",
+        _ => "Original",
     };
 
     public static string FormatLabel(ExportFormat format) => format switch

@@ -1,0 +1,185 @@
+@inherits SessionScreenBase
+
+@*
+    Xem trước thành phẩm của phiên hiện tại (Kiosk và chỉnh sửa lại trong Admin):
+    khung đúng tỉ lệ canvas, ảnh là bản thu nhỏ của chính thành phẩm Photo Composer; vùng chọn ô đặt theo %
+    tọa độ template; chạm vào ô → trình chỉnh vùng cắt (Manual Crop). Không có engine dựng ảnh thứ hai.
+*@
+<section class="result-preview" aria-label="Ảnh thành phẩm">
+    @if (Session?.Template is { } template)
+    {
+        <div class="canvas-frame" style="@CanvasFrameStyle(template.Canvas)">
+            <ImageView Class="result-image" Key="@PreviewKey" Alt="Ảnh thành phẩm"
+                       Loader="@(ct => Sessions.GetComposedPreviewAsync(PreviewMaxWidth, ct))" />
+            @foreach (var element in TemplateLayers.GetRenderOrder(template))
+            {
+                @* Chỉ ô ảnh có vùng chọn; hình/chữ/overlay không chặn thao tác. Ô vẽ sau (zIndex cao) nằm trên. *@
+                if (element.Slot is not { } slot)
+                {
+                    continue;
+                }
+
+                var slotIndex = element.DeclarationOrder;
+                var edited = Session.SlotCrops.ElementAtOrDefault(slotIndex) is not null;
+                <button type="button"
+                        class="slot-hit @(edited ? "is-edited" : null)"
+                        style="@SlotHitStyle(template.Canvas, slot)"
+                        title="@($"Chỉnh {UiText.SlotLabel(slotIndex, slot)}")"
+                        aria-label="@($"Chỉnh {UiText.SlotLabel(slotIndex, slot)}")"
+                        disabled="@(!CanEdit)"
+                        @onclick="() => OpenEditor(slotIndex)">
+                    @if (edited)
+                    {
+                        <span class="slot-hit-badge">Đã chỉnh</span>
+                    }
+                </button>
+            }
+        </div>
+    }
+    @if (IsComposing)
+    {
+        <div class="result-overlay" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <p>Đang tạo ảnh…</p>
+        </div>
+    }
+    else if (Session is { Composed: null, LastCompositionFailed: true })
+    {
+        <div class="result-overlay result-overlay-error" role="alert">
+            <p>Chưa tạo lại được ảnh thành phẩm.</p>
+            <p class="result-overlay-detail">Ảnh gốc và các chỉnh sửa vẫn được giữ.</p>
+            <button type="button" class="btn btn-primary" @onclick="RetryComposeAsync">Thử lại</button>
+        </div>
+    }
+    else if (Session is { Composed: null, State: PhotoSessionState.Reviewing, CanEdit: true })
+    {
+        <div class="result-overlay" aria-live="polite">
+            <p>Chưa có ảnh thành phẩm.</p>
+            <button type="button" class="btn btn-primary" @onclick="RetryComposeAsync">Ghép ảnh</button>
+        </div>
+    }
+</section>
+
+@if (_editingSlot is { } editingSlot && Session is { Template: { } editTemplate } editSession
+     && editTemplate.Slots[editingSlot].PhotoIndex is var editPhotoIndex
+     && editSession.Slots.ElementAtOrDefault(editPhotoIndex) is { } editPhoto)
+{
+    <CropEditor Template="editTemplate" SlotIndex="editingSlot" Photo="editPhoto"
+                Confirmed="@editSession.SlotCrops.ElementAtOrDefault(editingSlot)"
+                OnApply="ApplyCropAsync" OnCancel="() => _editingSlot = null" />
+}
+
+@if (_confirmReset)
+{
+    <ConfirmDialog Title="Khôi phục chỉnh sửa?"
+                   Message="Mọi ô ảnh sẽ quay về vùng cắt mặc định của khung (Auto Crop)."
+                   ConfirmText="Khôi phục" CancelText="Giữ chỉnh sửa"
+                   OnConfirm="ResetCropsAsync" OnCancel="() => _confirmReset = false" />
+}
+
+@code {
+    /// <summary>Độ rộng ảnh xem trước (px); thành phẩm gốc vẫn ở độ phân giải canvas để xuất/in.</summary>
+    private const int PreviewMaxWidth = 1200;
+
+    private int? _editingSlot;
+    private bool _confirmReset;
+    private string? _lastPreviewKey;
+
+    /// <summary>Khóa thao tác chỉnh (ví dụ đang xuất/in).</summary>
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>Thông báo cho màn hình cha hiển thị (null = xóa thông báo).</summary>
+    [Parameter]
+    public EventCallback<StatusInfo?> OnMessage { get; set; }
+
+    private bool IsComposing => Session?.State == PhotoSessionState.Composing;
+
+    public bool CanEdit => !Disabled && !IsComposing && Session is { Composed: not null, CanEdit: true };
+
+    /// <summary>
+    /// Giữ ảnh đang hiển thị trong lúc ghép lại (thay vì để trống); ảnh chỉ được tải lại khi có thành phẩm mới,
+    /// nên không bao giờ hiển thị kết quả cũ sau khi thành phẩm mới đã sẵn sàng.
+    /// </summary>
+    private string? PreviewKey
+    {
+        get
+        {
+            if (Session?.Composed?.FilePath is { } path)
+            {
+                _lastPreviewKey = path;
+            }
+
+            return _lastPreviewKey;
+        }
+    }
+
+    private static string CanvasFrameStyle(TemplateCanvas canvas) => string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"--canvas-aspect: {canvas.WidthPixels} / {canvas.HeightPixels}; --canvas-ratio: {(double)canvas.WidthPixels / canvas.HeightPixels};");
+
+    private static string SlotHitStyle(TemplateCanvas canvas, TemplateSlot slot) => string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"left: {100.0 * slot.X / canvas.WidthPixels}%; top: {100.0 * slot.Y / canvas.HeightPixels}%; " +
+        $"width: {100.0 * slot.Width / canvas.WidthPixels}%; height: {100.0 * slot.Height / canvas.HeightPixels}%;");
+
+    /// <summary>Mở trình chỉnh vùng cắt cho ô (chỉ số trong template.Slots).</summary>
+    public async Task OpenEditor(int slotIndex)
+    {
+        if (!CanEdit || Session?.Template is not { } template || slotIndex < 0 || slotIndex >= template.Slots.Count)
+        {
+            return;
+        }
+
+        var slot = template.Slots[slotIndex];
+        if (!SlotCrop.IsSupported(slot))
+        {
+            await OnMessage.InvokeAsync(new StatusInfo(
+                StatusKind.Info,
+                $"{UiText.SlotLabel(slotIndex, slot)} hiển thị trọn ảnh (contain).",
+                "Ô này luôn hiển thị toàn bộ ảnh nên chưa hỗ trợ kéo/phóng to."));
+            return;
+        }
+
+        await OnMessage.InvokeAsync(null);
+        _editingSlot = slotIndex;
+        StateHasChanged();
+    }
+
+    /// <summary>Hỏi xác nhận rồi đưa mọi ô về Auto Crop.</summary>
+    public void RequestResetAll()
+    {
+        if (CanEdit)
+        {
+            _confirmReset = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApplyCropAsync(SlotCrop? crop)
+    {
+        if (_editingSlot is not { } slotIndex)
+        {
+            return;
+        }
+
+        _editingSlot = null;
+        var outcome = await Sessions.ApplySlotCropAsync(slotIndex, crop);
+        await OnMessage.InvokeAsync(outcome switch
+        {
+            CompositionOutcome.Failed => UiText.CompositionFailed,
+            CompositionOutcome.NotReady or CompositionOutcome.Busy =>
+                new StatusInfo(StatusKind.Warning, "Chưa áp dụng được chỉnh sửa.", "Vui lòng thử lại sau khi ảnh tạo xong."),
+            _ => null,
+        });
+    }
+
+    private async Task ResetCropsAsync()
+    {
+        _confirmReset = false;
+        await OnMessage.InvokeAsync(await Sessions.ResetAllSlotCropsAsync() == CompositionOutcome.Failed ? UiText.CompositionFailed : null);
+    }
+
+    private async Task RetryComposeAsync() =>
+        await OnMessage.InvokeAsync(await Sessions.ComposeAsync() == CompositionOutcome.Failed ? UiText.CompositionFailed : null);
+}

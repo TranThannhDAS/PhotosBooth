@@ -43,11 +43,40 @@ public sealed class SkiaPhotoComposerTests : IDisposable
     }
 
     [Fact]
+    public async Task ComposeAsync_EachSlotUsesPhotoByPhotoIndex_NotBySlotOrder()
+    {
+        SKColor[] colors = [new(220, 20, 20), new(20, 160, 20), new(20, 20, 220)];
+        var photos = colors
+            .Select((c, i) => new CompositionPhoto(WriteOriginal(TestImages.CreateSolid(320, 240, c, SKEncodedImageFormat.Jpeg), $"p{i}.jpg"), Mirror: false))
+            .ToArray();
+        int[] slotIndexes = [2, 0, 1, 0, 2, 1];
+        var request = new CompositionRequest(_sessionId, TestTemplates.WithPhotoIndexes(slotIndexes), photos, ColorFilter.None, DateTimeOffset.Now);
+
+        var result = await _composer.ComposeAsync(request);
+
+        for (var slot = 0; slot < slotIndexes.Length; slot++)
+        {
+            var (x, y) = TestTemplates.SlotCenter(slot);
+            Assert.True(TestImages.IsClose(TestImages.PixelAt(result.FilePath, x, y), colors[slotIndexes[slot]]), $"Ô {slot}");
+        }
+    }
+
+    [Fact]
+    public async Task ComposeAsync_SlotReferencingMissingPhoto_ThrowsCompositionException()
+    {
+        var photo = new CompositionPhoto(WriteOriginal(TestImages.CreateSplitJpeg()), Mirror: false);
+        var request = new CompositionRequest(_sessionId, TestTemplates.WithPhotoIndexes(0, 1, 2), [photo, photo], ColorFilter.None, DateTimeOffset.Now);
+
+        var ex = await Assert.ThrowsAsync<CompositionException>(() => _composer.ComposeAsync(request));
+        Assert.Contains("photoIndex 2", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ComposeAsync_WritesNewPngWithCanvasSizeInOutputs()
     {
         var result = await _composer.ComposeAsync(Request(mirror: false));
 
-        Assert.StartsWith(_paths.GetOutputsDirectory(_sessionId), result.FilePath, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(_paths.GetDraftsDirectory(_sessionId), result.FilePath, StringComparison.OrdinalIgnoreCase);
         Assert.Equal((400, 300), (result.WidthPixels, result.HeightPixels));
         Assert.Equal((400, 300), TestImages.SizeOf(await File.ReadAllBytesAsync(result.FilePath)));
     }

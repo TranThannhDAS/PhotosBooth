@@ -1,5 +1,6 @@
 @implements IDisposable
 @inject PhotoSessionService Sessions
+@inject AdminAccessService Admin
 
 @*
     Component gốc. Màn hình hiển thị được SUY RA từ trạng thái phiên (PhotoSessionService),
@@ -7,10 +8,24 @@
 *@
 <AppErrorBoundary @ref="_errorBoundary">
     <ChildContent>
+        @* Màn khởi động/Admin chỉ có trước khi bắt đầu phục vụ khách (một lần mỗi lần mở ứng dụng). *@
+        @if (!Admin.KioskStarted)
+        {
+            if (Admin.IsUnlocked)
+            {
+                <AdminScreen />
+            }
+            else
+            {
+                <StartupScreen />
+            }
+        }
+        else
+        {
         @switch (CurrentScreen)
         {
             case AppScreen.Welcome:
-                <WelcomeScreen OnStart="StartSession" />
+                <WelcomeScreen OnStart="StartSession" Error="@_startError" OnAdmin="() => _askAdminPin = true" />
                 break;
             case AppScreen.TemplateSelection:
                 <TemplateSelectionScreen OnCancel="CancelSession" />
@@ -27,6 +42,12 @@
             case AppScreen.Done:
                 <DoneScreen OnNewSession="StartSession" OnHome="GoHome" />
                 break;
+        }
+
+        @if (_askAdminPin && CanOpenAdmin)
+        {
+            <PinDialog OnSubmit="TryOpenAdmin" OnCancel="() => _askAdminPin = false" />
+        }
         }
     </ChildContent>
     <ErrorContent>
@@ -51,6 +72,22 @@
 
     private AppErrorBoundary? _errorBoundary;
     private bool _atWelcome;
+    private string? _startError;
+    private bool _askAdminPin;
+
+    /// <summary>Chỉ vào Admin từ màn hình chào khi không có phiên chụp dang dở (không làm gián đoạn khách đang chụp).</summary>
+    private bool CanOpenAdmin => CurrentScreen == AppScreen.Welcome && Sessions.Current is null or { IsEnded: true } or { IsArchived: true };
+
+    private bool TryOpenAdmin(string pin)
+    {
+        if (!CanOpenAdmin || !Admin.TryReturnFromKiosk(pin))
+        {
+            return false;
+        }
+
+        _askAdminPin = false;
+        return true;
+    }
 
     private AppScreen CurrentScreen
     {
@@ -79,11 +116,20 @@
         // Giao diện có thể được tải lại sau sự cố WebView2: phiên còn dang dở thì quay lại đúng bước.
         _atWelcome = Sessions.Current is null or { IsEnded: true };
         Sessions.SessionChanged += OnSessionChanged;
+        Admin.Changed += OnSessionChanged;
     }
 
     private void StartSession()
     {
-        Sessions.StartNewSession();
+        // Không có thư mục sự kiện hợp lệ → không tạo phiên (không lưu ảnh sang chỗ khác).
+        if (Sessions.StartNewSession() is null)
+        {
+            _startError = "Không truy cập được thư mục sự kiện. Vui lòng báo nhân viên kiểm tra ổ đĩa.";
+            _atWelcome = true;
+            return;
+        }
+
+        _startError = null;
         _atWelcome = false;
     }
 
@@ -103,5 +149,9 @@
 
     private void OnSessionChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
 
-    public void Dispose() => Sessions.SessionChanged -= OnSessionChanged;
+    public void Dispose()
+    {
+        Sessions.SessionChanged -= OnSessionChanged;
+        Admin.Changed -= OnSessionChanged;
+    }
 }

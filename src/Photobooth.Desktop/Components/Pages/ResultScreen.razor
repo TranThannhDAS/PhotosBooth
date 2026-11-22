@@ -1,101 +1,57 @@
 @inherits SessionScreenBase
-@inject ExportFolderService ExportFolder
-@inject WindowsShellService Shell
 @inject ILogger<ResultScreen> Logger
 
 <SessionLayout Step="3" OnCancel="OnCancel" ConfirmCancel="@(Session?.Exports.Count == 0)" CancelDisabled="@Busy">
     <ChildContent>
         <div class="result-layout">
-            <section class="result-preview" aria-label="Ảnh thành phẩm">
-                @if (Session?.Composed is { } composed)
-                {
-                    <ImageView Class="result-image" Key="@composed.FilePath" Alt="Ảnh thành phẩm"
-                               Loader="@(ct => Sessions.GetComposedPreviewAsync(1200, ct))" />
-                }
-                @if (IsComposing)
-                {
-                    <div class="result-overlay" aria-live="polite">
-                        <span class="spinner" aria-hidden="true"></span>
-                        <p>Đang tạo ảnh của bạn…</p>
-                    </div>
-                }
-            </section>
+            <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
 
             <aside class="side-panel" aria-label="Tùy chọn thành phẩm">
-                <section class="panel-section">
-                    <h2 class="panel-title">Bộ lọc màu</h2>
-                    <div class="chip-group" role="radiogroup" aria-label="Bộ lọc màu">
-                        @foreach (var filter in Enum.GetValues<ColorFilter>())
-                        {
-                            var value = filter;
-                            var active = CurrentFilter == value;
-                            <button type="button" class="chip @(active ? "is-active" : null)" role="radio"
-                                    aria-checked="@(active ? "true" : "false")" disabled="@Busy"
-                                    @onclick="() => ApplyFilterAsync(value)">
-                                @UiText.FilterLabel(value)
-                            </button>
-                        }
-                    </div>
-                </section>
-
-                <section class="panel-section">
-                    <h2 class="panel-title">Lưu ảnh</h2>
-                    <div class="format-group">
-                        @foreach (var format in Enum.GetValues<ExportFormat>())
-                        {
-                            var value = format;
-                            <label class="format-option">
-                                <input type="checkbox" checked="@_formats.Contains(value)" disabled="@Busy"
-                                       @onchange="e => ToggleFormat(value, e.Value is true)" />
-                                <span>
-                                    <strong>@UiText.FormatLabel(value)</strong>
-                                    <small>@FormatDescription(value)</small>
-                                </span>
-                            </label>
-                        }
-                    </div>
-
-                    <div class="folder-row">
-                        <span class="folder-label">Lưu vào</span>
-                        <span class="folder-path" title="@ExportFolder.CurrentFolder">@ExportFolder.CurrentFolder</span>
-                        <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="PickFolderAsync">Đổi thư mục</button>
-                    </div>
-                </section>
-
                 @if (_message is not null)
                 {
                     <StatusMessage Status="@_message" />
                 }
 
-                @if (_results is { Count: > 0 })
-                {
-                    <ul class="export-results" aria-live="polite">
-                        @foreach (var result in _results)
+                <EditToolsPanel Preview="_preview" Disabled="@(_completing || _export?.IsExporting == true)" OnMessage="ShowMessage" />
+
+                <section class="panel-section">
+                    <h2 class="panel-title">Ảnh đã chụp</h2>
+                    <div class="slot-strip" aria-label="Ảnh nguồn của phiên">
+                        @if (Session is not null)
                         {
-                            <li class="@(result.Result.Succeeded ? "is-success" : "is-error")">
-                                <span class="export-icon" aria-hidden="true">@(result.Result.Succeeded ? "✓" : "✕")</span>
-                                <span>
-                                    <strong>@UiText.FormatLabel(result.Format):</strong>
-                                    @(result.Result.Succeeded ? Path.GetFileName(result.Result.FilePath) : UiText.ForExportError(result.Result.Error))
-                                </span>
-                            </li>
+                            @for (var i = 0; i < Session.RequiredPhotoCount; i++)
+                            {
+                                var position = i;
+                                var photo = Session.Slots[position];
+                                <div class="source-thumb">
+                                    <div class="slot-thumb">
+                                        @if (photo is not null)
+                                        {
+                                            <ImageView Class="slot-thumb-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
+                                                       Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 240, ct))" />
+                                        }
+                                        <span class="slot-thumb-number">@(position + 1)</span>
+                                    </div>
+                                    <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => Sessions.BeginRetake(position)">
+                                        Chụp lại
+                                    </button>
+                                </div>
+                            }
                         }
-                    </ul>
-                    @if (_lastSavedFile is not null)
-                    {
-                        <button type="button" class="btn btn-secondary" @onclick="RevealSavedFile">Mở thư mục</button>
-                    }
-                }
+                    </div>
+                </section>
+
+                <PrintPanel Disabled="@Busy" />
+
+                <ExportPanel @ref="_export" ShowSaveButton="false" AllowFolderChange="false" Disabled="@(IsComposing || _completing)" OnStateChanged="StateHasChanged" />
             </aside>
         </div>
     </ChildContent>
     <Footer>
         <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => Sessions.ReturnToReview()">Quay lại xem ảnh</button>
         <div class="footer-group">
-            @* Hành động chính đổi theo tiến trình: chưa lưu → "Lưu ảnh" nổi bật; đã lưu → "Hoàn tất" nổi bật. *@
-            <button type="button" class="btn btn-lg @(HasExports ? "btn-secondary" : "btn-primary")"
-                    disabled="@(Busy || _formats.Count == 0 || Session?.Composed is null)" @onclick="ExportAsync">
-                @if (_exporting)
+            <button type="button" class="btn btn-lg btn-secondary" disabled="@(Busy || _export?.CanExport != true)" @onclick="ExportAsync">
+                @if (_export?.IsExporting == true)
                 {
                     <span class="spinner spinner-sm" aria-hidden="true"></span>
                     <span>Đang lưu…</span>
@@ -105,116 +61,74 @@
                     <span>@(HasExports ? "Lưu thêm" : "Lưu ảnh")</span>
                 }
             </button>
-            <button type="button" class="btn btn-lg @(HasExports ? "btn-primary" : "btn-secondary")"
-                    disabled="@(Busy || !HasExports)" @onclick="() => Sessions.CompleteSession()">
-                Hoàn tất
+            @* "Hoàn tất" lưu thành phẩm vào thư mục sự kiện (không bắt buộc xuất file ra ngoài). *@
+            <button type="button" class="btn btn-lg btn-primary" disabled="@(Busy || Session?.Composed is null)" @onclick="CompleteAsync">
+                @if (_completing)
+                {
+                    <span class="spinner spinner-sm" aria-hidden="true"></span>
+                    <span>Đang lưu…</span>
+                }
+                else
+                {
+                    <span>Hoàn tất</span>
+                }
             </button>
         </div>
     </Footer>
 </SessionLayout>
 
 @code {
-    private readonly HashSet<ExportFormat> _formats = [ExportFormat.Jpeg, ExportFormat.Pdf];
-    private IReadOnlyList<FormatExportResult>? _results;
-    private string? _lastSavedFile;
+    private ComposedPreview? _preview;
+    private ExportPanel? _export;
     private StatusInfo? _message;
-    private bool _exporting;
+    private bool _completing;
 
     [Parameter, EditorRequired]
     public EventCallback OnCancel { get; set; }
 
-
     private bool IsComposing => Session?.State == PhotoSessionState.Composing;
 
-    private bool Busy => IsComposing || _exporting;
+    private bool Busy => IsComposing || _completing || _export?.IsExporting == true;
 
     private bool HasExports => Session?.Exports.Count > 0;
 
-    private ColorFilter CurrentFilter => Session?.Composed?.Filter ?? ColorFilter.None;
-
-    private string FormatDescription(ExportFormat format)
+    protected override void OnAfterRender(bool firstRender)
     {
-        var canvas = Session?.Template?.Canvas;
-        return format switch
+        // Tham chiếu @ref chỉ có sau lần render đầu: render lại để các panel nhận được khung xem trước.
+        if (firstRender)
         {
-            ExportFormat.Jpeg => "Ảnh dung lượng nhỏ, dễ chia sẻ",
-            ExportFormat.Png => "Chất lượng cao, không nén mất dữ liệu",
-            ExportFormat.Pdf when canvas is not null =>
-                $"Để in, khổ {canvas.WidthPixels / (double)canvas.Dpi:0.##}×{canvas.HeightPixels / (double)canvas.Dpi:0.##} inch",
-            _ => "Để in ấn",
-        };
-    }
-
-    private void ToggleFormat(ExportFormat format, bool selected)
-    {
-        if (selected)
-        {
-            _formats.Add(format);
-        }
-        else
-        {
-            _formats.Remove(format);
+            StateHasChanged();
         }
     }
 
-    private async Task ApplyFilterAsync(ColorFilter filter)
+    private void ShowMessage(StatusInfo? message) => _message = message;
+
+    private Task ExportAsync() => _export?.ExportAsync() ?? Task.CompletedTask;
+
+    private async Task CompleteAsync()
     {
-        if (Busy || filter == CurrentFilter)
+        if (Busy)
         {
             return;
         }
 
+        _completing = true;
         _message = null;
-        var outcome = await Sessions.ComposeAsync(filter);
-        if (outcome == CompositionOutcome.Failed)
-        {
-            _message = UiText.CompositionFailed;
-        }
-    }
-
-    private async Task PickFolderAsync()
-    {
-        if (await ExportFolder.PickFolderAsync())
-        {
-            _message = null;
-        }
-    }
-
-    private async Task ExportAsync()
-    {
-        if (Busy || _formats.Count == 0)
-        {
-            return;
-        }
-
-        _exporting = true;
-        _message = null;
-        _results = null;
-        _lastSavedFile = null;
         try
         {
-            _results = await Sessions.ExportAsync(_formats.ToArray(), ExportFolder.CurrentFolder);
-            _lastSavedFile = _results.LastOrDefault(r => r.Result.Succeeded)?.Result.FilePath;
-            _message = _results.All(r => r.Result.Succeeded)
-                ? new StatusInfo(StatusKind.Success, "Đã lưu ảnh thành công.", "Nhấn “Hoàn tất” để kết thúc hoặc lưu thêm định dạng khác.")
-                : new StatusInfo(StatusKind.Error, "Một số file chưa lưu được.", "Ảnh đã chụp và các file đã lưu vẫn được giữ nguyên.");
+            if (!await Sessions.CompleteSessionAsync())
+            {
+                _message = new StatusInfo(StatusKind.Error, "Chưa lưu được ảnh vào thư mục sự kiện.", "Kiểm tra ổ đĩa rồi thử lại. Ảnh đã chụp vẫn được giữ nguyên.");
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Logger.LogError(ex, "Lỗi ngoài dự kiến khi xuất ảnh");
+            Logger.LogError(ex, "Lỗi ngoài dự kiến khi hoàn tất phiên");
             _message = UiText.UnexpectedError;
         }
         finally
         {
-            _exporting = false;
-        }
-    }
-
-    private void RevealSavedFile()
-    {
-        if (_lastSavedFile is not null && !Shell.RevealFile(_lastSavedFile))
-        {
-            _message = new StatusInfo(StatusKind.Warning, "Không mở được thư mục chứa ảnh.", "File có thể đã bị di chuyển hoặc xóa.");
+            _completing = false;
         }
     }
 }

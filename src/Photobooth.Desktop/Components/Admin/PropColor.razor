@@ -1,0 +1,76 @@
+@* Màu #RRGGBB hoặc #AARRGGBB (AA = độ đục). Bảng chọn màu chỉ đổi RGB và giữ nguyên độ đục đang có. *@
+<div class="prop">
+    <span class="prop-label">@Label</span>
+    <div class="color-field">
+        <input type="color" aria-label="@($"{Label} — chọn màu")" value="@Rgb" disabled="@(Disabled || Value is null)" @onchange="OnPickedAsync" />
+        <input class="text-input color-text @(_invalid ? "is-invalid" : null)" type="text" maxlength="9" value="@(Value ?? string.Empty)"
+               placeholder="@(AllowEmpty ? "Không màu" : "#RRGGBB")" aria-label="@($"{Label} — mã màu")" disabled="@Disabled" @onchange="OnTypedAsync" />
+        @if (AllowEmpty && Value is null)
+        {
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@Disabled" @onclick="() => OnCommit.InvokeAsync(DefaultWhenAdded)">Thêm màu</button>
+        }
+        else if (AllowEmpty)
+        {
+            <button type="button" class="btn btn-ghost btn-sm" disabled="@Disabled" @onclick="() => OnCommit.InvokeAsync(null)">Bỏ màu</button>
+        }
+    </div>
+</div>
+
+@code {
+    private bool _invalid;
+
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Value { get; set; }
+
+    /// <summary>Cho phép không có màu (null = không tô / trong suốt).</summary>
+    [Parameter]
+    public bool AllowEmpty { get; set; }
+
+    [Parameter]
+    public string DefaultWhenAdded { get; set; } = "#000000";
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<string?> OnCommit { get; set; }
+
+    private string Rgb => Value is { Length: 9 } ? "#" + Value[3..] : Value is { Length: 7 } ? Value : "#000000";
+
+    private async Task OnPickedAsync(ChangeEventArgs e)
+    {
+        var rgb = e.Value?.ToString()?.ToUpperInvariant();
+        if (rgb is not { Length: 7 })
+        {
+            return;
+        }
+
+        _invalid = false;
+        await OnCommit.InvokeAsync(Value is { Length: 9 } ? "#" + Value[1..3] + rgb[1..] : rgb);
+    }
+
+    private async Task OnTypedAsync(ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString()?.Trim();
+        if (string.IsNullOrEmpty(text) && AllowEmpty)
+        {
+            _invalid = false;
+            await OnCommit.InvokeAsync(null);
+            return;
+        }
+
+        if (text is not null && !text.StartsWith('#'))
+        {
+            text = "#" + text;
+        }
+
+        _invalid = !HexColor.TryParse(text, out _);
+        if (!_invalid)
+        {
+            await OnCommit.InvokeAsync(text!.ToUpperInvariant());
+        }
+    }
+}

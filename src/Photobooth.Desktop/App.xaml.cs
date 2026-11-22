@@ -15,6 +15,8 @@ namespace Photobooth.Desktop;
 /// </summary>
 public partial class App : System.Windows.Application
 {
+    private static readonly TimeSpan ShutdownFlushTimeout = TimeSpan.FromSeconds(5);
+
     private ServiceProvider? _services;
     private ILogger<App>? _logger;
 
@@ -53,8 +55,15 @@ public partial class App : System.Windows.Application
     {
         try
         {
-            // Kết thúc phiên (không xóa ảnh gốc) để trạng thái được ghi nhận trong log.
-            _services?.GetService<PhotoSessionService>()?.EndCurrentSession();
+            // Kết thúc phiên (không xóa ảnh gốc) và chờ ghi xong session.json (tối đa vài giây).
+            if (_services?.GetService<PhotoSessionService>() is { } sessions)
+            {
+                sessions.EndCurrentSession();
+                if (!sessions.FlushAsync().Wait(ShutdownFlushTimeout))
+                {
+                    _logger?.LogWarning("Hết thời gian chờ ghi dữ liệu phiên khi đóng ứng dụng");
+                }
+            }
             _logger?.LogInformation("Đóng ứng dụng (mã thoát {ExitCode})", e.ApplicationExitCode);
         }
         finally
