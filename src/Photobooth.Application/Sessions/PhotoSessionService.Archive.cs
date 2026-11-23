@@ -19,7 +19,7 @@ public sealed partial class PhotoSessionService
     // ---------------------------------------------------------------- Ghi metadata
 
     /// <summary>
-    /// Ghi session.json của phiên hiện tại (ảnh chụp mới nhất của trạng thái). Lỗi ghi không làm mất ảnh đã lưu;
+    /// Ghi metadata của phiên hiện tại (qua ISessionArchive) (ảnh chụp mới nhất của trạng thái). Lỗi ghi không làm mất ảnh đã lưu;
     /// phiên được đánh dấu <see cref="PhotoSession.PersistenceFailed"/> và lần ghi sau sẽ ghi lại toàn bộ.
     /// </summary>
     /// <returns>true nếu đã ghi thành công (hoặc phiên không cần lưu).</returns>

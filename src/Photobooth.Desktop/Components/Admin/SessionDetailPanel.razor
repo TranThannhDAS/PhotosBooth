@@ -63,6 +63,31 @@
                 }
             </section>
 
+            @if (SelectedVersion is { } shared)
+            {
+                <section class="panel-section">
+                    <h2 class="panel-title">Chia sẻ qua QR (v@(shared.Version))</h2>
+                    @if (shared.Share is { } link)
+                    {
+                        @* Token đã lưu của phiên bản này — mở lại phiên không đổi QR. *@
+                        <ShareQrCard @key="link.Token" Link="link" Title="Mã QR của phiên bản này" ShowDetails="true" />
+                    }
+                    else if (Sessions.ShareConfiguration.IsReady)
+                    {
+                        <p class="panel-hint">Phiên bản này chưa có mã QR. Tạo mã QR mới sẽ không ảnh hưởng mã QR của các phiên bản khác.</p>
+                        <button type="button" class="btn btn-secondary" disabled="@_sharing" @onclick="() => CreateShareAsync(shared.Version)">Tạo mã QR chia sẻ</button>
+                    }
+                    else
+                    {
+                        <p class="panel-hint">@Sessions.ShareConfiguration.Problem</p>
+                    }
+                    @if (_shareMessage is not null)
+                    {
+                        <StatusMessage Status="@_shareMessage" />
+                    }
+                </section>
+            }
+
             @if (SelectedVersion is { } selected)
             {
                 <PrintPanel Version="selected.Version" />
@@ -119,6 +144,8 @@
 @code {
     private int? _version;
     private bool _zoomed;
+    private bool _sharing;
+    private StatusInfo? _shareMessage;
 
     [Parameter, EditorRequired]
     public ArchivedSession Archived { get; set; } = default!;
@@ -132,6 +159,28 @@
 
     private OutputVersion? SelectedVersion =>
         Session is { } s ? (_version is { } v ? s.FindVersion(v) : null) ?? s.LatestVersion : null;
+
+    private async Task CreateShareAsync(int version)
+    {
+        if (_sharing)
+        {
+            return;
+        }
+
+        _sharing = true;
+        _shareMessage = null;
+        try
+        {
+            if (await Sessions.EnsureShareLinkAsync(version) is null)
+            {
+                _shareMessage = new StatusInfo(StatusKind.Error, "Chưa tạo được mã QR.", "Không ghi được dữ liệu phiên hoặc thiếu file ảnh thành phẩm.");
+            }
+        }
+        finally
+        {
+            _sharing = false;
+        }
+    }
 
     private Task SetStatusAsync(Photobooth.Application.Printing.PrintJob job, Photobooth.Application.Printing.PrintJobStatus status) =>
         Sessions.UpdatePrintJobStatusAsync(job.PrintJobId, status);

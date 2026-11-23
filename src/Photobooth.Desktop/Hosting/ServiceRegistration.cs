@@ -8,6 +8,7 @@ using Photobooth.Application.Export;
 using Photobooth.Application.Photos;
 using Photobooth.Application.Printing;
 using Photobooth.Application.Sessions;
+using Photobooth.Application.Sharing;
 using Photobooth.Application.Templates;
 using Photobooth.Desktop.Camera;
 using Photobooth.Desktop.Platform;
@@ -15,8 +16,10 @@ using Photobooth.Infrastructure.Configuration;
 using Photobooth.Infrastructure.Events;
 using Photobooth.Infrastructure.Export;
 using Photobooth.Infrastructure.Imaging;
+using Photobooth.Infrastructure.Persistence;
 using Photobooth.Infrastructure.Logging;
 using Photobooth.Infrastructure.Printing;
+using Photobooth.Infrastructure.Sharing;
 using Photobooth.Infrastructure.Storage;
 using Photobooth.Infrastructure.Templates;
 
@@ -32,6 +35,9 @@ public static class ServiceRegistration
         services.AddLogging(builder =>
         {
             builder.SetMinimumLevel(LogLevel.Information);
+
+            // Không ghi từng câu SQL của EF Core vào log (chỉ cảnh báo/lỗi).
+            builder.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
             builder.AddProvider(new FileLoggerProvider(paths.LogsDirectory, LogLevel.Information, TimeProvider.System));
         });
 
@@ -49,8 +55,21 @@ public static class ServiceRegistration
         services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Capture);
         services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Export);
         services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Print);
+        services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Cloud);
+
+        // Chia sẻ QR (Offline-First): link sinh trên máy; upload lên Cloud chạy nền, trạng thái lưu trong thư mục phiên.
+        services.AddSingleton<ShareLinkFactory>();
+        services.AddSingleton<CloudUploadService>();
+        services.AddSingleton<ICloudUploadQueue>(sp => sp.GetRequiredService<CloudUploadService>());
+        services.AddSingleton<QrCodeRenderer>();
+
+        // Metadata nghiệp vụ: SQLite %LOCALAPPDATA%\Photobooth\photobooth.db (schema tạo bằng EF Core Migrations lúc khởi động).
+        // Ảnh vẫn là file trong Event Workspace. Factory: mỗi thao tác một DbContext ngắn (service đều là singleton).
+        Directory.CreateDirectory(paths.RootDirectory);
+        services.AddDbContextFactory<PhotoboothDbContext>(options => PhotoboothDatabase.Configure(options, paths.DatabaseFilePath));
 
         // Sự kiện (Event Workspace) và lưu trữ phiên lâu dài theo sự kiện.
+        // app-state.json chỉ còn giữ lựa chọn máy in (cấu hình máy, không phải dữ liệu nghiệp vụ).
         services.AddSingleton<AppStateStore>();
         services.AddSingleton<EventWorkspaceService>();
         services.AddSingleton<ISessionArchive, EventSessionArchive>();

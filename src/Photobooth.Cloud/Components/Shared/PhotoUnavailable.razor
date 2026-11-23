@@ -1,0 +1,38 @@
+@* Ảnh có metadata nhưng không phục vụ được: file đã mất (410) hoặc database tạm thời không truy cập được (503). *@
+<PageTitle>Ảnh tạm thời không khả dụng — Photobooth</PageTitle>
+<section class="notice" role="alert">
+    <h1>Ảnh tạm thời không khả dụng</h1>
+    <p>
+        @(Lookup.Availability == PhotoAvailability.FileMissing
+            ? "Máy chủ không còn file của ảnh này. Vui lòng liên hệ nhân viên quầy chụp."
+            : "Máy chủ đang gặp sự cố. Vui lòng thử lại sau ít phút.")
+    </p>
+</section>
+
+@code {
+    /// <summary>Kết quả tra cứu ảnh khi không hiển thị được (FileMissing hoặc MetadataUnavailable).</summary>
+    [Parameter, EditorRequired]
+    public PhotoLookup Lookup { get; set; } = default!;
+
+    /// <summary>Tra cứu ảnh cho trang và đặt mã HTTP phù hợp: file mất → 410, database lỗi → 503.</summary>
+    public static async Task<PhotoLookup> LookupAsync(PhotoStore store, string idOrToken, HttpContext? httpContext)
+    {
+        PhotoLookup lookup;
+        try
+        {
+            lookup = await store.FindAsync(idOrToken, httpContext?.RequestAborted ?? CancellationToken.None);
+        }
+        catch (PhotoMetadataUnavailableException)
+        {
+            httpContext?.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            return new PhotoLookup(PhotoAvailability.MetadataUnavailable, null);
+        }
+
+        if (lookup.Availability == PhotoAvailability.FileMissing)
+        {
+            httpContext?.Response.StatusCode = StatusCodes.Status410Gone;
+        }
+
+        return lookup;
+    }
+}

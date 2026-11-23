@@ -1,0 +1,18 @@
+@* Hiển thị một ảnh đã lưu và nút tải xuống (dùng chung cho /photos/{id} và /s/{shareToken}). *@
+<section class="photo-view">
+    <h1 class="visually-hidden">Ảnh của bạn</h1>
+    <figure class="photo-frame">
+        <img src="@FileUrl" alt="Ảnh chụp tại Photobooth" decoding="async" />
+    </figure>
+    <a class="btn-download" href="@DownloadUrl" download>Tải ảnh xuống</a>
+    <p class="hint">Trên điện thoại, bạn cũng có thể nhấn giữ ảnh để lưu.</p>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public StoredPhoto Photo { get; set; } = default!;
+
+    private string FileUrl => $"api/photos/{Uri.EscapeDataString(Photo.Id)}/file";
+
+    private string DownloadUrl => $"api/photos/{Uri.EscapeDataString(Photo.Id)}/download";
+}

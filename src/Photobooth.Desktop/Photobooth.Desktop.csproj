@@ -25,6 +25,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.130" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.15" />
+    <!-- Tạo mã QR offline cho link chia sẻ ảnh. QRCoder — giấy phép MIT, không phụ thuộc thêm package nào. -->
+    <PackageReference Include="QRCoder" Version="1.7.0" />
   </ItemGroup>
 
   <ItemGroup>

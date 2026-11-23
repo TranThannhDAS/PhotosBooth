@@ -5,6 +5,7 @@ using Photobooth.Application.Export;
 using Photobooth.Application.Events;
 using Photobooth.Application.Photos;
 using Photobooth.Application.Printing;
+using Photobooth.Application.Sharing;
 using Photobooth.Application.Templates;
 
 namespace Photobooth.Application.Sessions;
@@ -33,6 +34,8 @@ public sealed partial class PhotoSessionService
     private readonly ISessionArchive _archive;
     private readonly IPrinterProvider _printers;
     private readonly PrintOptions _printOptions;
+    private readonly ShareLinkFactory _shareLinks;
+    private readonly ICloudUploadQueue _uploads;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PhotoSessionService> _logger;
     private readonly Lock _gate = new();
@@ -51,6 +54,8 @@ public sealed partial class PhotoSessionService
         IPrinterProvider printers,
         CaptureOptions options,
         PrintOptions printOptions,
+        ShareLinkFactory shareLinks,
+        ICloudUploadQueue uploads,
         TimeProvider timeProvider,
         ILogger<PhotoSessionService> logger)
     {
@@ -66,6 +71,8 @@ public sealed partial class PhotoSessionService
         _archive = archive;
         _printers = printers;
         _printOptions = printOptions;
+        _shareLinks = shareLinks;
+        _uploads = uploads;
         _timeProvider = timeProvider;
         _logger = logger;
         Options = options;
@@ -156,7 +163,8 @@ public sealed partial class PhotoSessionService
 
     /// <summary>
     /// Hoàn tất phiên Kiosk: xác nhận ảnh thành phẩm hiện tại thành một phiên bản lưu trong Event Workspace
-    /// (dùng lại phiên bản đã có nếu không đổi gì), rồi chuyển sang Completed.
+    /// (dùng lại phiên bản đã có nếu không đổi gì), gắn link chia sẻ QR (nếu Cloud được cấu hình — không cần Internet),
+    /// rồi chuyển sang Completed. Upload lên Cloud chạy nền sau đó, không chặn việc hoàn tất.
     /// </summary>
     public async Task<bool> CompleteSessionAsync(CancellationToken cancellationToken = default)
     {
@@ -165,14 +173,17 @@ public sealed partial class PhotoSessionService
             return false;
         }
 
-        if (await ConfirmOutputAsync(cancellationToken).ConfigureAwait(false) is null)
+        if (await ConfirmOutputAsync(cancellationToken).ConfigureAwait(false) is not { } output)
         {
             return false;
         }
 
+        // Chia sẻ là phần bổ sung: không tạo được link (chưa cấu hình/ghi metadata lỗi) vẫn hoàn tất phiên bình thường.
+        await EnsureShareLinkAsync(output.Version, cancellationToken).ConfigureAwait(false);
+
         var completed = TryTransition(
             s => s.State == PhotoSessionState.Ready && !s.IsArchived && s.Versions.Count > 0,
-            s => s with { State = PhotoSessionState.Completed });
+            s => s with { State = PhotoSessionState.Completed, CompletedVersion = output.Version });
 
         if (completed)
         {

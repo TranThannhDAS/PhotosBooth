@@ -22,6 +22,12 @@ public sealed record OutputVersion(
     /// <summary>Ảnh thu nhỏ cho Gallery (có thể không có).</summary>
     public string? ThumbnailPath { get; init; }
 
+    /// <summary>
+    /// Link chia sẻ QR riêng của phiên bản này (null = chưa chia sẻ). Được lưu bền vững TRƯỚC khi hiển thị QR
+    /// và không bao giờ đổi; phiên bản mới (chỉnh sửa lại) có token mới, phiên bản đã chia sẻ không bị ghi đè.
+    /// </summary>
+    public Sharing.ShareLink? Share { get; init; }
+
     /// <summary>Thành phẩm này được tạo từ đúng các đầu vào hiện tại (không cần phiên bản mới).</summary>
     public bool Matches(ComposedResult composed) =>
         composed.TemplateId == TemplateId
@@ -35,7 +41,7 @@ public sealed record SessionLocation(string Directory, Guid EventId);
 
 /// <summary>Tóm tắt một phiên đã lưu cho Gallery (không tải ảnh).</summary>
 /// <param name="SessionKey">Tên thư mục phiên trong Event Workspace (định danh khi mở lại).</param>
-/// <param name="Problem">Mô tả lỗi dữ liệu nếu có (file thiếu, session.json hỏng...).</param>
+/// <param name="Problem">Mô tả lỗi dữ liệu nếu có (file thiếu, chưa có thành phẩm...).</param>
 public sealed record ArchivedSessionSummary(
     string SessionKey,
     Guid SessionId,
@@ -57,8 +63,9 @@ public sealed record ArchivedSessionSummary(
 public sealed record ArchivedSession(string SessionKey, PhotoSession Session, string? EditUnavailableReason);
 
 /// <summary>
-/// Lưu trữ phiên chụp lâu dài trong Event Workspace hiện tại (file-based: session.json, snapshot template,
-/// ảnh gốc, phiên bản thành phẩm, lịch sử in). Mọi đường dẫn trong metadata là tương đối với thư mục phiên.
+/// Lưu trữ phiên chụp lâu dài: file trong Event Workspace hiện tại (snapshot template,
+/// ảnh gốc, phiên bản thành phẩm) và metadata (phiên, ảnh, phiên bản, xuất, in, chia sẻ) trong database của Infrastructure.
+/// Đường dẫn trong metadata là tương đối với thư mục sự kiện.
 /// </summary>
 public interface ISessionArchive
 {
@@ -66,7 +73,7 @@ public interface ISessionArchive
     /// <exception cref="Events.EventWorkspaceUnavailableException">Chưa có/không truy cập được Event Workspace.</exception>
     SessionLocation CreateSessionLocation(Guid sessionId, DateTimeOffset createdAt);
 
-    /// <summary>Ghi session.json (an toàn: ghi tạm rồi đổi tên) và snapshot template (lần đầu).</summary>
+    /// <summary>Ghi metadata phiên (một transaction) và snapshot template (file, lần đầu).</summary>
     Task SaveAsync(PhotoSession session, CancellationToken cancellationToken = default);
 
     /// <summary>Sao chép thành phẩm nháp thành phiên bản <paramref name="version"/> (không ghi đè) kèm ảnh thu nhỏ.</summary>
@@ -84,7 +91,7 @@ public interface ISessionArchive
     /// </summary>
     Task<IReadOnlyList<ArchivedSessionSummary>> ListSessionsAsync(string? eventKey = null, CancellationToken cancellationToken = default);
 
-    /// <exception cref="InvalidDataException">session.json không đọc được.</exception>
+    /// <exception cref="InvalidDataException">Metadata phiên không hợp lệ (đường dẫn ngoài thư mục sự kiện...).</exception>
     /// <exception cref="DirectoryNotFoundException">Không có phiên này trong sự kiện.</exception>
     Task<ArchivedSession> LoadSessionAsync(string sessionKey, string? eventKey = null, CancellationToken cancellationToken = default);
 }

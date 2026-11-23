@@ -7,6 +7,17 @@
             <div class="done-icon" aria-hidden="true">✓</div>
             <h1>Hoàn thành!</h1>
             <p class="done-lead">Cảm ơn bạn đã sử dụng Photobooth. Ảnh của bạn đã được lưu lại.</p>
+
+            @* QR thuộc đúng phiên bản khách vừa hoàn tất của phiên hiện tại; hiển thị ngay, không chờ upload. *@
+            @if (Session?.CompletedOutput?.Share is { } share)
+            {
+                <ShareQrCard @key="share.Token" Link="share" />
+            }
+            else if (Sessions.ShareConfiguration.IsReady && Session?.CompletedOutput is not null)
+            {
+                <p class="panel-hint">Chưa tạo được mã QR cho ảnh này. Vui lòng báo nhân viên nếu bạn cần nhận ảnh qua điện thoại.</p>
+            }
+
             <ul class="done-files">
                 @foreach (var file in Session?.Exports ?? [])
                 {

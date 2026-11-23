@@ -1,12 +1,16 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Photobooth.Application.Composition;
 using Photobooth.Application.Events;
 using Photobooth.Application.Printing;
 using Photobooth.Application.Sessions;
+using Photobooth.Application.Sharing;
 using Photobooth.Application.Templates;
 using Photobooth.Infrastructure.Imaging;
+using Photobooth.Infrastructure.Persistence;
 using Photobooth.Infrastructure.Storage;
 using Photobooth.Infrastructure.Templates;
 using SkiaSharp;
@@ -14,19 +18,18 @@ using SkiaSharp;
 namespace Photobooth.Infrastructure.Events;
 
 /// <summary>
-/// Lưu phiên chụp trong Event Workspace hiện tại:
+/// Lưu phiên chụp: FILE trong Event Workspace, METADATA trong SQLite (nguồn dữ liệu chính, không còn session.json).
 /// <code>
 /// {Sự kiện}/Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/
-///   session.json        metadata (đường dẫn tương đối)
-///   Template/           snapshot template.json + asset đã dùng
+///   Template/           snapshot template.json + asset đã dùng (định dạng template của Template Manager)
 ///   Originals/          ảnh gốc (bất biến)
 ///   Outputs/            final-v{N}.png (+ .thumb.jpg) — không bao giờ ghi đè
 ///   Drafts/             bản ghép tạm khi đang chỉnh (được dọn khi phiên kết thúc)
 /// </code>
+/// Mọi đường dẫn trong database là tương đối với thư mục sự kiện; khi đọc luôn kiểm tra nằm trong thư mục đó.
 /// </summary>
 public sealed class EventSessionArchive : ISessionArchive
 {
-    public const string SessionFileName = "session.json";
     public const string TemplateFolderName = "Template";
     public const string OutputsFolderName = "Outputs";
     private const int ThumbnailWidth = 360;
@@ -38,14 +41,23 @@ public sealed class EventSessionArchive : ISessionArchive
         Encoder = AppStateStore.SerializerOptions.Encoder,
     };
 
+    private static readonly JsonSerializerOptions CropOptions = new(JsonSerializerDefaults.Web);
+
     private readonly EventWorkspaceService _workspaces;
+    private readonly IDbContextFactory<PhotoboothDbContext> _db;
     private readonly PhotoboothStoragePaths _paths;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EventSessionArchive> _logger;
 
-    public EventSessionArchive(EventWorkspaceService workspaces, PhotoboothStoragePaths paths, TimeProvider timeProvider, ILogger<EventSessionArchive> logger)
+    public EventSessionArchive(
+        EventWorkspaceService workspaces,
+        IDbContextFactory<PhotoboothDbContext> db,
+        PhotoboothStoragePaths paths,
+        TimeProvider timeProvider,
+        ILogger<EventSessionArchive> logger)
     {
         _workspaces = workspaces;
+        _db = db;
         _paths = paths;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -74,6 +86,11 @@ public sealed class EventSessionArchive : ISessionArchive
         return new SessionLocation(directory, workspace.Info.EventId);
     }
 
+    /// <summary>
+    /// Ghi metadata phiên vào SQLite trong MỘT transaction (SaveChanges): phiên, ảnh gốc mới, phiên bản, file xuất, lịch sử in.
+    /// Chỉ thêm/cập nhật — không xóa ảnh, phiên bản hay lịch sử. Share Token đã lưu không bao giờ bị đổi hoặc xóa.
+    /// </summary>
+    /// <exception cref="IOException">Không ghi được (database lỗi, thư mục sự kiện không xác định).</exception>
     public async Task SaveAsync(PhotoSession session, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -82,6 +99,9 @@ public sealed class EventSessionArchive : ISessionArchive
             return;
         }
 
+        var eventId = session.EventId ?? throw new IOException("Phiên không gắn với sự kiện nào.");
+        var root = _workspaces.GetEventFolder(eventId) ?? throw new IOException("Không xác định được thư mục của sự kiện chứa phiên.");
+
         Directory.CreateDirectory(directory);
         string? templateFile = null;
         if (session.Template is { } template)
@@ -89,13 +109,127 @@ public sealed class EventSessionArchive : ISessionArchive
             templateFile = await EnsureTemplateSnapshotAsync(directory, template, cancellationToken).ConfigureAwait(false);
         }
 
-        var document = ToDocument(session, directory, templateFile);
-        await SafeFileWriter.WriteAsync(
-                Path.Combine(directory, SessionFileName),
-                (stream, token) => JsonSerializer.SerializeAsync(stream, document, AppStateStore.SerializerOptions, token),
-                overwrite: true,
-                cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await using var db = await _db.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            var row = await db.Sessions
+                .Include(s => s.Photos)
+                .Include(s => s.Versions)
+                .Include(s => s.Exports)
+                .Include(s => s.PrintJobs)
+                .AsSplitQuery()
+                .FirstOrDefaultAsync(s => s.Id == session.SessionId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (row is null)
+            {
+                row = new SessionRecord { Id = session.SessionId, EventId = eventId, CreatedAt = session.CreatedAt };
+                db.Sessions.Add(row);
+            }
+            else if (row.EventId != eventId)
+            {
+                throw new IOException("Phiên đã thuộc một sự kiện khác.");
+            }
+
+            row.DirectoryPath = Relative(root, directory);
+            row.UpdatedAt = _timeProvider.GetUtcNow();
+            row.Status = StatusOf(session);
+            row.TemplateId = session.Template?.Id ?? row.TemplateId;
+            row.TemplateName = session.Template?.Name ?? row.TemplateName;
+            row.TemplateFile = templateFile is null ? row.TemplateFile : Relative(root, templateFile);
+            row.Mirror = session.Mirror;
+            row.Filter = session.Filter.ToString();
+            row.SelectedPhotoIds = session.Slots.Select(p => p?.PhotoId).ToList();
+            row.SlotCrops = SerializeCrops(session.SlotCrops);
+
+            foreach (var photo in session.Photos.Where(p => row.Photos.All(r => r.Id != p.PhotoId)))
+            {
+                row.Photos.Add(new PhotoRecord
+                {
+                    Id = photo.PhotoId,
+                    SessionId = row.Id,
+                    Sequence = photo.Sequence,
+                    Position = photo.Position,
+                    CapturedAt = photo.CapturedAt,
+                    WidthPixels = photo.WidthPixels,
+                    HeightPixels = photo.HeightPixels,
+                    FilePath = Relative(root, photo.OriginalFilePath),
+                    SizeBytes = photo.SizeBytes,
+                    Mirrored = photo.Mirrored,
+                });
+            }
+
+            foreach (var version in session.Versions)
+            {
+                var record = row.Versions.FirstOrDefault(v => v.Version == version.Version);
+                if (record is null)
+                {
+                    record = new OutputVersionRecord { SessionId = row.Id, Version = version.Version };
+                    row.Versions.Add(record);
+                }
+
+                record.FilePath = Relative(root, version.FilePath);
+                record.ThumbnailPath = version.ThumbnailPath is null ? null : Relative(root, version.ThumbnailPath);
+                record.WidthPixels = version.WidthPixels;
+                record.HeightPixels = version.HeightPixels;
+                record.Dpi = version.Dpi;
+                record.TemplateId = version.TemplateId;
+                record.Filter = version.Filter.ToString();
+                record.PhotoIds = [.. version.PhotoIds];
+                record.SlotCrops = SerializeCrops(version.SlotCrops);
+                record.CreatedAt = version.CreatedAt;
+
+                // Share Token chỉ được GÁN một lần; ảnh chụp trạng thái cũ (chưa có token) không bao giờ xóa token đã lưu.
+                if (record.ShareToken is null && version.Share is { } share)
+                {
+                    record.ShareToken = share.Token;
+                    record.ShareUrl = share.Url;
+                    record.ShareCreatedAt = share.CreatedAt;
+                }
+                else if (record.ShareToken is not null && version.Share is { } other && other.Token != record.ShareToken)
+                {
+                    _logger.LogWarning("Bỏ qua thay đổi Share Token của phiên {SessionId} v{Version} (token đã lưu không được đổi)", session.SessionId, version.Version);
+                }
+            }
+
+            foreach (var export in session.Exports.Where(e => !row.Exports.Any(r => r.FilePath == e.FilePath && r.Format == e.Format.ToString() && r.ExportedAt == e.ExportedAt)))
+            {
+                row.Exports.Add(new ExportRecord
+                {
+                    SessionId = row.Id,
+                    Format = export.Format.ToString(),
+                    FilePath = export.FilePath,
+                    ExportedAt = export.ExportedAt,
+                    Version = export.Version,
+                });
+            }
+
+            foreach (var job in session.PrintJobs)
+            {
+                var record = row.PrintJobs.FirstOrDefault(j => j.Id == job.PrintJobId);
+                if (record is null)
+                {
+                    record = new PrintJobRecord { Id = job.PrintJobId, SessionId = row.Id, CreatedAt = job.CreatedAt };
+                    row.PrintJobs.Add(record);
+                }
+
+                record.Version = job.OutputVersion;
+                record.FilePath = Relative(root, job.OutputFilePath);
+                record.Copies = job.Copies;
+                record.PrinterName = job.PrinterName;
+                record.IsPhysicalPrinter = job.IsPhysicalPrinter;
+                record.Status = job.Status.ToString();
+                record.UpdatedAt = job.UpdatedAt;
+                record.ErrorMessage = job.ErrorMessage;
+            }
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is DbUpdateException or SqliteException)
+        {
+            // PhotoSessionService xử lý IOException: phiên được đánh dấu chưa lưu được, ảnh trên đĩa không bị ảnh hưởng.
+            throw new IOException("Không ghi được dữ liệu phiên vào cơ sở dữ liệu.", ex);
+        }
     }
 
     public async Task<OutputVersion> CreateOutputVersionAsync(PhotoSession session, ComposedResult composed, int version, CancellationToken cancellationToken = default)
@@ -187,7 +321,7 @@ public sealed class EventSessionArchive : ISessionArchive
                 : new KnownEvent(EventKey(e.EventId), e.Name, false, e.LastOpenedAt, _workspaces.DescribeProblem(e)))
             .ToList();
 
-        // Sự kiện hiện tại luôn có trong danh sách (kể cả dữ liệu cũ chưa có danh bạ).
+        // Sự kiện hiện tại luôn có trong danh sách.
         if (current is not null && known.All(k => !k.IsCurrent))
         {
             known.Insert(0, new KnownEvent(EventKey(current.Info.EventId), current.Info.Name, true, _timeProvider.GetUtcNow(), null));
@@ -200,27 +334,40 @@ public sealed class EventSessionArchive : ISessionArchive
     {
         var workspace = await ResolveWorkspaceAsync(eventKey, cancellationToken).ConfigureAwait(false);
         var key = EventKey(workspace.Info.EventId);
-        return await Task.Run<IReadOnlyList<ArchivedSessionSummary>>(
-            () =>
+        await using var db = await _db.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var rows = await db.Sessions
+            .AsNoTracking()
+            .Where(s => s.EventId == workspace.Info.EventId)
+            .Select(s => new
             {
-                if (!Directory.Exists(workspace.SessionsDirectory))
-                {
-                    return [];
-                }
+                s.Id,
+                s.DirectoryPath,
+                s.CreatedAt,
+                s.TemplateName,
+                PhotoCount = s.Photos.Count,
+                PrintJobCount = s.PrintJobs.Count,
+                Versions = s.Versions.ToList(),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
 
-                var result = new List<ArchivedSessionSummary>();
-                foreach (var directory in Directory.EnumerateDirectories(workspace.SessionsDirectory))
+        return await Task.Run<IReadOnlyList<ArchivedSessionSummary>>(
+            () => rows
+                .Select(r =>
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var file = Path.Combine(directory, SessionFileName);
-                    if (File.Exists(file))
+                    var latest = r.Versions.OrderBy(v => v.Version).Select(v => ToVersion(workspace.RootDirectory, v)).LastOrDefault();
+                    var problem = r.Versions.Count == 0
+                        ? "Chưa có ảnh thành phẩm."
+                        : latest is null || !File.Exists(latest.FilePath) ? "Thiếu file ảnh thành phẩm." : null;
+                    return new ArchivedSessionSummary(SessionKey(r.DirectoryPath), r.Id, r.CreatedAt, r.TemplateName, r.PhotoCount,
+                        latest, r.Versions.Count, r.PrintJobCount, problem)
                     {
-                        result.Add(Summarize(directory, file) with { EventKey = key, EventName = workspace.Info.Name });
-                    }
-                }
-
-                return result.OrderByDescending(s => s.CreatedAt).ToArray();
-            },
+                        EventKey = key,
+                        EventName = workspace.Info.Name,
+                    };
+                })
+                .OrderByDescending(s => s.CreatedAt)
+                .ToArray(),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -232,19 +379,27 @@ public sealed class EventSessionArchive : ISessionArchive
             throw new DirectoryNotFoundException("Mã phiên không hợp lệ.");
         }
 
-        var directory = Path.Combine(workspace.SessionsDirectory, sessionKey);
-        var file = Path.Combine(directory, SessionFileName);
-        if (!File.Exists(file))
-        {
-            throw new DirectoryNotFoundException("Không tìm thấy phiên trong sự kiện hiện tại.");
-        }
+        await using var db = await _db.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var candidates = await db.Sessions
+            .AsNoTracking()
+            .Include(s => s.Photos)
+            .Include(s => s.Versions)
+            .Include(s => s.Exports)
+            .Include(s => s.PrintJobs)
+            .AsSplitQuery()
+            .Where(s => s.EventId == workspace.Info.EventId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var row = candidates.FirstOrDefault(s => string.Equals(SessionKey(s.DirectoryPath), sessionKey, StringComparison.OrdinalIgnoreCase))
+            ?? throw new DirectoryNotFoundException("Không tìm thấy phiên trong sự kiện.");
 
-        var document = await Task.Run(() => ReadDocument(file), cancellationToken).ConfigureAwait(false);
-        _paths.RegisterSessionDirectory(document.SessionId, directory);
+        var root = workspace.RootDirectory;
+        var directory = Resolve(root, row.DirectoryPath) ?? throw new InvalidDataException("Đường dẫn phiên trong cơ sở dữ liệu không hợp lệ.");
+        _paths.RegisterSessionDirectory(row.Id, directory);
 
         PhotoTemplate? template = null;
         string? reason = null;
-        if (document.TemplateFile is { } templateRelative && Resolve(directory, templateRelative) is { } templatePath && File.Exists(templatePath))
+        if (Resolve(root, row.TemplateFile) is { } templatePath && File.Exists(templatePath))
         {
             var (loaded, validation) = await Task.Run(() => JsonTemplateCatalog.LoadTemplateFile(templatePath), cancellationToken).ConfigureAwait(false);
             template = loaded;
@@ -258,24 +413,22 @@ public sealed class EventSessionArchive : ISessionArchive
             reason = "Phiên không còn bản lưu template nên không thể ghép lại.";
         }
 
-        var photos = new List<CapturedPhoto>();
-        foreach (var photo in document.Photos)
-        {
-            if (Resolve(directory, photo.File) is { } path)
-            {
-                photos.Add(new CapturedPhoto(photo.PhotoId, document.SessionId, photo.Sequence, photo.Position, photo.CapturedAt,
-                    photo.WidthPixels, photo.HeightPixels, path, photo.SizeBytes, photo.Mirrored));
-            }
-        }
+        var photos = row.Photos
+            .OrderBy(p => p.Sequence)
+            .Select(p => Resolve(root, p.FilePath) is { } path
+                ? new CapturedPhoto(p.Id, row.Id, p.Sequence, p.Position, p.CapturedAt, p.WidthPixels, p.HeightPixels, path, p.SizeBytes, p.Mirrored)
+                : null)
+            .OfType<CapturedPhoto>()
+            .ToList();
 
-        var versions = document.Versions
-            .Select(v => ToVersion(directory, v))
+        var versions = row.Versions
+            .Select(v => ToVersion(root, v))
             .OfType<OutputVersion>()
             .OrderBy(v => v.Version)
             .ToArray();
 
         // Ảnh nguồn cần cho chỉnh sửa: theo phiên bản mới nhất, hoặc lựa chọn hiện tại nếu chưa có phiên bản.
-        var requiredIds = versions.Length > 0 ? versions[^1].PhotoIds.Select(id => (Guid?)id).ToList() : document.SelectedPhotoIds;
+        var requiredIds = versions.Length > 0 ? versions[^1].PhotoIds.Select(id => (Guid?)id).ToList() : row.SelectedPhotoIds;
         var slots = requiredIds.Select(id => photos.FirstOrDefault(p => p.PhotoId == id)).ToArray();
         if (reason is null)
         {
@@ -289,35 +442,36 @@ public sealed class EventSessionArchive : ISessionArchive
             }
         }
 
-        var slotCount = template?.Slots.Count ?? document.SlotCrops.Count;
-        var crops = Enumerable.Range(0, slotCount)
-            .Select(i => i < document.SlotCrops.Count ? document.SlotCrops[i]?.ToCrop() : null)
-            .ToArray();
+        var savedCrops = DeserializeCrops(row.SlotCrops);
+        var slotCount = template?.Slots.Count ?? savedCrops.Count;
+        var crops = Enumerable.Range(0, slotCount).Select(i => i < savedCrops.Count ? savedCrops[i] : null).ToArray();
 
         var session = new PhotoSession(
-            document.SessionId,
-            document.CreatedAt,
+            row.Id,
+            row.CreatedAt,
             versions.Length > 0 || reason is not null ? PhotoSessionState.Ready : PhotoSessionState.Reviewing,
             template,
             photos,
             slots,
             [],
-            document.Mirror,
+            row.Mirror,
             null,
             false,
-            document.Exports
+            row.Exports
+                .OrderBy(e => e.Id)
                 .Select(e => SessionDocumentEnums.ParseFormat(e.Format) is { } format ? new ExportedFile(format, e.FilePath, e.ExportedAt) { Version = e.Version } : null)
                 .OfType<ExportedFile>()
                 .ToArray(),
             crops,
-            SessionDocumentEnums.ParseFilter(document.Filter))
+            SessionDocumentEnums.ParseFilter(row.Filter))
         {
             Directory = directory,
-            EventId = document.EventId,
+            EventId = row.EventId,
             Versions = versions,
-            PrintJobs = document.PrintJobs
-                .Select(j => Resolve(directory, j.File) is { } path
-                    ? new PrintJob(j.PrintJobId, document.SessionId, j.Version, path, j.Copies, j.PrinterName, j.IsPhysicalPrinter,
+            PrintJobs = row.PrintJobs
+                .OrderBy(j => j.CreatedAt.UtcDateTime)
+                .Select(j => Resolve(root, j.FilePath) is { } path
+                    ? new PrintJob(j.Id, row.Id, j.Version, path, j.Copies, j.PrinterName, j.IsPhysicalPrinter,
                         SessionDocumentEnums.ParsePrintStatus(j.Status), j.CreatedAt, j.UpdatedAt, j.ErrorMessage)
                     : null)
                 .OfType<PrintJob>()
@@ -326,7 +480,7 @@ public sealed class EventSessionArchive : ISessionArchive
             CanEdit = reason is null,
         };
 
-        return new ArchivedSession(sessionKey, session, reason);
+        return new ArchivedSession(SessionKey(row.DirectoryPath), session, reason);
     }
 
     // ---------------------------------------------------------------- Nội bộ
@@ -336,10 +490,9 @@ public sealed class EventSessionArchive : ISessionArchive
     {
         var snapshotDirectory = Path.Combine(sessionDirectory, TemplateFolderName);
         var templateFile = Path.Combine(snapshotDirectory, JsonTemplateCatalog.TemplateFileName);
-        var relative = $"{TemplateFolderName}/{JsonTemplateCatalog.TemplateFileName}";
         if (File.Exists(templateFile))
         {
-            return relative;
+            return templateFile;
         }
 
         Directory.CreateDirectory(snapshotDirectory);
@@ -380,7 +533,7 @@ public sealed class EventSessionArchive : ISessionArchive
                 overwrite: false,
                 cancellationToken)
             .ConfigureAwait(false);
-        return relative;
+        return templateFile;
     }
 
     private async Task<string?> TryWriteThumbnailAsync(string imageFile, CancellationToken cancellationToken)
@@ -417,127 +570,83 @@ public sealed class EventSessionArchive : ISessionArchive
         }
     }
 
-    private SessionDocument ToDocument(PhotoSession session, string directory, string? templateFile) => new()
+    private static string StatusOf(PhotoSession session) => session switch
     {
-        SessionId = session.SessionId,
-        EventId = session.EventId,
-        CreatedAt = session.CreatedAt,
-        UpdatedAt = _timeProvider.GetUtcNow(),
-        Status = session switch
-        {
-            { State: PhotoSessionState.Completed } => "completed",
-            { State: PhotoSessionState.Cancelled } => "cancelled",
+        { State: PhotoSessionState.Completed } => "completed",
+        { State: PhotoSessionState.Cancelled } => "cancelled",
 
-            // Phiên mở lại trong Admin: đã có thành phẩm thì vẫn là đã hoàn tất.
-            { IsArchived: true } => session.Versions.Count > 0 ? "completed" : "cancelled",
-            _ => "inProgress",
-        },
-        TemplateId = session.Template?.Id,
-        TemplateName = session.Template?.Name,
-        TemplateFile = templateFile,
-        Mirror = session.Mirror,
-        Photos = session.Photos
-            .Select(p => new PhotoDocument(p.PhotoId, p.Sequence, p.Position, p.CapturedAt, p.WidthPixels, p.HeightPixels,
-                Relative(directory, p.OriginalFilePath), p.SizeBytes, p.Mirrored))
-            .ToList(),
-        SelectedPhotoIds = session.Slots.Select(p => p?.PhotoId).ToList(),
-        Filter = session.Filter.ToString(),
-        SlotCrops = session.SlotCrops.Select(CropDocument.From).ToList(),
-        Versions = session.Versions
-            .Select(v => new VersionDocument
-            {
-                Version = v.Version,
-                File = Relative(directory, v.FilePath),
-                Thumbnail = v.ThumbnailPath is null ? null : Relative(directory, v.ThumbnailPath),
-                WidthPixels = v.WidthPixels,
-                HeightPixels = v.HeightPixels,
-                Dpi = v.Dpi,
-                TemplateId = v.TemplateId,
-                Filter = v.Filter.ToString(),
-                PhotoIds = [.. v.PhotoIds],
-                SlotCrops = v.SlotCrops.Select(CropDocument.From).ToList(),
-                CreatedAt = v.CreatedAt,
-            })
-            .ToList(),
-        Exports = session.Exports.Select(e => new ExportDocument(e.Format.ToString(), e.FilePath, e.ExportedAt, e.Version)).ToList(),
-        PrintJobs = session.PrintJobs
-            .Select(j => new PrintJobDocument(j.PrintJobId, j.OutputVersion, Relative(directory, j.OutputFilePath), j.Copies, j.PrinterName,
-                j.IsPhysicalPrinter, j.Status.ToString(), j.CreatedAt, j.UpdatedAt, j.ErrorMessage))
-            .ToList(),
+        // Phiên mở lại trong Admin: đã có thành phẩm thì vẫn là đã hoàn tất.
+        { IsArchived: true } => session.Versions.Count > 0 ? "completed" : "cancelled",
+        _ => "inProgress",
     };
 
-    private ArchivedSessionSummary Summarize(string directory, string file)
-    {
-        var key = Path.GetFileName(directory);
-        try
-        {
-            var document = ReadDocument(file);
-            var latest = document.Versions.OrderBy(v => v.Version).Select(v => ToVersion(directory, v)).LastOrDefault();
-            string? problem = null;
-            if (document.Versions.Count > 0 && (latest is null || !File.Exists(latest.FilePath)))
-            {
-                problem = "Thiếu file ảnh thành phẩm.";
-            }
-            else if (document.Versions.Count == 0)
-            {
-                problem = "Chưa có ảnh thành phẩm.";
-            }
-
-            return new ArchivedSessionSummary(key, document.SessionId, document.CreatedAt, document.TemplateName, document.Photos.Count,
-                latest, document.Versions.Count, document.PrintJobs.Count, problem);
-        }
-        catch (InvalidDataException)
-        {
-            _logger.LogWarning("Không đọc được session.json của một phiên trong sự kiện");
-            return new ArchivedSessionSummary(key, Guid.Empty, Directory.GetCreationTimeUtc(directory), null, 0, null, 0, 0,
-                "Không đọc được dữ liệu phiên (session.json).");
-        }
-    }
-
-    private static OutputVersion? ToVersion(string directory, VersionDocument v) =>
-        Resolve(directory, v.File) is { } path
+    internal static OutputVersion? ToVersion(string root, OutputVersionRecord v) =>
+        Resolve(root, v.FilePath) is { } path
             ? new OutputVersion(v.Version, path, v.WidthPixels, v.HeightPixels, v.Dpi, v.TemplateId, SessionDocumentEnums.ParseFilter(v.Filter),
-                v.PhotoIds, v.SlotCrops.Select(c => c?.ToCrop()).ToArray(), v.CreatedAt)
+                v.PhotoIds, DeserializeCrops(v.SlotCrops), v.CreatedAt)
             {
-                ThumbnailPath = v.Thumbnail is null ? null : Resolve(directory, v.Thumbnail),
+                ThumbnailPath = v.ThumbnailPath is null ? null : Resolve(root, v.ThumbnailPath),
+                Share = ToShareLink(v.ShareToken, v.ShareUrl, v.ShareCreatedAt),
             }
             : null;
 
-    private static SessionDocument ReadDocument(string file)
+    /// <summary>Link chia sẻ đọc từ database: token sai định dạng/URL lạ thì bỏ qua (không hiển thị QR từ dữ liệu không tin cậy).</summary>
+    internal static ShareLink? ToShareLink(string? token, string? url, DateTimeOffset? createdAt) =>
+        ShareLinkFactory.IsValidToken(token)
+        && Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+        && (parsed.Scheme == Uri.UriSchemeHttps || parsed.Scheme == Uri.UriSchemeHttp)
+        && parsed.AbsolutePath.EndsWith("/s/" + token, StringComparison.Ordinal)
+            ? new ShareLink(token!, url!, createdAt ?? DateTimeOffset.MinValue)
+            : null;
+
+    private static string SerializeCrops(IEnumerable<SlotCrop?> crops) =>
+        JsonSerializer.Serialize(crops.Select(CropDocument.From).ToList(), CropOptions);
+
+    private static IReadOnlyList<SlotCrop?> DeserializeCrops(string? json)
     {
         try
         {
-            return JsonSerializer.Deserialize<SessionDocument>(File.ReadAllText(file), AppStateStore.SerializerOptions)
-                ?? throw new InvalidDataException("session.json rỗng.");
+            return (JsonSerializer.Deserialize<List<CropDocument?>>(json ?? "[]", CropOptions) ?? [])
+                .Select(c => c?.ToCrop())
+                .ToArray();
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (JsonException)
         {
-            throw new InvalidDataException("Không đọc được session.json.", ex);
+            return [];
         }
     }
 
-    private static string Relative(string directory, string path)
+    /// <summary>Đường dẫn lưu trong database: tương đối với thư mục sự kiện, dấu "/". Không cho phép file nằm ngoài thư mục sự kiện.</summary>
+    internal static string Relative(string root, string path)
     {
-        var relative = Path.GetRelativePath(directory, path);
-        return TemplateAssetPath.IsSafeRelative(relative) ? relative.Replace('\\', '/') : path;
+        var relative = Path.GetRelativePath(root, path);
+        if (!TemplateAssetPath.IsSafeRelative(relative))
+        {
+            throw new IOException("File nằm ngoài thư mục sự kiện.");
+        }
+
+        return relative.Replace('\\', '/');
     }
 
-    /// <summary>Đường dẫn trong metadata phải là tương đối và nằm trong thư mục phiên (không tin dữ liệu file).</summary>
-    private static string? Resolve(string directory, string? relative)
+    /// <summary>Dựng đường dẫn tuyệt đối từ đường dẫn tương đối trong database; null nếu không hợp lệ hoặc vượt ra ngoài thư mục sự kiện.</summary>
+    internal static string? Resolve(string root, string? relative)
     {
         if (!TemplateAssetPath.IsSafeRelative(relative))
         {
             return null;
         }
 
-        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)) + Path.DirectorySeparatorChar;
-        var full = Path.GetFullPath(Path.Combine(root, relative!));
-        return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? full : null;
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
+        var full = Path.GetFullPath(Path.Combine(normalizedRoot, relative!));
+        return full.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase) ? full : null;
     }
+
+    /// <summary>Mã phiên cho giao diện = tên thư mục phiên (không phải đường dẫn).</summary>
+    private static string SessionKey(string directoryPath) => directoryPath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? directoryPath;
 
     private static string EventKey(Guid eventId) => eventId.ToString("N");
 
-    /// <summary>null → sự kiện hiện tại; mã khác → sự kiện đã biết (tra danh bạ, KHÔNG nhận đường dẫn).</summary>
+    /// <summary>null → sự kiện hiện tại; mã khác → sự kiện đã biết (tra database, KHÔNG nhận đường dẫn).</summary>
     private async Task<EventWorkspace> ResolveWorkspaceAsync(string? eventKey, CancellationToken cancellationToken)
     {
         if (eventKey is null)

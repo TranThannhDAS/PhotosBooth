@@ -49,7 +49,7 @@ Cấu hình camera, thời gian đếm ngược, giới hạn an toàn số ản
 | Nhật ký lỗi | Có | Ghi nhận lỗi có thể chẩn đoán, không log nội dung ảnh |
 | Máy in vật lý | Chưa | Đã có chọn số bản, Print Job, in lại, máy in giả lập và gửi lệnh qua máy in Windows (chỉ đến mức "Windows đã tiếp nhận"); chưa thử máy in ảnh thật, chưa dùng SDK hãng |
 | Lưu trữ theo sự kiện | Có | Mỗi sự kiện một thư mục riêng (`docs/EVENT_STORAGE.md`) |
-| QR/cloud/payment | Chưa | Không thuộc phạm vi V1 |
+| QR/cloud/payment | Một phần | `Photobooth.Cloud` lưu ảnh trên server, có trang xem/tải ảnh. Phase Cloud 2.1: QR Offline-First — Desktop sinh link và hiện QR khi hoàn tất (không cần mạng), upload ảnh thành phẩm chạy nền và tự thử lại. Upload chỉ được bảo vệ bằng API Key tùy chọn; payment chưa có |
 
 **Chú ý:** Danh sách chức năng V1 là **đích đến**, không yêu cầu triển khai toàn bộ ngay trong task đầu tiên.
 
@@ -92,7 +92,7 @@ Thời gian 3 giây là **giá trị mặc định cấu hình được**; số 
 ### Quyền riêng tư
 
 - Chỉ truy cập camera phục vụ phiên chụp.
-- Không tự động tải ảnh lên Internet.
+- Không tự động tải ảnh lên Internet, trừ ảnh **thành phẩm** khi chủ máy bật chia sẻ QR (`cloud.enabled` trong settings.json). Ảnh gốc không bao giờ được upload.
 - Dữ liệu được lưu cục bộ; cần thiết kế khả năng xóa ảnh và chính sách lưu trữ khi có người dùng thực tế.
 
 ## 6. Yêu cầu phi chức năng
@@ -127,7 +127,7 @@ Thời gian 3 giây là **giá trị mặc định cấu hình được**; số 
 
 ### Mốc 4 — Quản trị và lưu trữ
 
-- Lưu metadata phiên/cấu hình vào SQLite nếu cần.
+- Metadata phiên lưu trong SQLite (Desktop) và PostgreSQL (Cloud) qua EF Core — đã triển khai 23/11/2026; ảnh vẫn là file.
 - Giao diện Admin, lịch sử và quản lý file.
 
 ### Mốc 5 — Kiểm thử, đóng gói, vận hành offline

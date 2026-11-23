@@ -321,6 +321,8 @@ internal sealed class TempDirectory : IDisposable
 
     public void Dispose()
     {
+        // Đóng các kết nối SQLite đang được pool giữ để xóa được file photobooth.db.
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try
         {
             Directory.Delete(Path, recursive: true);

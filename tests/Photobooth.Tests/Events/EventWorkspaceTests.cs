@@ -1,6 +1,7 @@
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Photobooth.Application.Sessions;
 using Photobooth.Infrastructure.Events;
 using Photobooth.Infrastructure.Storage;
@@ -52,7 +53,7 @@ public sealed class EventWorkspaceTests : IDisposable
         Assert.Equal("Sinh nhật Minh Anh", status.Workspace!.Info.Name);
         Assert.True(File.Exists(Path.Combine(folder, EventWorkspaceService.EventFileName)));
 
-        // "Khởi động lại": service mới đọc app-state.json và mở lại đúng sự kiện.
+        // "Khởi động lại": service mới đọc SQLite (bảng Events) và mở lại đúng sự kiện mở gần nhất.
         var restarted = TestSessions.CreateWorkspaceService(_paths);
         var restored = await restarted.RestoreLastAsync();
         Assert.True(restored.IsReady);
@@ -60,7 +61,7 @@ public sealed class EventWorkspaceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateNewEvent_WithVietnameseName_IsStoredAsUtf8()
+    public async Task CreateNewEvent_WithVietnameseName_IsStoredInDatabase_FolderGetsIdMarkerOnly()
     {
         var folder = Folder("Đám cưới Ngọc Huyền");
         var workspaces = TestSessions.CreateWorkspaceService(_paths);
@@ -69,9 +70,47 @@ public sealed class EventWorkspaceTests : IDisposable
         var status = await workspaces.OpenAsync(folder, "Đám cưới Ngọc Huyền & Quốc Bảo");
 
         Assert.Equal("Đám cưới Ngọc Huyền & Quốc Bảo", status.Workspace!.Info.Name);
-        var json = await File.ReadAllTextAsync(Path.Combine(folder, EventWorkspaceService.EventFileName));
-        Assert.Equal("Đám cưới Ngọc Huyền & Quốc Bảo", JsonDocument.Parse(json).RootElement.GetProperty("name").GetString());
-        Assert.Contains("Đám cưới Ngọc Huyền", json, StringComparison.Ordinal);
+        await using (var db = TestDatabase.Open(_paths))
+        {
+            var row = await db.Events.SingleAsync();
+            Assert.Equal("Đám cưới Ngọc Huyền & Quốc Bảo", row.Name);
+            Assert.Equal(folder, row.FolderPath, ignoreCase: true);
+
+            // event.json chỉ là dấu nhận diện thư mục: mã sự kiện, không chứa tên (tên nằm trong SQLite).
+            var marker = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(folder, EventWorkspaceService.EventFileName))).RootElement;
+            Assert.Equal(row.Id, marker.GetProperty("eventId").GetGuid());
+            Assert.False(marker.TryGetProperty("name", out _));
+        }
+
+        // Đổi tên: chỉ ghi database, không đụng file trong thư mục sự kiện.
+        var markerBefore = await File.ReadAllTextAsync(Path.Combine(folder, EventWorkspaceService.EventFileName));
+        Assert.Equal("Tiệc cưới", (await workspaces.RenameAsync("Tiệc cưới")).Workspace!.Info.Name);
+        Assert.Equal(markerBefore, await File.ReadAllTextAsync(Path.Combine(folder, EventWorkspaceService.EventFileName)));
+        await using var reread = TestDatabase.Open(_paths);
+        Assert.Equal("Tiệc cưới", (await reread.Events.SingleAsync()).Name);
+    }
+
+    [Fact]
+    public async Task OldJsonEventFolder_IsRecognized_ButOldSessionsAreNotImported()
+    {
+        // Thư mục sự kiện của bản JSON cũ: event.json đầy đủ + session.json. Không chuyển dữ liệu cũ sang database.
+        var folder = Folder("Sự kiện cũ");
+        var oldId = Guid.NewGuid();
+        await File.WriteAllTextAsync(
+            Path.Combine(folder, EventWorkspaceService.EventFileName),
+            "{ \"eventId\": \"" + oldId + "\", \"name\": \"Sự kiện bản JSON\", \"createdAt\": \"2026-11-19T07:59:53+00:00\" }");
+        var oldSession = Path.Combine(folder, "Sessions", "20261119-150000-aaaaaaaa");
+        Directory.CreateDirectory(oldSession);
+        await File.WriteAllTextAsync(Path.Combine(oldSession, "session.json"), "{ \"sessionId\": \"" + Guid.NewGuid() + "\" }");
+
+        var workspaces = TestSessions.CreateWorkspaceService(_paths);
+        var status = await workspaces.OpenAsync(folder);
+
+        Assert.True(status.IsReady);
+        Assert.Equal(oldId, status.Workspace!.Info.EventId);
+        Assert.Equal("Sự kiện bản JSON", status.Workspace.Info.Name);
+        Assert.Empty(await TestSessions.CreateArchive(_paths, workspaces).ListSessionsAsync());
+        Assert.True(File.Exists(Path.Combine(oldSession, "session.json")));
     }
 
     [Fact]
@@ -80,11 +119,34 @@ public sealed class EventWorkspaceTests : IDisposable
         var folder = Folder("Hội nghị 2026");
         var first = await TestSessions.CreateWorkspaceService(_paths).OpenAsync(folder, "Hội nghị khách hàng");
 
+        // Mở lại trên cùng máy (service mới): đúng mã, tên, ngày tạo; tên truyền vào bị bỏ qua.
+        var reopened = await TestSessions.CreateWorkspaceService(_paths).OpenAsync(folder, "Tên khác bị bỏ qua");
+        Assert.Equal(first.Workspace!.Info, reopened.Workspace!.Info);
+
+        // Máy khác (database khác): nhận ra đúng mã sự kiện từ dấu nhận diện của thư mục.
         var other = TestSessions.CreateWorkspaceService(new PhotoboothStoragePaths(Path.Combine(_temp.Path, "OtherMachine")));
         Assert.False((await other.InspectAsync(folder)).IsNewEvent);
-        var reopened = await other.OpenAsync(folder, "Tên khác bị bỏ qua");
+        Assert.Equal(first.Workspace.Info.EventId, (await other.OpenAsync(folder)).Workspace!.Info.EventId);
+    }
 
-        Assert.Equal(first.Workspace!.Info, reopened.Workspace!.Info);
+    [Fact]
+    public async Task MovedEventFolder_IsRecognized_AndRelativePathsStillResolve()
+    {
+        var folder = Folder("Trước khi chuyển");
+        var service = TestSessions.Create(_paths, TestSessions.OpenWorkspace(_paths, folder));
+        var session = await CaptureSessionAsync(service);
+        var moved = Path.Combine(_temp.Path, "Đã chuyển");
+        Directory.Move(folder, moved);
+
+        var workspaces = TestSessions.CreateWorkspaceService(_paths);
+        var status = await workspaces.OpenAsync(moved);
+        var archived = await TestSessions.CreateArchive(_paths, workspaces).LoadSessionAsync(Path.GetFileName(session.Directory!));
+
+        Assert.Equal(session.EventId, status.Workspace!.Info.EventId);
+        Assert.All(archived.Session.Photos, p => Assert.StartsWith(moved, p.OriginalFilePath, StringComparison.OrdinalIgnoreCase));
+        Assert.All(archived.Session.Photos, p => Assert.True(File.Exists(p.OriginalFilePath)));
+        await using var db = TestDatabase.Open(_paths);
+        Assert.Equal(moved, (await db.Events.SingleAsync()).FolderPath, ignoreCase: true);
     }
 
     [Fact]
@@ -97,9 +159,16 @@ public sealed class EventWorkspaceTests : IDisposable
 
         Assert.StartsWith(Path.Combine(folder, "Sessions") + Path.DirectorySeparatorChar, session.Directory, StringComparison.OrdinalIgnoreCase);
         Assert.All(session.Photos, p => Assert.StartsWith(session.Directory!, p.OriginalFilePath, StringComparison.OrdinalIgnoreCase));
-        var json = await File.ReadAllTextAsync(Path.Combine(session.Directory!, EventSessionArchive.SessionFileName));
-        Assert.DoesNotContain(folder.Replace("\\", "\\\\", StringComparison.Ordinal), json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Originals/photo-", json, StringComparison.Ordinal);
+        // Metadata trong SQLite, đường dẫn tương đối với thư mục sự kiện; không còn session.json.
+        await using var db = TestDatabase.Open(_paths);
+        var row = await db.Sessions.Include(s => s.Photos).SingleAsync(s => s.Id == session.SessionId);
+        Assert.Equal(session.EventId, row.EventId);
+        Assert.Equal("Sessions/" + Path.GetFileName(session.Directory!), row.DirectoryPath);
+        Assert.Equal(session.Photos.Count, row.Photos.Count);
+        Assert.All(row.Photos, p => Assert.StartsWith(row.DirectoryPath + "/Originals/photo-", p.FilePath, StringComparison.Ordinal));
+        Assert.All(row.Photos, p => Assert.False(Path.IsPathRooted(p.FilePath)));
+        Assert.Equal(row.DirectoryPath + "/Template/template.json", row.TemplateFile);
+        Assert.False(File.Exists(Path.Combine(session.Directory!, "session.json")));
         Assert.True(File.Exists(Path.Combine(session.Directory!, "Template", "template.json")));
         Assert.False(Directory.Exists(_paths.SessionsDirectory));
     }
@@ -191,9 +260,10 @@ public sealed class EventWorkspaceTests : IDisposable
         Assert.All(firstPhotos, p => Assert.Equal(p.Bytes, File.ReadAllBytes(p.OriginalFilePath)));
 
         // Phiên cũ chỉ được cập nhật trạng thái kết thúc, dữ liệu ảnh giữ nguyên.
-        Assert.Equal(first.Photos.Count, JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(first.Directory!, EventSessionArchive.SessionFileName))).RootElement.GetProperty("photos").GetArrayLength());
-        Assert.Equal(PhotoSessionState.Cancelled.ToString().ToLowerInvariant(),
-            JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(first.Directory!, EventSessionArchive.SessionFileName))).RootElement.GetProperty("status").GetString());
+        await using var db = TestDatabase.Open(_paths);
+        var row = await db.Sessions.Include(s => s.Photos).SingleAsync(s => s.Id == first.SessionId);
+        Assert.Equal(first.Photos.Count, row.Photos.Count);
+        Assert.Equal(PhotoSessionState.Cancelled.ToString().ToLowerInvariant(), row.Status);
     }
 
     [Fact]

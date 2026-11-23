@@ -1,0 +1,16 @@
+@* Static SSR thuần: không nạp blazor.web.js, trang là HTML + CSS. *@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <base href="/" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <HeadOutlet />
+</head>
+<body>
+    <Routes />
+</body>
+</html>

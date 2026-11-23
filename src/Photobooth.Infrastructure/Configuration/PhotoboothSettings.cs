@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Photobooth.Application.Export;
 using Photobooth.Application.Printing;
 using Photobooth.Application.Sessions;
+using Photobooth.Application.Sharing;
 
 namespace Photobooth.Infrastructure.Configuration;
 
@@ -19,6 +20,12 @@ public sealed record PhotoboothSettings
 
     /// <summary>Mục "print": ví dụ { "maxCopies": 10 }.</summary>
     public PrintOptions Print { get; init; } = new();
+
+    /// <summary>
+    /// Mục "cloud" (chia sẻ ảnh qua QR): ví dụ { "enabled": true, "baseUrl": "https://photo.example.com", "uploadTimeoutSeconds": 60 }.
+    /// Mặc định tắt. Không được Validate() kiểm tra: cấu hình sai chỉ tắt chia sẻ QR, không làm mất các cấu hình khác.
+    /// </summary>
+    public CloudShareOptions Cloud { get; init; } = new();
 
     public void Validate()
     {

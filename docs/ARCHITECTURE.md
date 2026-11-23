@@ -73,10 +73,12 @@ Photobooth/
 │   │   ├── Abstractions/
 │   │   ├── Sessions/
 │   │   └── Export/
+│   ├── Photobooth.Cloud/             # web lưu trữ/chia sẻ ảnh, deploy độc lập (Phase Cloud 1)
 │   ├── Photobooth.Domain/            # tạo khi cần
 │   └── Photobooth.Infrastructure/    # tạo khi cần
 └── tests/
-    └── Photobooth.Tests/
+    ├── Photobooth.Tests/
+    └── Photobooth.Cloud.Tests/       # test riêng cho Photobooth.Cloud
 ```
 
 Tên thư mục là **đề xuất**, không được tự động đổi cấu trúc repository đang có chỉ để khớp sơ đồ.
@@ -228,15 +230,50 @@ Admin › Khung ảnh
 
 **Quyết định 19/11/2026 — Event Workspace, file-based (chi tiết: `docs/EVENT_STORAGE.md`):**
 
-- Dữ liệu phiên nằm trong thư mục sự kiện do người vận hành chọn: `{Sự kiện}/Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/` gồm `session.json`, `Template/` (snapshot + asset), `Originals/`, `Outputs/final-v{N}.png`, `Drafts/`.
-- `%LOCALAPPDATA%/Photobooth/` chỉ còn log, `settings.json`, `app-state.json` (sự kiện + máy in đang chọn) và hồ sơ WebView2.
-- Metadata là JSON theo từng phiên, ghi tạm rồi đổi tên, đường dẫn tương đối (sao chép thư mục sự kiện sang máy khác vẫn mở lại được). **Chưa dùng SQLite** vì chưa có nhu cầu truy vấn; nếu sau này cần (thống kê nhiều sự kiện...), SQLite chỉ là chỉ mục bổ sung, không thay file JSON.
+- File của phiên nằm trong thư mục sự kiện do người vận hành chọn: `{Sự kiện}/Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/` gồm `Template/` (snapshot + asset), `Originals/`, `Outputs/final-v{N}.png`, `Drafts/`.
+- `%LOCALAPPDATA%/Photobooth/` gồm log, `settings.json`, `app-state.json` (chỉ còn máy in đang chọn), **`photobooth.db`** (SQLite) và hồ sơ WebView2.
+- **Cập nhật 23/11/2026 — metadata chuyển sang SQLite** (xem §9.1). Bản JSON cũ (`session.json`, `cloud-upload.json`, danh bạ sự kiện trong `app-state.json`) **không còn là nguồn dữ liệu** và không được chuyển sang database.
 - Thành phần:
-  - `EventWorkspaceService` (Infrastructure): chọn/mở/tạo/kiểm tra sự kiện, ghi nhớ trong `app-state.json`.
-  - `ISessionArchive` → `EventSessionArchive`: cấp thư mục phiên, ghi `session.json`/snapshot template, tạo phiên bản thành phẩm, liệt kê và mở lại phiên (kiểm tra đường dẫn trong metadata không thoát khỏi thư mục phiên).
+  - `EventWorkspaceService` (Infrastructure): chọn/mở/tạo/kiểm tra sự kiện; bảng `Events` (danh bạ, sự kiện mở gần nhất, tên); `event.json` chỉ là dấu nhận diện thư mục.
+  - `ISessionArchive` → `EventSessionArchive`: cấp thư mục phiên, ghi metadata phiên vào SQLite trong một transaction, ghi snapshot template (file), tạo phiên bản thành phẩm, liệt kê và mở lại phiên (đường dẫn trong database được kiểm tra không thoát khỏi thư mục sự kiện).
   - `PhotoSessionService` (partial `PhotoSessionService.Archive.cs`): ghi metadata sau mỗi ảnh/phiên bản/xuất/in; `ConfirmOutputAsync` (phiên bản bất biến); mở lại, chỉnh sửa lại, hủy/lưu; `RequestPrintAsync`.
   - `PhotoboothStoragePaths` đăng ký thư mục của từng phiên và các Event Workspace đã mở (phạm vi được phép đọc ảnh).
   - `EventGalleryService` + `AdminAccessService`: thư viện ảnh chỉ dùng được trong Admin (PIN), không mở được sau khi đã vào Kiosk.
+### 9.1 Lưu trữ metadata bằng database (đã chốt 23/11/2026)
+
+| | Desktop | Cloud |
+|---|---|---|
+| Database | SQLite `%LOCALAPPDATA%\Photobooth\photobooth.db` | PostgreSQL (`ConnectionStrings:DefaultConnection`) |
+| Thư viện | EF Core 10 + `Microsoft.EntityFrameworkCore.Sqlite` 10.0.15 | EF Core 10 + `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.4 |
+| DbContext | `PhotoboothDbContext` (Infrastructure/Persistence) | `CloudDbContext` (Cloud/Data) |
+| Migrations | `src/Photobooth.Infrastructure/Persistence/Migrations` | `src/Photobooth.Cloud/Data/Migrations` |
+| Áp dụng schema | Tự động khi ứng dụng khởi động (`Database.Migrate()`) | Tự động khi `Database:MigrateOnStartup = true` (Development); Production chạy `dotnet ef database update`/migration bundle |
+| Ảnh | File trong Event Workspace | File trong `Storage:RootPath` |
+
+- **Nguyên tắc:** database chỉ lưu metadata và **đường dẫn**, không lưu nội dung ảnh.
+  - Desktop: đường dẫn tương đối với thư mục sự kiện.
+  - Cloud: đường dẫn tương đối với `Storage:RootPath`.
+  - Đường dẫn đọc từ database luôn được kiểm tra không vượt ra ngoài thư mục được phép.
+- **Mỗi loại metadata chỉ có một nguồn chính.** Không còn đọc/ghi `session.json`/`cloud-upload.json`. Template Library/Editor **giữ nguyên JSON** (`template.json`, `library.json`). `settings.json` (cấu hình người dùng) và lựa chọn máy in trong `app-state.json` vẫn là file.
+- **Không có Repository/Unit of Work:**
+  - Service dùng `IDbContextFactory<T>`; mỗi thao tác một `DbContext` ngắn (các service đều là singleton).
+  - Mỗi lần lưu phiên là một `SaveChanges` (một transaction).
+- **Desktop — bảng:**
+  - `Events`, `Sessions`, `Photos`, `OutputVersions` (chứa `ShareToken`/`ShareUrl`), `CloudUploads` (1-1 với phiên bản đã chia sẻ), `Exports`, `PrintJobs`.
+  - Mọi khóa ngoại là `Restrict`.
+  - Unique: `Events.FolderPath` (NOCASE), (`SessionId`, `Version`), (`SessionId`, `Sequence`), `ShareToken`.
+  - `ShareToken` đã ghi thì không bao giờ đổi hay xóa.
+  - Chi tiết: `docs/EVENT_STORAGE.md` §4.
+- **Cloud — bảng `photos`:**
+  - Cột: `id` (PK, 26 ký tự), `share_token` (unique, null với ảnh upload thường), `storage_path` (unique, tương đối), `format`, `content_type`, `size_bytes`, `sha256`, `uploaded_at`.
+  - Chưa có Event/User/Session vì Cloud chưa dùng.
+- **Cập nhật schema khi đổi entity:**
+  1. Sửa entity/`OnModelCreating`.
+  2. `dotnet ef migrations add <TenThayDoi> --project src/Photobooth.Infrastructure --startup-project src/Photobooth.Infrastructure --context PhotoboothDbContext --output-dir Persistence/Migrations` (Cloud: `--project src/Photobooth.Cloud --startup-project src/Photobooth.Cloud --context CloudDbContext --output-dir Data/Migrations`).
+  3. Xem lại file migration sinh ra; chạy test.
+  4. Desktop tự áp dụng khi khởi động; Cloud production chạy `dotnet ef database update` trước khi deploy bản mới.
+  - Không sửa migration đã phát hành. Data migration (chuyển dữ liệu JSON cũ) **không thực hiện**.
+
 - In: `IPrinter` (`MockPrinter` — trả `Simulated`; `WindowsPrinter` — WPF/XPS, trả `Submitted` = Windows đã tiếp nhận) chọn qua `PrinterSelectionService : IPrinterProvider`. Print Job được ghi (Pending) trước khi gửi máy in; "in xong" chỉ do người xác nhận. Không dùng SDK hãng máy in.
 - Luồng giao diện: màn khởi động → Admin (PIN) hoặc Kiosk; từ màn hình chào của Kiosk, nút "Quản trị" + PIN (`AdminAccessService.TryReturnFromKiosk`) vào lại Admin, thoát Admin về màn khởi động. Kiosk và Admin dùng chung `ComposedPreview`, `EditToolsPanel`, `ExportPanel`, `PrintPanel`.
 
@@ -263,17 +300,74 @@ Admin › Khung ảnh
 
 Không coi mock camera hoặc unit test là đủ để xác nhận webcam trên máy thực tế hoạt động. Việc xác minh phần cứng mới chỉ được thực hiện khi có thiết bị đó.
 
-## 12. Những lựa chọn chưa khóa
+## 12. Photobooth Cloud — lưu trữ và chia sẻ ảnh (Phase Cloud 1)
+
+Chủ sản phẩm yêu cầu bổ sung ngày 23/11/2026; chi tiết chạy, cấu hình và API xem `src/Photobooth.Cloud/README.md`.
+
+- **Project riêng** `src/Photobooth.Cloud` trong cùng `Photobooth.slnx`, chạy và deploy **độc lập** với Desktop.
+  - Không tham chiếu Desktop/Application/Infrastructure và không thêm NuGet package (chỉ shared framework ASP.NET Core).
+  - Test riêng: `tests/Photobooth.Cloud.Tests`.
+- **Công nghệ:** ASP.NET Core Minimal API (`/api/photos…`) cùng Blazor Web App **Static SSR** (trang `/photos/{id}`).
+  - Không Interactive Server, không JavaScript; CSP chặt.
+- **Lưu trữ:** file trên ổ đĩa của server, tại `Storage:RootPath`.
+  - Đường dẫn bắt buộc tuyệt đối, nằm ngoài thư mục publish.
+  - Metadata ảnh trong PostgreSQL (§9.1).
+  - Ghi file tạm rồi đổi tên **không ghi đè**, sau đó mới ghi metadata; ghi metadata lỗi thì xóa file vừa đặt (không để file mồ côi).
+  - Metadata còn mà file mất → API trả `410 Gone`, trang báo không khả dụng (không bao giờ báo ảnh có sẵn).
+- **ID ảnh:** 26 ký tự base32 chữ thường (khoảng 130 bit ngẫu nhiên), không phân biệt hoa/thường nên an toàn trên NTFS.
+  - ID sai định dạng được coi như không tồn tại và không bao giờ được ghép vào đường dẫn.
+- **Kiểm tra định dạng:** nhận dạng JPEG/PNG bằng magic bytes.
+  - Bỏ qua tên file và `Content-Type` client gửi.
+  - Giới hạn dung lượng ở Kestrel, bộ đọc form và khi ghi file.
+- **Bảo vệ upload:** tùy chọn API Key của thiết bị (`Upload:ApiKey`, header `X-Api-Key`). Không cấu hình khóa thì không được mở `POST /api/photos` ra Internet công khai.
+
+### 12.1 Offline-First QR Sharing (Phase Cloud 2.1, đã chốt 23/11/2026)
+
+Nguyên tắc: **QR không phụ thuộc kết quả upload.**
+
+```text
+Khách bấm "Hoàn tất"
+  → ConfirmOutputAsync: Outputs/final-vN.png (Event Workspace)
+  → EnsureShareLinkAsync: Share Token (RandomNumberGenerator, 192 bit, Base64URL 32 ký tự)
+                          + URL {cloud.baseUrl}/s/{token} → ghi SQLite (OutputVersions.ShareToken/ShareUrl)
+  → màn Hoàn thành hiển thị QR ngay (QRCoder, offline)
+  → CloudUploadService (nền): POST /api/photos { file = final-vN.png, shareToken }
+                              trạng thái → SQLite (CloudUploads); Cloud ghi metadata → PostgreSQL (photos)
+Khách quét QR → Cloud /s/{token}: chưa có ảnh → trang chờ (tự làm mới, no-store); có ảnh → ảnh + "Tải ảnh xuống"
+```
+
+- **Application** (`Photobooth.Application.Sharing`):
+  - `CloudShareOptions`: mục `cloud` của settings.json; cấu hình sai chỉ tắt chia sẻ, không làm mất cấu hình khác.
+  - `ShareLinkFactory`: sinh token và URL, không gọi mạng.
+  - `ShareLink`; `ICloudUploadQueue`.
+  - `PhotoSessionService.EnsureShareLinkAsync(version)`: mỗi phiên bản thành phẩm có **một** token, ghi xuống đĩa trước khi trả về. Đã có thì trả lại đúng link cũ, nên in lại hay mở lại phiên không đổi QR. Phiên bản mới (chỉnh sửa lại) có token mới.
+- **Infrastructure** (`CloudUploadService`): một vòng nền duy nhất, dùng `HttpClient` và `CancellationToken`, timeout theo `cloud.uploadTimeoutSeconds`.
+  - Lỗi tạm thời (mất mạng, 5xx, hết thời gian, 401/403/404 do cấu hình) → `Pending`, thử lại sau 10 giây, 30 giây, 1, 2, 5, 10 rồi 15 phút (giữ ở 15 phút).
+  - Lỗi không tự hết (mất file local, 409, 400/413/415, Cloud trả mã khác token) → `Failed`, không tự thử lại; quản trị viên bấm "Đồng bộ ngay" để thử lại.
+  - Khi khởi động và khi đổi sự kiện: truy vấn SQLite mọi phiên bản có `ShareToken` (mọi sự kiện) cùng trạng thái `CloudUploads` để upload tiếp, **dùng nguyên token**.
+  - Thư mục sự kiện tạm thời không truy cập được (ổ USB chưa cắm) → chờ thử lại, không đánh dấu lỗi vĩnh viễn.
+  - Không có message queue.
+- **Cloud:**
+  - `POST /api/photos` nhận thêm trường `shareToken` (tùy chọn). Có token thì lưu theo token.
+  - Upload lại đúng nội dung (so SHA-256) → `200`, không tạo file mới. Khác nội dung → `409`, ảnh cũ giữ nguyên.
+  - File lưu tại `shares/{hh}/{sha256(token)}.ext`: token không nằm trong tên file, và hai token khác hoa/thường không bao giờ trùng file.
+  - Giới hạn MVP: Cloud chưa đăng ký token trước, nên không phân biệt được token "chưa upload" với token chưa từng được tạo (cả hai đều hiện trang chờ).
+- **Desktop UI:**
+  - `ShareQrCard` trên màn Hoàn thành: QR luôn hiện, kèm một dòng trạng thái đồng bộ.
+  - Chi tiết phiên trong Admin: xem QR hoặc tạo QR cho phiên bản.
+  - Tab Admin "Chia sẻ QR": trạng thái cấu hình, số ảnh đã/đang/lỗi đồng bộ, nút "Đồng bộ ngay".
+- Chụp, lưu, in và hoàn tất phiên **không** phụ thuộc Cloud. Cloud tắt hoặc cấu hình sai thì không tạo QR (không trỏ tới địa chỉ giả).
+
+## 13. Những lựa chọn chưa khóa
 
 - Gói NuGet phiên bản cụ thể: lựa chọn khi tạo Solution, bảo đảm tương thích .NET 10 và kiểm tra giấy phép.
-- Sử dụng SQLite ngay từ mốc đầu hay từ giai đoạn quản trị.
 - Native camera adapter dự phòng nếu WebView2 không phù hợp.
 - Tool đóng gói/cập nhật ứng dụng Windows.
 - Có triển khai print queue mock ngay V1 hay để sau khi các chức năng chụp/xuất ảnh ổn định.
 
 Đối với các vấn đề chưa khóa, AI phải trình bày đánh đổi kỹ thuật và **không tự coi đề xuất thành yêu cầu bắt buộc**.
 
-## 13. Tài liệu kỹ thuật tham khảo
+## 14. Tài liệu kỹ thuật tham khảo
 
 - Microsoft — Blazor Hybrid: https://learn.microsoft.com/aspnet/core/blazor/hybrid/?view=aspnetcore-10.0
 - Microsoft — Tạo WPF Blazor App: https://learn.microsoft.com/aspnet/core/blazor/hybrid/tutorials/wpf?view=aspnetcore-10.0

@@ -26,6 +26,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Photobooth.Application\Photobooth.Application.csproj" />
     <ProjectReference Include="..\..\src\Photobooth.Infrastructure\Photobooth.Infrastructure.csproj" />
+    <!-- Chỉ dùng cho kiểm thử end-to-end chia sẻ QR (Desktop upload → Cloud thật chạy trên 127.0.0.1). -->
+    <ProjectReference Include="..\..\src\Photobooth.Cloud\Photobooth.Cloud.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Dùng chung cách lấy PostgreSQL kiểm thử với Photobooth.Cloud.Tests (không sao chép code). -->
+    <Compile Include="..\Photobooth.Cloud.Tests\TestPostgres.cs" Link="TestSupport\TestPostgres.cs" />
   </ItemGroup>
 
 </Project>

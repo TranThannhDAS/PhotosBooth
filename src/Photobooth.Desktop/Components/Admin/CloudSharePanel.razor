@@ -1,0 +1,67 @@
+@implements IDisposable
+@inject CloudUploadService Uploads
+@inject PhotoboothStoragePaths Paths
+
+@* Trạng thái chia sẻ QR cho người vận hành: cấu hình Cloud và tình hình đồng bộ ảnh (chỉ đọc, không sửa settings.json). *@
+<section class="panel-section">
+    <h2 class="panel-title">Chia sẻ ảnh qua QR</h2>
+    @if (Uploads.Configuration is { IsReady: true, BaseUrl: { } baseUrl })
+    {
+        <StatusMessage Status="@(new StatusInfo(StatusKind.Success, "Đã cấu hình Cloud — màn hoàn tất sẽ hiển thị mã QR.", $"Địa chỉ: {baseUrl}"))" />
+    }
+    else
+    {
+        <StatusMessage Status="@(new StatusInfo(StatusKind.Warning, "Chưa bật chia sẻ QR — khách không nhận được mã QR.", Uploads.Configuration.Problem))" />
+    }
+    <p class="panel-hint">
+        Cấu hình trong mục “cloud” của @Paths.SettingsFilePath (enabled, baseUrl, uploadTimeoutSeconds, apiKey); khởi động lại ứng dụng để áp dụng.
+        Chụp, lưu và in ảnh không phụ thuộc Cloud.
+    </p>
+</section>
+
+<section class="panel-section">
+    <h2 class="panel-title">Đồng bộ lên Cloud</h2>
+    <dl class="detail-info">
+        <dt>Đã có trên Cloud</dt>
+        <dd>@_summary.Uploaded ảnh</dd>
+        <dt>Đang chờ / đang tải lên</dt>
+        <dd>@(_summary.Pending + _summary.Uploading) ảnh</dd>
+        <dt>Lỗi (không tự thử lại)</dt>
+        <dd>@_summary.Failed ảnh</dd>
+        @if (_summary.LastScanAt is { } scanned)
+        {
+            <dt>Quét sự kiện gần nhất</dt>
+            <dd>@UiText.LocalTime(scanned)</dd>
+        }
+    </dl>
+    @if (_summary.LastError is { } error)
+    {
+        <p class="share-error">Lỗi gần nhất: @error</p>
+    }
+    <button type="button" class="btn btn-primary" @onclick="RetryNow">Đồng bộ ngay</button>
+    <p class="panel-hint">Ảnh chưa đồng bộ được tự thử lại với khoảng nghỉ tăng dần (tối đa 15 phút). “Đồng bộ ngay” quét lại mọi sự kiện đã biết và thử lại cả ảnh đang lỗi.</p>
+</section>
+
+@code {
+    private ShareUploadSummary _summary = new(0, 0, 0, 0, null, null);
+
+    protected override void OnInitialized()
+    {
+        _summary = Uploads.GetSummary();
+        Uploads.StateChanged += OnStateChanged;
+    }
+
+    private void RetryNow()
+    {
+        Uploads.RetryNow();
+        _summary = Uploads.GetSummary();
+    }
+
+    private void OnStateChanged(object? sender, EventArgs e) => _ = InvokeAsync(() =>
+    {
+        _summary = Uploads.GetSummary();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Uploads.StateChanged -= OnStateChanged;
+}

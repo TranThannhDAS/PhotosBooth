@@ -80,7 +80,7 @@ public sealed class GalleryEventFilterTests : IDisposable
         Assert.True(events[0].IsCurrent);
         Assert.All(events, e => Assert.True(e.IsAvailable));
 
-        // Khởi động lại: danh bạ sự kiện đọc lại từ app-state.json.
+        // Khởi động lại: danh bạ sự kiện đọc lại từ SQLite (bảng Events).
         var restarted = TestSessions.CreateWorkspaceService(new PhotoboothStoragePaths(_paths.RootDirectory));
         Assert.Equal([keyA, keyB], restarted.KnownEvents.OrderBy(e => e.Name).Select(e => e.EventId.ToString("N")));
     }

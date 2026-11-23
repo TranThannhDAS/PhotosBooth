@@ -97,6 +97,17 @@ Hoàn thành → Phiên mới
 - Không khẳng định PDF/in thành công chỉ vì đã tạo preview trên giao diện.
 - Có nút **Phiên mới** sau khi hoàn tất theo chính sách kết thúc phiên.
 
+### 4.5.1 Màn Hoàn thành — mã QR (Phase Cloud 2.1)
+
+- Cloud đã cấu hình: hiển thị **mã QR lớn (240 px)** của đúng phiên bản khách vừa hoàn tất, kèm dòng "Quét mã QR để tải ảnh về điện thoại".
+- Dòng trạng thái nhỏ bên dưới, **không bao giờ ẩn QR**:
+  - "Ảnh đang được đồng bộ…"
+  - "Ảnh đã sẵn sàng để tải xuống."
+  - "Chưa có kết nối Internet. Ảnh sẽ tự đồng bộ khi có mạng — bạn vẫn có thể quét mã QR ngay."
+  - "Ảnh chưa đồng bộ được. Vui lòng báo nhân viên — mã QR vẫn được giữ."
+- Không hiển thị URL, lỗi kỹ thuật hay đường dẫn cho khách. Admin xem được URL, lỗi gần nhất và số lần thử.
+- Không có thao tác nào khác trên QR (chỉ xem), nên không ảnh hưởng thao tác cảm ứng.
+
 ### 4.6 Admin (`Settings`, `Gallery`, `Diagnostics`)
 
 - Nhóm cài đặt theo chủ đề: Camera, Phiên chụp, Template, Xuất file, Lưu trữ.

@@ -104,10 +104,10 @@ public sealed class PrintJobTests : IDisposable
         var session = service.Current!;
         Assert.Equal([3, 2], session.PrintJobs.Select(j => j.Copies));
         Assert.All(session.PrintJobs, j => Assert.Equal(PrintJobStatus.Submitted, j.Status));
-        var json = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(session.Directory!, EventSessionArchive.SessionFileName)));
-        var jobs = json.RootElement.GetProperty("printJobs");
-        Assert.Equal(2, jobs.GetArrayLength());
-        Assert.Equal("Outputs/final-v1.png", jobs[0].GetProperty("file").GetString());
+        await using var db = TestDatabase.Open(_paths);
+        var jobs = db.PrintJobs.Where(j => j.SessionId == session.SessionId).ToList();
+        Assert.Equal(2, jobs.Count);
+        Assert.All(jobs, j => Assert.Equal($"Sessions/{Path.GetFileName(session.Directory!)}/Outputs/final-v1.png", j.FilePath));
     }
 
     [Fact]
@@ -218,14 +218,17 @@ public sealed class PrintJobTests : IDisposable
     [Fact]
     public async Task UnclearJobAfterRestart_IsNotResentAutomatically()
     {
-        // Mô phỏng ứng dụng dừng đột ngột khi lệnh in còn Pending: sửa trạng thái trong session.json.
+        // Mô phỏng ứng dụng dừng đột ngột khi lệnh in còn Pending: sửa trạng thái trong database.
         var service = await CreateReadyAsync(new RecordingPrinter(isPhysical: true));
         await service.RequestPrintAsync(2);
         Assert.True(await service.CompleteSessionAsync());
         var session = service.Current!;
         await service.FlushAsync();
-        var file = Path.Combine(session.Directory!, EventSessionArchive.SessionFileName);
-        await File.WriteAllTextAsync(file, (await File.ReadAllTextAsync(file)).Replace("\"Submitted\"", "\"Pending\"", StringComparison.Ordinal));
+        await using (var db = TestDatabase.Open(_paths))
+        {
+            db.PrintJobs.Single(j => j.SessionId == session.SessionId).Status = "Pending";
+            await db.SaveChangesAsync();
+        }
 
         var admin = new AdminAccessService();
         admin.TryUnlock(AdminAccessService.Pin);

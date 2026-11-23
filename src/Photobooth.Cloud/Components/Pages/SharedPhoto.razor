@@ -1,0 +1,62 @@
+@page "/s/{Token}"
+@inject PhotoStore Store
+@inject NavigationManager Navigation
+
+@*
+    Trang mở từ QR (Offline-First QR Sharing). Desktop sinh Share Token và in QR TRƯỚC khi upload, nên khách có thể
+    mở link khi ảnh chưa lên server:
+      - token sai định dạng           → 404 (trang NotFound);
+      - token hợp lệ, chưa có metadata → trang chờ (HTTP 200), tự làm mới, không cache;
+      - có metadata và file           → ảnh + nút tải xuống;
+      - có metadata nhưng mất file    → báo không khả dụng (410), không báo như ảnh có sẵn.
+    Giới hạn MVP: Cloud chưa đăng ký token trước, nên không phân biệt được token "chưa upload" với token chưa từng được tạo.
+*@
+
+@if (_lookup is { Availability: PhotoAvailability.Available, Photo: { } photo })
+{
+    <PageTitle>Ảnh của bạn — Photobooth</PageTitle>
+    <PhotoDisplay Photo="photo" />
+}
+else if (_lookup is { Availability: PhotoAvailability.NotFound })
+{
+    <PageTitle>Ảnh đang được chuẩn bị — Photobooth</PageTitle>
+    <HeadContent>
+        <meta http-equiv="refresh" content="@RefreshSeconds" />
+    </HeadContent>
+    <section class="notice waiting" role="status">
+        <div class="waiting-spinner" aria-hidden="true"></div>
+        <h1>Ảnh của bạn đang được chuẩn bị.</h1>
+        <p>Vui lòng đợi trong giây lát hoặc quay lại sau.</p>
+        <p class="hint">Trang sẽ tự làm mới sau vài giây.</p>
+        <a class="btn-secondary-link" href="@($"s/{Uri.EscapeDataString(Token)}")">Tải lại trang</a>
+    </section>
+}
+else if (_lookup is not null)
+{
+    <PhotoUnavailable Lookup="_lookup" />
+}
+
+@code {
+    public const int RefreshSeconds = 8;
+
+    private PhotoLookup? _lookup;
+
+    [Parameter]
+    public string Token { get; set; } = "";
+
+    [CascadingParameter]
+    public HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!PhotoStore.IsValidShareToken(Token))
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        // Trạng thái (chờ/đã có ảnh) thay đổi theo thời gian: không cho trình duyệt hay proxy cache trang này.
+        HttpContext?.Response.Headers.CacheControl = "no-store";
+        _lookup = await PhotoUnavailable.LookupAsync(Store, Token, HttpContext);
+    }
+}

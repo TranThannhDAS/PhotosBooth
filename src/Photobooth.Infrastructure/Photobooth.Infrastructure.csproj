@@ -16,6 +16,13 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.15" />
     <!-- Ghép ảnh, mã hóa JPEG/PNG và tạo PDF (SKDocument). Giấy phép MIT, chạy offline. -->
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <!-- Metadata nghiệp vụ (sự kiện, phiên, ảnh, phiên bản, in, chia sẻ) lưu trong SQLite. Giấy phép MIT. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
+    <!-- Chỉ dùng lúc thiết kế (dotnet ef migrations), không đi kèm ứng dụng. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
 </Project>

@@ -67,6 +67,12 @@
                     <PrinterPanel />
                 </div>
                 break;
+
+            case AdminTab.Sharing:
+                <div class="admin-narrow">
+                    <CloudSharePanel />
+                </div>
+                break;
         }
     </main>
 </div>
@@ -78,6 +84,7 @@
         Gallery,
         Templates,
         Printer,
+        Sharing,
     }
 
     private AdminTab _tab = AdminTab.Event;
@@ -104,6 +111,7 @@
         AdminTab.Event => "Sự kiện",
         AdminTab.Gallery => "Thư viện ảnh",
         AdminTab.Templates => "Khung ảnh",
+        AdminTab.Sharing => "Chia sẻ QR",
         _ => "Máy in",
     };
 

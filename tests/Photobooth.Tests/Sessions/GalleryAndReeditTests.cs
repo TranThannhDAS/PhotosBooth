@@ -122,15 +122,32 @@ public sealed class GalleryAndReeditTests : IDisposable
     }
 
     [Fact]
-    public async Task Gallery_CorruptSessionFile_IsListedWithProblem()
+    public async Task Gallery_TamperedPathsInDatabase_NeverEscapeEventFolder()
     {
         var completed = await CompleteKioskSessionAsync(TestSessions.Create(_paths, _workspaces));
-        await File.WriteAllTextAsync(Path.Combine(completed.Directory!, EventSessionArchive.SessionFileName), "{ hỏng");
 
-        var (_, gallery) = Restart();
+        // Đường dẫn thành phẩm bị sửa thành đường dẫn ra ngoài thư mục sự kiện: không được dùng.
+        await using (var db = TestDatabase.Open(_paths))
+        {
+            db.OutputVersions.Single(v => v.SessionId == completed.SessionId).FilePath = "../../AppData/photobooth.db";
+            await db.SaveChangesAsync();
+        }
+
+        var (sessions, gallery) = Restart();
         var summary = Assert.Single(await gallery.ListAsync());
-
         Assert.NotNull(summary.Problem);
+        Assert.Null(summary.LatestVersion);
+        await gallery.OpenAsync(summary.SessionKey);
+        Assert.Empty(sessions.Current!.Versions);
+        gallery.Close();
+
+        // Thư mục phiên bị sửa ra ngoài: từ chối mở.
+        await using (var db = TestDatabase.Open(_paths))
+        {
+            db.Sessions.Single(s => s.Id == completed.SessionId).DirectoryPath = "../Ngoài sự kiện/" + summary.SessionKey;
+            await db.SaveChangesAsync();
+        }
+
         await Assert.ThrowsAsync<InvalidDataException>(() => gallery.OpenAsync(summary.SessionKey));
     }
 
@@ -245,8 +262,9 @@ public sealed class GalleryAndReeditTests : IDisposable
         Assert.Equal(ColorFilter.Sepia, reloaded.Current.Filter);
         Assert.Equal(new SlotCrop(3, 0, 0), reloaded.Current.SlotCrops[0]);
         Assert.Empty(Directory.GetFiles(_paths.GetDraftsDirectory(completed.SessionId), "composed-*.png"));
-        var json = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(completed.Directory!, EventSessionArchive.SessionFileName)));
-        Assert.Equal("completed", json.RootElement.GetProperty("status").GetString());
+        await using var db = TestDatabase.Open(_paths);
+        Assert.Equal("completed", db.Sessions.Single(s => s.Id == completed.SessionId).Status);
+        Assert.Equal([1, 2], db.OutputVersions.Where(v => v.SessionId == completed.SessionId).Select(v => v.Version).OrderBy(v => v).ToArray());
     }
 
     [Fact]

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Photobooth Cloud: lưu trữ và chia sẻ ảnh. Chạy/deploy độc lập với Desktop; không tham chiếu project nào khác trong Solution.
+    Ảnh lưu trên ổ đĩa server; metadata ảnh lưu trong PostgreSQL (EF Core + Npgsql).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Photobooth.Cloud</RootNamespace>
+    <AssemblyName>Photobooth.Cloud</AssemblyName>
+    <!-- Mật khẩu PostgreSQL khi phát triển: dotnet user-secrets (không nằm trong source/Git). -->
+    <UserSecretsId>photobooth-cloud-dev</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PostgreSQL provider cho EF Core. Giấy phép PostgreSQL License (tương tự MIT). -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.4" />
+    <!-- Chỉ dùng lúc thiết kế (dotnet ef migrations), không đi kèm bản publish. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

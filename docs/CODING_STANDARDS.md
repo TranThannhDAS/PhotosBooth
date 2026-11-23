@@ -112,7 +112,7 @@
 
 ## 8. Lưu trữ, cấu hình và bảo mật
 
-- Dữ liệu ảnh lưu thành **file**; SQLite dùng cho metadata/session/cấu hình khi giai đoạn persistence bắt đầu.
+- Dữ liệu ảnh lưu thành **file**; metadata lưu trong SQLite (Desktop) / PostgreSQL (Cloud) qua EF Core, dùng `IDbContextFactory` (DbContext ngắn). Thay đổi entity phải kèm EF Core migration (xem `docs/ARCHITECTURE.md` §9.1); không lưu đường dẫn tuyệt đối tới file trong Event Workspace.
 - Đặt dữ liệu người dùng ở thư mục ứng dụng phù hợp trong `%LOCALAPPDATA%` hoặc thư mục họ chọn, **không ghi dữ liệu phiên vào Program Files**.
 - Mặc định tách `Originals`, `Outputs`, `Logs`; không đặt dữ liệu trong thư mục build/deploy có thể bị ghi đè.
 - Khi ghi file mới, ưu tiên ghi tạm và hoàn tất theo cách an toàn trước khi cập nhật metadata trạng thái thành công.

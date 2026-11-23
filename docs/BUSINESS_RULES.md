@@ -140,7 +140,7 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
 ### 4.5.1 In ảnh, in lại (đã chốt 19/11/2026)
 
 - Khách chọn số bản (nút −/+, mặc định 1, tối đa theo cấu hình) và **xác nhận** trước khi gửi lệnh in. Một ảnh thành phẩm → một Print Job N bản.
-- Mỗi phiên có thể có nhiều Print Job; mỗi Print Job ghi rõ **phiên bản thành phẩm** được in và được lưu trong session.json của sự kiện **trước khi** gửi tới máy in.
+- Mỗi phiên có thể có nhiều Print Job; mỗi Print Job ghi rõ **phiên bản thành phẩm** được in và được lưu vào database (SQLite) **trước khi** gửi tới máy in.
 - Trạng thái: `Pending` (chưa rõ), `Submitted` (Windows đã tiếp nhận — chưa phải đã in xong), `Simulated` (máy in giả lập, **không có bản in thật**), `Completed` (chỉ khi quản trị viên xác nhận đã in xong), `Failed`, `Cancelled`.
 - Không bao giờ tự đánh dấu "đã in xong"; không tự gửi lại. Phiên bản có lệnh in thất bại hoặc chưa rõ trạng thái phải được xác nhận lại trước khi in tiếp. Yêu cầu in giống hệt gửi liên tiếp (bấm nhiều lần) chỉ tạo một Print Job.
 - Chưa cấu hình máy in: Kiosk báo "chưa thể in", không hiển thị kết quả giả.
@@ -152,6 +152,24 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
 - Sau khi hoàn tất, session có trạng thái kết thúc phù hợp; không tự xóa ảnh của phiên.
 - Bấm **Phiên mới** tạo session khác, không sử dụng lại danh sách ảnh cũ.
 - Hủy/thoát ứng dụng phải dừng camera và lưu trạng thái/file đã hoàn tất ở mức có thể phục hồi.
+
+### 4.7 Chia sẻ ảnh qua QR — Offline-First (Phase Cloud 2.1, đã chốt 23/11/2026)
+
+- **BR-QR01 — QR không phụ thuộc Internet.** Khi khách bấm "Hoàn tất" và Cloud đã cấu hình, Desktop sinh Share Token và URL ngay trên máy, ghi vào SQLite (`OutputVersions`), rồi hiển thị QR. Upload lên Cloud chạy nền sau đó; kết quả upload không bao giờ làm ẩn hoặc đổi QR.
+- **BR-QR02 — Token.**
+  - Sinh bằng `RandomNumberGenerator`, 192 bit, Base64URL 32 ký tự.
+  - Không dùng số thứ tự, đường dẫn file hay thông tin khách.
+  - Mỗi **phiên bản thành phẩm** có một token riêng.
+  - In lại, mở lại phiên hay upload lại đều dùng đúng token cũ.
+- **BR-QR03 — Phiên bản mới.** Chỉnh sửa lại tạo `final-v{N+1}` **không có QR**. Quản trị viên bấm "Tạo mã QR chia sẻ" để cấp token mới cho phiên bản đó. Token và ảnh của phiên bản đã chia sẻ không bao giờ bị ghi đè; Cloud trả `409` nếu cùng token mà khác ảnh.
+- **BR-QR04 — Lưu bền trước khi hiện QR.** Không ghi được token vào SQLite thì không hiển thị QR (màn Hoàn thành báo "Chưa tạo được mã QR…"); phiên vẫn hoàn tất bình thường.
+- **BR-QR05 — Chỉ upload ảnh thành phẩm**, không upload ảnh gốc. Không xóa ảnh local sau khi upload.
+- **BR-QR06 — Thử lại.**
+  - Lỗi tạm thời: tự thử lại với khoảng nghỉ tăng dần, tối đa 15 phút giữa hai lần.
+  - Khởi động lại ứng dụng: upload tiếp các ảnh chưa xong ở mọi sự kiện đã biết.
+  - Mất file local hoặc Cloud từ chối: đánh dấu lỗi, không thử lại vô hạn.
+- **BR-QR07 — Cấu hình.** Mục `cloud` trong settings.json gồm `enabled`, `baseUrl`, `uploadTimeoutSeconds`, `apiKey`; không hardcode địa chỉ. Tắt hoặc sai thì không tạo QR, không ảnh hưởng chụp/lưu/in, và Admin → "Chia sẻ QR" báo rõ lý do.
+- **BR-QR08 — Trang của khách** (`/s/{token}`): chưa có ảnh thì hiện "Ảnh của bạn đang được chuẩn bị." kèm tự làm mới, không cache. Có ảnh thì hiện ảnh và nút "Tải ảnh xuống". Token sai định dạng trả 404. Không cần đăng nhập, không liệt kê ảnh.
 
 ## 5. Mô hình trạng thái đề xuất
 
@@ -243,20 +261,20 @@ Các trạng thái sau là **mô hình mục tiêu**, tên enum thực tế có 
 
 ## 7. Quy tắc lưu trữ và phục hồi
 
-Dữ liệu phiên nằm trong **Event Workspace** (chi tiết: `docs/EVENT_STORAGE.md`); `%LOCALAPPDATA%/Photobooth/` chỉ chứa log, cấu hình (`settings.json`), trạng thái máy (`app-state.json`: sự kiện/máy in đang chọn, danh bạ sự kiện đã mở) và hồ sơ WebView2.
+File ảnh của phiên nằm trong **Event Workspace**; metadata (sự kiện, phiên, ảnh, phiên bản, xuất/in, chia sẻ, trạng thái upload) nằm trong **SQLite** `%LOCALAPPDATA%/Photobooth/photobooth.db` (chi tiết: `docs/EVENT_STORAGE.md`). `%LOCALAPPDATA%/Photobooth/` còn chứa log, cấu hình (`settings.json`), lựa chọn máy in (`app-state.json`) và hồ sơ WebView2.
 
 ```text
 {Thư mục sự kiện}/
-├── event.json
+├── event.json            (dấu nhận diện: mã sự kiện)
 └── Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/
-    ├── session.json      (đường dẫn tương đối)
     ├── Template/         (snapshot template + asset)
     ├── Originals/
     ├── Outputs/          (final-v{N}.png, ảnh thu nhỏ)
     └── Drafts/           (bản ghép tạm, được dọn)
 ```
 
-- Metadata lưu bằng file JSON trong thư mục phiên (ghi tạm rồi đổi tên); chưa dùng SQLite vì chưa có nhu cầu truy vấn. Không đưa ảnh vào database.
+- Metadata lưu trong SQLite qua EF Core (đã chốt 23/11/2026), đường dẫn tương đối với thư mục sự kiện. **Không đưa ảnh vào database.** Không chuyển dữ liệu JSON cũ; thư mục sự kiện cũ vẫn mở được nhưng phiên cũ không hiện trong Thư viện ảnh và không bị xóa.
+- Share Token đã lưu không bao giờ đổi; trạng thái upload lưu trong database để tiếp tục sau khi khởi động lại.
 - Trước khi phục vụ khách phải có Event Workspace hợp lệ; thư mục mất/không ghi được thì báo lỗi, **không** lưu sang chỗ khác và **không** tự tạo lại thư mục đã mất.
 - Không đổi sự kiện khi đang có phiên chụp chưa kết thúc; dữ liệu các sự kiện không trộn lẫn.
 - Không phụ thuộc vào thư mục dự án/build để lưu phiên ảnh.
@@ -264,7 +282,7 @@ Dữ liệu phiên nằm trong **Event Workspace** (chi tiết: `docs/EVENT_STOR
 - Khởi động lại phải không làm mất file ảnh đã lưu; ứng dụng có thể đánh dấu phiên đang dang dở để người quản trị xem/xử lý.
 - Phục hồi **tự động cả một phiên chưa hoàn tất** là lựa chọn triển khai cần xác nhận; yêu cầu nền tảng là không xóa dữ liệu đã ghi.
 - Nếu phiên bị hủy, không tự động xóa ảnh vì chưa có chính sách lưu trữ chính thức.
-- Không tự động upload, gửi email hoặc tạo QR từ ảnh đã chụp.
+- Không tự động upload, gửi email hoặc tạo QR từ ảnh **gốc**. Ngoại lệ đã chốt: chia sẻ QR ảnh **thành phẩm** khi Cloud được cấu hình (mục 4.7).
 
 ## 8. Quy tắc lỗi và hành động khắc phục
 
@@ -309,7 +327,8 @@ Quản trị viên trong V1 cần có khả năng:
 | BR-09 | Xuất PDF 4×6 inch | Trang PDF có kích thước 288×432 point và đúng hướng |
 | BR-10 | Xuất lỗi vì không có quyền ghi | Giữ nguyên ảnh gốc, đưa thông báo và cho chọn vị trí khác |
 | BR-11 | Đóng/mở ứng dụng | File ảnh đã lưu vẫn tồn tại, có thể truy cập qua thư viện khi tính năng đã triển khai |
-| BR-12 | Chụp/ghép/xuất offline | Không có lời gọi cloud hay yêu cầu login để hoàn tất luồng |
+| BR-12 | Chụp/ghép/xuất offline | Không có lời gọi cloud hay yêu cầu login để hoàn tất luồng (upload QR chạy nền, không chặn) |
+| BR-QR | Hoàn tất khi mất Internet | Vẫn có QR; khi có mạng lại, ảnh tự đồng bộ và đúng QR cũ mở được ảnh |
 
 **Kiểm thử phân lớp:** BR-03/04/05/06/09 ưu tiên unit/integration test với camera giả và ảnh mẫu. BR-02 và preview webcam **phải thử thật trên Windows**; mock không xác nhận webcam hoạt động.
 

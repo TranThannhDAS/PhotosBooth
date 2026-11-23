@@ -4,6 +4,7 @@ using Photobooth.Application.Export;
 using Photobooth.Application.Photos;
 using Photobooth.Application.Printing;
 using Photobooth.Application.Sessions;
+using Photobooth.Application.Sharing;
 using Photobooth.Infrastructure.Events;
 using Photobooth.Infrastructure.Export;
 using Photobooth.Infrastructure.Imaging;
@@ -15,7 +16,7 @@ namespace Photobooth.Tests.TestSupport;
 internal static class TestSessions
 {
     public static EventWorkspaceService CreateWorkspaceService(PhotoboothStoragePaths paths, TimeProvider? timeProvider = null) =>
-        new(paths, new AppStateStore(paths, NullLogger<AppStateStore>.Instance), timeProvider ?? TimeProvider.System, NullLogger<EventWorkspaceService>.Instance);
+        new(paths, TestDatabase.For(paths), timeProvider ?? TimeProvider.System, NullLogger<EventWorkspaceService>.Instance);
 
     /// <summary>Mở (tạo nếu cần) thư mục sự kiện và trả về service đang dùng sự kiện đó.</summary>
     public static EventWorkspaceService OpenWorkspace(PhotoboothStoragePaths paths, string folder, string? name = null)
@@ -28,7 +29,7 @@ internal static class TestSessions
     }
 
     public static EventSessionArchive CreateArchive(PhotoboothStoragePaths paths, EventWorkspaceService workspaces) =>
-        new(workspaces, paths, TimeProvider.System, NullLogger<EventSessionArchive>.Instance);
+        new(workspaces, TestDatabase.For(paths), paths, TimeProvider.System, NullLogger<EventSessionArchive>.Instance);
 
     public static PhotoSessionService Create(
         PhotoboothStoragePaths paths,
@@ -38,7 +39,9 @@ internal static class TestSessions
         IPhotoComposer? composer = null,
         TimeProvider? timeProvider = null,
         IPrinterProvider? printers = null,
-        PrintOptions? printOptions = null) =>
+        PrintOptions? printOptions = null,
+        ShareLinkFactory? shareLinks = null,
+        ICloudUploadQueue? uploads = null) =>
         new(
             store ?? new LocalOriginalPhotoStore(paths),
             composer ?? new SkiaPhotoComposer(paths, NullLogger<SkiaPhotoComposer>.Instance),
@@ -48,8 +51,41 @@ internal static class TestSessions
             printers ?? new TestPrinterProvider(),
             options ?? new CaptureOptions(),
             printOptions ?? new PrintOptions(),
+            shareLinks ?? new ShareLinkFactory(new CloudShareOptions()),
+            uploads ?? new RecordingUploadQueue(),
             timeProvider ?? FakeTimeProvider.Immediate(),
             NullLogger<PhotoSessionService>.Instance);
+}
+
+/// <summary>Hàng đợi upload kiểm thử: chỉ ghi lại các yêu cầu (không gọi mạng).</summary>
+internal sealed class RecordingUploadQueue : ICloudUploadQueue
+{
+    private readonly List<ShareUploadItem> _items = [];
+
+    public event EventHandler? StateChanged;
+
+    public IReadOnlyList<ShareUploadItem> Items
+    {
+        get
+        {
+            lock (_items)
+            {
+                return [.. _items];
+            }
+        }
+    }
+
+    public void Enqueue(ShareUploadItem item)
+    {
+        lock (_items)
+        {
+            _items.Add(item);
+        }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public ShareUploadState? GetState(string token) => null;
 }
 
 internal sealed class TestPrinterProvider : IPrinterProvider

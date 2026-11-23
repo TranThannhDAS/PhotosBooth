@@ -4,7 +4,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Photobooth.Application.Sessions;
+using System.IO;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Photobooth.Desktop.Hosting;
+using Photobooth.Infrastructure.Persistence;
 using Photobooth.Infrastructure.Storage;
 
 namespace Photobooth.Desktop;
@@ -34,6 +38,24 @@ public partial class App : System.Windows.Application
 
         _logger.LogInformation("Khởi động Photobooth {Version}", typeof(App).Assembly.GetName().Version);
 
+        // Tạo/cập nhật schema SQLite (EF Core Migrations). Không có database thì không lưu được phiên → dừng có thông báo.
+        try
+        {
+            PhotoboothDatabase.Migrate(_services.GetRequiredService<IDbContextFactory<PhotoboothDbContext>>());
+        }
+        catch (Exception ex) when (ex is SqliteException or DbUpdateException or InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            _logger.LogCritical(ex, "Không khởi tạo được cơ sở dữ liệu");
+            MessageBox.Show(
+                "Không mở được cơ sở dữ liệu của ứng dụng (photobooth.db).\n\n" +
+                "Vui lòng kiểm tra ổ đĩa và quyền ghi thư mục dữ liệu ứng dụng, rồi mở lại.",
+                "Photobooth",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
+
         if (!IsWebView2RuntimeAvailable())
         {
             MessageBox.Show(
@@ -49,13 +71,16 @@ public partial class App : System.Windows.Application
         var window = new MainWindow(_services);
         MainWindow = window;
         window.Show();
+
+        // Upload ảnh chia sẻ chạy nền, độc lập với giao diện; lần đầu quét các sự kiện đã biết để upload tiếp ảnh dang dở.
+        _services.GetRequiredService<Photobooth.Infrastructure.Sharing.CloudUploadService>().Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         try
         {
-            // Kết thúc phiên (không xóa ảnh gốc) và chờ ghi xong session.json (tối đa vài giây).
+            // Kết thúc phiên (không xóa ảnh gốc) và chờ ghi xong metadata phiên (tối đa vài giây).
             if (_services?.GetService<PhotoSessionService>() is { } sessions)
             {
                 sessions.EndCurrentSession();

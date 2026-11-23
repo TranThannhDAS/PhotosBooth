@@ -1,11 +1,14 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Photobooth.Application.Events;
+using Photobooth.Infrastructure.Persistence;
 using Photobooth.Infrastructure.Storage;
 
 namespace Photobooth.Infrastructure.Events;
 
-/// <summary>Một Event Workspace đã mở: thư mục gốc của sự kiện và thông tin trong event.json.</summary>
+/// <summary>Một Event Workspace đã mở: thư mục gốc của sự kiện và thông tin sự kiện (từ SQLite).</summary>
 public sealed record EventWorkspace(string RootDirectory, EventInfo Info)
 {
     public string SessionsDirectory => Path.Combine(RootDirectory, EventWorkspaceService.SessionsFolderName);
@@ -16,13 +19,19 @@ public sealed record WorkspaceStatus(EventWorkspace? Workspace, string? Folder, 
 {
     public bool IsReady => Workspace is not null && Problem is null;
 
-    /// <summary>Thư mục chưa có event.json: mở sẽ tạo sự kiện mới.</summary>
+    /// <summary>Thư mục chưa có event.json (dấu nhận diện): mở sẽ tạo sự kiện mới.</summary>
     public bool IsNewEvent { get; init; }
 }
 
 /// <summary>
 /// Quản lý sự kiện hiện tại (Event Workspace): chọn/mở/tạo, kiểm tra thư mục còn tồn tại và ghi được,
 /// ghi nhớ sau khi khởi động lại. Không bao giờ tự tạo lại thư mục đã mất hay lưu sang thư mục khác.
+/// <list type="bullet">
+/// <item>SQLite (bảng Events) là nguồn dữ liệu chính: tên, thư mục, lần mở gần nhất, danh bạ sự kiện.</item>
+/// <item><c>event.json</c> trong thư mục chỉ là DẤU NHẬN DIỆN (mã sự kiện) để biết thư mục thuộc sự kiện nào,
+/// kể cả khi thư mục được di chuyển. Thư mục cũ có event.json đầy đủ (bản JSON trước đây) vẫn được nhận ra;
+/// dữ liệu phiên cũ trong đó KHÔNG được chuyển sang database.</item>
+/// </list>
 /// </summary>
 public sealed class EventWorkspaceService
 {
@@ -33,19 +42,19 @@ public sealed class EventWorkspaceService
     public const long MinimumFreeBytes = 200L * 1024 * 1024;
 
     private readonly PhotoboothStoragePaths _paths;
-    private readonly AppStateStore _state;
+    private readonly IDbContextFactory<PhotoboothDbContext> _db;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EventWorkspaceService> _logger;
     private readonly Lock _gate = new();
     private WorkspaceStatus _status;
 
-    public EventWorkspaceService(PhotoboothStoragePaths paths, AppStateStore state, TimeProvider timeProvider, ILogger<EventWorkspaceService> logger)
+    public EventWorkspaceService(PhotoboothStoragePaths paths, IDbContextFactory<PhotoboothDbContext> db, TimeProvider timeProvider, ILogger<EventWorkspaceService> logger)
     {
         _paths = paths;
-        _state = state;
+        _db = db;
         _timeProvider = timeProvider;
         _logger = logger;
-        _status = new WorkspaceStatus(null, state.Current.LastEventFolder, "Chưa chọn thư mục sự kiện.");
+        _status = new WorkspaceStatus(null, null, "Chưa chọn thư mục sự kiện.");
     }
 
     public event EventHandler? Changed;
@@ -71,7 +80,7 @@ public sealed class EventWorkspaceService
     public Task<WorkspaceStatus> RestoreLastAsync(CancellationToken cancellationToken = default)
     {
         RestoreAttempted = true;
-        var folder = _state.Current.LastEventFolder;
+        var folder = LoadEvents().Where(e => e.FolderPath is not null).MaxBy(e => e.LastOpenedAt)?.FolderPath;
         if (string.IsNullOrWhiteSpace(folder))
         {
             return Task.FromResult(Status);
@@ -89,10 +98,10 @@ public sealed class EventWorkspaceService
             return new WorkspaceStatus(null, folder, problem, freeBytes);
         }
 
-        var (info, error) = await ReadEventFileAsync(folder, cancellationToken).ConfigureAwait(false);
+        var (marker, error) = await ReadEventFileAsync(folder, cancellationToken).ConfigureAwait(false);
         return error is not null
             ? new WorkspaceStatus(null, folder, error, freeBytes)
-            : new WorkspaceStatus(null, folder, null, freeBytes) { IsNewEvent = info is null };
+            : new WorkspaceStatus(null, folder, null, freeBytes) { IsNewEvent = marker is null };
     }
 
     /// <summary>
@@ -115,15 +124,22 @@ public sealed class EventWorkspaceService
         var info = workspace.Info with { Name = trimmed };
         try
         {
-            await WriteEventFileAsync(workspace.RootDirectory, info, overwrite: true, cancellationToken).ConfigureAwait(false);
+            await using var db = await _db.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            var row = await db.Events.FirstOrDefaultAsync(e => e.Id == info.EventId, cancellationToken).ConfigureAwait(false);
+            if (row is null)
+            {
+                return Status;
+            }
+
+            row.Name = trimmed;
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (IsDatabaseError(ex))
         {
-            _logger.LogError(ex, "Không ghi được event.json khi đổi tên sự kiện");
-            return SetStatus(Status with { Problem = DescribeWriteError(ex) });
+            _logger.LogError(ex, "Không lưu được tên sự kiện vào cơ sở dữ liệu");
+            return SetStatus(Status with { Problem = DatabaseProblem });
         }
 
-        await RememberAsync(workspace.RootDirectory, info, cancellationToken).ConfigureAwait(false);
         return SetStatus(Status with { Workspace = workspace with { Info = info } });
     }
 
@@ -133,10 +149,37 @@ public sealed class EventWorkspaceService
         get
         {
             var currentId = Current?.Info.EventId;
-            return _state.Current.KnownEvents
+            return LoadEvents()
+                .Where(e => e.FolderPath is not null)
+                .Select(e => new KnownEventEntry(e.Id, e.Name, e.FolderPath!, e.LastOpenedAt))
                 .OrderByDescending(e => e.EventId == currentId)
                 .ThenByDescending(e => e.LastOpenedAt)
                 .ToArray();
+        }
+    }
+
+    /// <summary>Thư mục hiện tại của một sự kiện theo mã (null nếu không biết) — dùng để dựng đường dẫn tuyệt đối từ đường dẫn tương đối.</summary>
+    public string? GetEventFolder(Guid eventId)
+    {
+        if (Current is { } current && current.Info.EventId == eventId)
+        {
+            return current.RootDirectory;
+        }
+
+        return LoadEvents().FirstOrDefault(e => e.Id == eventId)?.FolderPath;
+    }
+
+    private EventRecord[] LoadEvents()
+    {
+        try
+        {
+            using var db = _db.CreateDbContext();
+            return db.Events.AsNoTracking().ToArray();
+        }
+        catch (Exception ex) when (IsDatabaseError(ex))
+        {
+            _logger.LogError(ex, "Không đọc được danh sách sự kiện từ cơ sở dữ liệu");
+            return [];
         }
     }
 
@@ -152,21 +195,21 @@ public sealed class EventWorkspaceService
             return current;
         }
 
-        var entry = _state.Current.KnownEvents.FirstOrDefault(e => e.EventId == eventId)
+        var entry = LoadEvents().FirstOrDefault(e => e.Id == eventId)
             ?? throw new EventWorkspaceUnavailableException("Sự kiện này chưa từng được mở trên máy.");
-        if (!Directory.Exists(entry.Folder))
+        if (entry.FolderPath is not { } folder || !Directory.Exists(folder))
         {
             throw new EventWorkspaceUnavailableException("Không tìm thấy thư mục sự kiện (đã bị đổi tên, di chuyển hoặc ổ đĩa chưa cắm).");
         }
 
-        var (info, error) = await ReadEventFileAsync(entry.Folder, cancellationToken).ConfigureAwait(false);
-        if (error is not null || info is null || info.EventId != eventId)
+        var (marker, error) = await ReadEventFileAsync(folder, cancellationToken).ConfigureAwait(false);
+        if (error is not null || marker is null || marker.EventId != eventId)
         {
             throw new EventWorkspaceUnavailableException(error ?? "Thư mục không còn chứa sự kiện này.");
         }
 
-        _paths.AllowRoot(entry.Folder);
-        return new EventWorkspace(entry.Folder, info);
+        _paths.AllowRoot(folder);
+        return new EventWorkspace(folder, new EventInfo(entry.Id, entry.Name, entry.CreatedAt));
     }
 
     /// <summary>Kiểm tra nhanh (không đọc ảnh) để hiển thị trạng thái trong bộ lọc.</summary>
@@ -176,27 +219,39 @@ public sealed class EventWorkspaceService
             ? null
             : "Không truy cập được thư mục sự kiện.";
 
-    /// <summary>Ghi nhớ sự kiện vào danh bạ (một mục cho mỗi mã sự kiện và mỗi thư mục; lần mở mới nhất thắng).</summary>
-    private async Task RememberAsync(string root, EventInfo info, CancellationToken cancellationToken)
+    /// <summary>
+    /// Ghi sự kiện vào SQLite: tạo mới hoặc cập nhật thư mục và lần mở gần nhất. Một thư mục chỉ thuộc một sự kiện:
+    /// sự kiện khác đang trỏ tới thư mục này (dữ liệu cũ) được gỡ thư mục.
+    /// </summary>
+    private async Task<EventRecord> RememberAsync(string root, EventMarker marker, string fallbackName, CancellationToken cancellationToken)
     {
-        try
+        await using var db = await _db.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var now = _timeProvider.GetUtcNow();
+        var rows = await db.Events.ToListAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var other in rows.Where(e => e.Id != marker.EventId && string.Equals(e.FolderPath, root, StringComparison.OrdinalIgnoreCase)))
         {
-            var now = _timeProvider.GetUtcNow();
-            await _state.UpdateAsync(
-                    s => s with
-                    {
-                        KnownEvents = s.KnownEvents
-                            .Where(e => e.EventId != info.EventId && !string.Equals(e.Folder, root, StringComparison.OrdinalIgnoreCase))
-                            .Append(new KnownEventEntry(info.EventId, info.Name, root, now))
-                            .ToArray(),
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
+            other.FolderPath = null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+
+        // Gỡ thư mục cũ trước, rồi mới gán cho sự kiện này (tránh vi phạm ràng buộc duy nhất trong cùng một lần lưu).
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        var row = rows.FirstOrDefault(e => e.Id == marker.EventId);
+        if (row is null)
         {
-            _logger.LogWarning(ex, "Không ghi nhớ được danh sách sự kiện");
+            row = new EventRecord
+            {
+                Id = marker.EventId,
+                Name = string.IsNullOrWhiteSpace(marker.Name) ? fallbackName : marker.Name.Trim(),
+                CreatedAt = marker.CreatedAt ?? now,
+            };
+            db.Events.Add(row);
         }
+
+        row.FolderPath = root;
+        row.LastOpenedAt = now;
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return row;
     }
 
     /// <summary>Kiểm tra lại sự kiện hiện tại (thư mục còn tồn tại, ghi được, còn dung lượng).</summary>
@@ -231,24 +286,25 @@ public sealed class EventWorkspaceService
             return SetStatus(new WorkspaceStatus(null, root, problem.Problem, problem.Free));
         }
 
-        var (info, error) = await ReadEventFileAsync(root, cancellationToken).ConfigureAwait(false);
+        var (marker, error) = await ReadEventFileAsync(root, cancellationToken).ConfigureAwait(false);
         if (error is not null)
         {
             return SetStatus(new WorkspaceStatus(null, root, error, problem.Free));
         }
 
-        if (info is null)
+        var name = string.IsNullOrWhiteSpace(newEventName) ? Path.GetFileName(root) : newEventName.Trim();
+        name = string.IsNullOrWhiteSpace(name) ? "Sự kiện" : name;
+        if (marker is null)
         {
             if (!createIfMissingEventFile)
             {
                 return SetStatus(new WorkspaceStatus(null, root, "Thư mục không còn thông tin sự kiện (event.json). Vui lòng chọn lại.", problem.Free));
             }
 
-            var name = string.IsNullOrWhiteSpace(newEventName) ? Path.GetFileName(root) : newEventName.Trim();
-            info = new EventInfo(Guid.NewGuid(), string.IsNullOrWhiteSpace(name) ? "Sự kiện" : name, _timeProvider.GetUtcNow());
+            marker = new EventMarker(Guid.NewGuid(), null, _timeProvider.GetUtcNow());
             try
             {
-                await WriteEventFileAsync(root, info, overwrite: false, cancellationToken).ConfigureAwait(false);
+                await WriteEventFileAsync(root, marker, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -256,25 +312,25 @@ public sealed class EventWorkspaceService
                 return SetStatus(new WorkspaceStatus(null, root, DescribeWriteError(ex), problem.Free));
             }
 
-            _logger.LogInformation("Tạo sự kiện mới {EventId}", info.EventId);
+            _logger.LogInformation("Tạo sự kiện mới {EventId}", marker.EventId);
+        }
+
+        EventRecord row;
+        try
+        {
+            row = await RememberAsync(root, marker, name, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsDatabaseError(ex))
+        {
+            // Không ghi được metadata sự kiện → không cho phục vụ (phiên chụp phải liên kết được với sự kiện).
+            _logger.LogError(ex, "Không ghi được sự kiện vào cơ sở dữ liệu");
+            return SetStatus(new WorkspaceStatus(null, root, DatabaseProblem, problem.Free));
         }
 
         _paths.AllowRoot(root);
-        var workspace = new EventWorkspace(root, info);
+        var workspace = new EventWorkspace(root, new EventInfo(row.Id, row.Name, row.CreatedAt));
         var status = SetStatus(new WorkspaceStatus(workspace, root, null, problem.Free));
-        try
-        {
-            await _state.UpdateAsync(s => s with { LastEventFolder = root }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Không chặn phục vụ: chỉ là ghi nhớ cho lần mở sau.
-            _logger.LogWarning(ex, "Không ghi nhớ được sự kiện đang chọn");
-        }
-
-        await RememberAsync(root, info, cancellationToken).ConfigureAwait(false);
-
-        _logger.LogInformation("Đang dùng sự kiện {EventId}", info.EventId);
+        _logger.LogInformation("Đang dùng sự kiện {EventId}", row.Id);
         return status;
     }
 
@@ -327,7 +383,12 @@ public sealed class EventWorkspaceService
 
     internal static bool IsDiskFull(IOException ex) => (ex.HResult & 0xFFFF) is 0x70 or 0x27;
 
-    private static async Task<(EventInfo? Info, string? Error)> ReadEventFileAsync(string folder, CancellationToken cancellationToken)
+    internal const string DatabaseProblem = "Không ghi được dữ liệu vào cơ sở dữ liệu của ứng dụng (photobooth.db). Vui lòng kiểm tra ổ đĩa rồi thử lại.";
+
+    internal static bool IsDatabaseError(Exception ex) => ex is DbUpdateException or SqliteException or InvalidOperationException;
+
+    /// <summary>Đọc dấu nhận diện event.json (chấp nhận cả định dạng đầy đủ của bản JSON cũ: có thêm name).</summary>
+    private static async Task<(EventMarker? Marker, string? Error)> ReadEventFileAsync(string folder, CancellationToken cancellationToken)
     {
         var file = Path.Combine(folder, EventFileName);
         if (!File.Exists(file))
@@ -338,9 +399,9 @@ public sealed class EventWorkspaceService
         try
         {
             await using var stream = File.OpenRead(file);
-            var info = await JsonSerializer.DeserializeAsync<EventInfo>(stream, AppStateStore.SerializerOptions, cancellationToken).ConfigureAwait(false);
-            return info is { EventId: var id, Name: { Length: > 0 } } && id != Guid.Empty
-                ? (info, null)
+            var marker = await JsonSerializer.DeserializeAsync<EventMarker>(stream, AppStateStore.SerializerOptions, cancellationToken).ConfigureAwait(false);
+            return marker is { EventId: var id } && id != Guid.Empty
+                ? (marker, null)
                 : (null, "File event.json không hợp lệ. Ứng dụng không tự sửa file này; vui lòng chọn thư mục khác.");
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
@@ -349,12 +410,21 @@ public sealed class EventWorkspaceService
         }
     }
 
-    private static Task WriteEventFileAsync(string folder, EventInfo info, bool overwrite, CancellationToken cancellationToken) =>
+    /// <summary>Tạo dấu nhận diện cho sự kiện mới (không ghi đè). Tên sự kiện nằm trong SQLite, không ghi vào đây.</summary>
+    private static Task WriteEventFileAsync(string folder, EventMarker marker, CancellationToken cancellationToken) =>
         SafeFileWriter.WriteAsync(
             Path.Combine(folder, EventFileName),
-            (stream, token) => JsonSerializer.SerializeAsync(stream, info, AppStateStore.SerializerOptions, token),
-            overwrite,
+            (stream, token) => JsonSerializer.SerializeAsync(stream, marker with { Name = null }, MarkerOptions, token),
+            overwrite: false,
             cancellationToken);
+
+    private static readonly JsonSerializerOptions MarkerOptions = new(AppStateStore.SerializerOptions)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    /// <summary>Nội dung event.json: mã sự kiện (+ tên/ngày tạo nếu là thư mục của bản JSON cũ).</summary>
+    private sealed record EventMarker(Guid EventId, string? Name, DateTimeOffset? CreatedAt);
 
     private WorkspaceStatus SetStatus(WorkspaceStatus status)
     {

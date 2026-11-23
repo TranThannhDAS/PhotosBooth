@@ -27,21 +27,22 @@ public sealed record PrinterSelection
 }
 
 /// <summary>
-/// Trạng thái máy (không phải cấu hình người dùng sửa tay): sự kiện đang chọn và máy in đã chọn.
+/// Trạng thái máy (không phải cấu hình người dùng sửa tay): máy in đã chọn.
 /// Lưu ở %LOCALAPPDATA%\Photobooth\app-state.json, tách khỏi settings.json để ứng dụng không ghi đè file cấu hình.
+/// Sự kiện (đang dùng, danh bạ) nay nằm trong SQLite (bảng Events).
 /// </summary>
 public sealed record AppState
 {
-    /// <summary>Thư mục Event Workspace dùng lần trước (đường dẫn tuyệt đối).</summary>
+    /// <summary>KHÔNG CÒN DÙNG (bản JSON cũ). Chỉ giữ lại để đọc/ghi lại nguyên vẹn file cũ, không phải nguồn dữ liệu.</summary>
     public string? LastEventFolder { get; init; }
 
     public PrinterSelection Printer { get; init; } = new();
 
-    /// <summary>Các sự kiện đã mở trên máy này (cho bộ lọc Thư viện ảnh). Chỉ là danh bạ — không chứa ảnh.</summary>
+    /// <summary>KHÔNG CÒN DÙNG (bản JSON cũ). Chỉ giữ lại để đọc/ghi lại nguyên vẹn file cũ, không phải nguồn dữ liệu.</summary>
     public IReadOnlyList<KnownEventEntry> KnownEvents { get; init; } = [];
 }
 
-/// <summary>Một sự kiện đã mở: mã (từ event.json), tên lần cuối thấy và thư mục tuyệt đối.</summary>
+/// <summary>Một sự kiện đã mở trên máy (đọc từ bảng Events): mã, tên, thư mục tuyệt đối, lần mở gần nhất.</summary>
 public sealed record KnownEventEntry(Guid EventId, string Name, string Folder, DateTimeOffset LastOpenedAt);
 
 /// <summary>Đọc/ghi <see cref="AppState"/> an toàn (ghi tạm rồi đổi tên).</summary>

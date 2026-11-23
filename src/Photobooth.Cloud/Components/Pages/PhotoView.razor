@@ -1,0 +1,43 @@
+@page "/photos/{Id}"
+@inject PhotoStore Store
+@inject NavigationManager Navigation
+
+@* Trang xem ảnh upload thường (ID do server sinh): Static SSR, không đăng nhập.
+   Không có ảnh → NavigationManager.NotFound(): Router hiển thị trang NotFound với mã HTTP 404. *@
+
+@if (_lookup?.Photo is { } photo)
+{
+    <PageTitle>Ảnh của bạn — Photobooth</PageTitle>
+    <PhotoDisplay Photo="photo" />
+}
+else if (_lookup is not null)
+{
+    <PhotoUnavailable Lookup="_lookup" />
+}
+
+@code {
+    private PhotoLookup? _lookup;
+
+    [Parameter]
+    public string Id { get; set; } = "";
+
+    [CascadingParameter]
+    public HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Chỉ ID ảnh; Share Token có trang riêng /s/{token} (có trạng thái chờ).
+        if (!PhotoStore.IsValidId(Id))
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        _lookup = await PhotoUnavailable.LookupAsync(Store, Id, HttpContext);
+        if (_lookup.Availability == PhotoAvailability.NotFound)
+        {
+            _lookup = null;
+            Navigation.NotFound();
+        }
+    }
+}

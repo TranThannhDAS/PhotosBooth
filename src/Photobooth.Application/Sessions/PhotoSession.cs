@@ -102,7 +102,16 @@ public sealed record PhotoSession(
     /// <summary>Phiên bản đang làm gốc khi chỉnh sửa lại; "Hủy" quay về đúng phiên bản này.</summary>
     public int? EditBaseVersion { get; init; }
 
-    /// <summary>Lần ghi session.json gần nhất thất bại (ổ đĩa đầy, mất quyền...).</summary>
+    /// <summary>
+    /// Phiên bản khách đã bấm "Hoàn tất" (có thể là phiên bản cũ được dùng lại, không nhất thiết là phiên bản mới nhất).
+    /// Màn hoàn tất hiển thị QR của đúng phiên bản này.
+    /// </summary>
+    public int? CompletedVersion { get; init; }
+
+    /// <summary>Phiên bản thành phẩm của màn hoàn tất: phiên bản đã hoàn tất, nếu không có thì phiên bản mới nhất.</summary>
+    public OutputVersion? CompletedOutput => CompletedVersion is { } v ? FindVersion(v) : LatestVersion;
+
+    /// <summary>Lần ghi metadata phiên gần nhất thất bại (ổ đĩa đầy, database lỗi...).</summary>
     public bool PersistenceFailed { get; init; }
 
     public OutputVersion? LatestVersion => Versions.Count == 0 ? null : Versions[^1];

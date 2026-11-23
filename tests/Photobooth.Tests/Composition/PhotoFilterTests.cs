@@ -332,11 +332,13 @@ public sealed class PhotoFilterTests : IDisposable
         Assert.Equal(v2.FilePath, printResult.Job.OutputFilePath);
         await reopenedService.FlushAsync();
 
-        // Kiểm tra tương thích khi file session.json chứa mã Filter không còn được hỗ trợ hoặc alias cũ
-        var sessionJsonPath = Path.Combine(completed.Directory!, EventSessionArchive.SessionFileName);
-        var rawJson = await File.ReadAllTextAsync(sessionJsonPath);
-        var unknownFilterJson = rawJson.Replace("\"Film\"", "\"UnsupportedFutureFilter999\"", StringComparison.Ordinal);
-        await File.WriteAllTextAsync(sessionJsonPath, unknownFilterJson);
+        // Database chứa mã Filter không còn được hỗ trợ: đọc ra bộ lọc mặc định an toàn, không lỗi.
+        await using (var db = TestDatabase.Open(_paths))
+        {
+            var v2Row = db.OutputVersions.Single(v => v.SessionId == completed.SessionId && v.Version == 2);
+            v2Row.Filter = "UnsupportedFutureFilter999";
+            await db.SaveChangesAsync();
+        }
 
         var loadedWithUnknown = await archive.LoadSessionAsync(sessionKey);
         Assert.Equal(ColorFilter.None, loadedWithUnknown.Session.Versions[^1].Filter);

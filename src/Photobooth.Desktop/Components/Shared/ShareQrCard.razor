@@ -1,0 +1,98 @@
+@implements IDisposable
+@inject QrCodeRenderer QrCodes
+@inject ICloudUploadQueue Uploads
+@inject ILogger<ShareQrCard> Logger
+
+@*
+    Mã QR của một link chia sẻ. QR LUÔN hiển thị (kể cả khi chưa upload/mất mạng/upload lỗi): link đã được lưu trên máy,
+    ảnh sẽ có trên Cloud khi đồng bộ xong — khách mở link sớm sẽ thấy trang chờ.
+    Trạng thái đồng bộ chỉ là dòng thông tin nhỏ; QR không đổi khi upload thành công.
+*@
+<div class="share-card">
+    @if (_qrDataUri is not null)
+    {
+        <img class="share-qr" src="@_qrDataUri" alt="Mã QR để tải ảnh về điện thoại" width="240" height="240" />
+    }
+    else
+    {
+        <p class="panel-hint">Không tạo được hình mã QR.</p>
+    }
+    <div class="share-text">
+        <p class="share-title">@Title</p>
+        <p class="share-status share-status-@StatusTone" role="status">@StatusText</p>
+        @if (ShowDetails)
+        {
+            <p class="share-url">@Link.Url</p>
+            @if (State?.LastError is { } error && State.Status != CloudUploadStatus.Uploaded)
+            {
+                <p class="share-error">@error</p>
+            }
+            @if (State is { Attempts: > 0 } s)
+            {
+                <small class="panel-hint">Đã thử upload @s.Attempts lần@(s.UploadedAt is { } at ? $" · lên Cloud lúc {UiText.LocalTime(at)}" : null)</small>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private string? _qrDataUri;
+    private string? _renderedUrl;
+
+    [Parameter, EditorRequired]
+    public ShareLink Link { get; set; } = default!;
+
+    [Parameter]
+    public string Title { get; set; } = "Quét mã QR để tải ảnh về điện thoại";
+
+    /// <summary>Admin: hiện URL, lỗi kỹ thuật và số lần thử. Kiosk: chỉ thông báo thân thiện.</summary>
+    [Parameter]
+    public bool ShowDetails { get; set; }
+
+    private ShareUploadState? State => Uploads.GetState(Link.Token);
+
+    private string StatusTone => State switch
+    {
+        { Status: CloudUploadStatus.Uploaded } => "success",
+        { Status: CloudUploadStatus.Failed } => "warning",
+        { Status: CloudUploadStatus.Pending, IsOffline: true } => "warning",
+        _ => "info",
+    };
+
+    private string StatusText => State switch
+    {
+        { Status: CloudUploadStatus.Uploaded } => "Ảnh đã sẵn sàng để tải xuống.",
+        { Status: CloudUploadStatus.Failed } => ShowDetails
+            ? "Chưa đồng bộ được ảnh lên Cloud (không tự thử lại)."
+            : "Ảnh chưa đồng bộ được. Vui lòng báo nhân viên — mã QR vẫn được giữ.",
+        { Status: CloudUploadStatus.Pending, IsOffline: true } =>
+            "Chưa có kết nối Internet. Ảnh sẽ tự đồng bộ khi có mạng — bạn vẫn có thể quét mã QR ngay.",
+        _ => "Ảnh đang được đồng bộ…",
+    };
+
+    protected override void OnInitialized() => Uploads.StateChanged += OnUploadStateChanged;
+
+    protected override void OnParametersSet()
+    {
+        // Chỉ tạo lại hình QR khi link đổi (render lại không tạo QR mới, không gọi upload).
+        if (_renderedUrl == Link.Url)
+        {
+            return;
+        }
+
+        _renderedUrl = Link.Url;
+        try
+        {
+            _qrDataUri = QrCodes.RenderDataUri(Link.Url);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Logger.LogError(ex, "Không tạo được hình mã QR");
+            _qrDataUri = null;
+        }
+    }
+
+    private void OnUploadStateChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Uploads.StateChanged -= OnUploadStateChanged;
+}
