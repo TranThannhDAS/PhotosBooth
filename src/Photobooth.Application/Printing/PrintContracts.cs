@@ -61,7 +61,7 @@ public interface IPrinterProvider
     IPrinter? Current { get; }
 }
 
-/// <summary>Cấu hình in (settings.json, mục "print").</summary>
+/// <summary>Cấu hình in (appsettings.json của Desktop, mục "print").</summary>
 public sealed record PrintOptions
 {
     public const int DefaultMaxCopies = 10;

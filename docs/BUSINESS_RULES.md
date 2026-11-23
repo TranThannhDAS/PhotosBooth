@@ -168,7 +168,7 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
   - Lỗi tạm thời: tự thử lại với khoảng nghỉ tăng dần, tối đa 15 phút giữa hai lần.
   - Khởi động lại ứng dụng: upload tiếp các ảnh chưa xong ở mọi sự kiện đã biết.
   - Mất file local hoặc Cloud từ chối: đánh dấu lỗi, không thử lại vô hạn.
-- **BR-QR07 — Cấu hình.** Mục `cloud` trong settings.json gồm `enabled`, `baseUrl`, `uploadTimeoutSeconds`, `apiKey`; không hardcode địa chỉ. Tắt hoặc sai thì không tạo QR, không ảnh hưởng chụp/lưu/in, và Admin → "Chia sẻ QR" báo rõ lý do.
+- **BR-QR07 — Cấu hình.** Mục `cloud` trong `appsettings.json` của Desktop gồm `enabled`, `baseUrl`, `uploadTimeoutSeconds`, `apiKey`; không hardcode địa chỉ. Tắt hoặc sai thì không tạo QR, không ảnh hưởng chụp/lưu/in, và Admin → "Chia sẻ QR" báo rõ lý do.
 - **BR-QR08 — Trang của khách** (`/s/{token}`): chưa có ảnh thì hiện "Ảnh của bạn đang được chuẩn bị." kèm tự làm mới, không cache. Có ảnh thì hiện ảnh và nút "Tải ảnh xuống". Token sai định dạng trả 404. Không cần đăng nhập, không liệt kê ảnh.
 
 ## 5. Mô hình trạng thái đề xuất
@@ -261,7 +261,7 @@ Các trạng thái sau là **mô hình mục tiêu**, tên enum thực tế có 
 
 ## 7. Quy tắc lưu trữ và phục hồi
 
-File ảnh của phiên nằm trong **Event Workspace**; metadata (sự kiện, phiên, ảnh, phiên bản, xuất/in, chia sẻ, trạng thái upload) nằm trong **SQLite** `%LOCALAPPDATA%/Photobooth/photobooth.db` (chi tiết: `docs/EVENT_STORAGE.md`). `%LOCALAPPDATA%/Photobooth/` còn chứa log, cấu hình (`settings.json`), lựa chọn máy in (`app-state.json`) và hồ sơ WebView2.
+File ảnh của phiên nằm trong **Event Workspace**; metadata (sự kiện, phiên, ảnh, phiên bản, xuất/in, chia sẻ, trạng thái upload) nằm trong **SQLite** `%LOCALAPPDATA%/Photobooth/photobooth.db` (chi tiết: `docs/EVENT_STORAGE.md`). `%LOCALAPPDATA%/Photobooth/` còn chứa log, lựa chọn máy in (`app-state.json`) và hồ sơ WebView2. Cấu hình Desktop nằm tại `appsettings.json` cạnh file `.exe`.
 
 ```text
 {Thư mục sự kiện}/

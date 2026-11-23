@@ -8,7 +8,7 @@ using Photobooth.Application.Sharing;
 namespace Photobooth.Infrastructure.Configuration;
 
 /// <summary>
-/// Cấu hình ứng dụng đọc từ %LOCALAPPDATA%\Photobooth\settings.json (không bắt buộc tồn tại).
+/// Cấu hình Desktop đọc từ appsettings.json cạnh file thực thi (không bắt buộc tồn tại).
 /// Ví dụ: { "capture": { "maxPhotosPerSession": 10, "countdownSeconds": 3, "mirrorByDefault": true }, "export": { "jpegQuality": 92 } }
 /// Số ảnh mỗi phiên do template quyết định; <c>maxPhotosPerSession</c> chỉ là giới hạn an toàn.
 /// </summary>

@@ -231,7 +231,7 @@ Admin › Khung ảnh
 **Quyết định 19/11/2026 — Event Workspace, file-based (chi tiết: `docs/EVENT_STORAGE.md`):**
 
 - File của phiên nằm trong thư mục sự kiện do người vận hành chọn: `{Sự kiện}/Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/` gồm `Template/` (snapshot + asset), `Originals/`, `Outputs/final-v{N}.png`, `Drafts/`.
-- `%LOCALAPPDATA%/Photobooth/` gồm log, `settings.json`, `app-state.json` (chỉ còn máy in đang chọn), **`photobooth.db`** (SQLite) và hồ sơ WebView2.
+- `%LOCALAPPDATA%/Photobooth/` gồm log, `app-state.json` (chỉ còn máy in đang chọn), **`photobooth.db`** (SQLite) và hồ sơ WebView2. Cấu hình Desktop dùng `src/Photobooth.Desktop/appsettings.json`, được copy cạnh file `.exe` khi build/publish.
 - **Cập nhật 23/11/2026 — metadata chuyển sang SQLite** (xem §9.1). Bản JSON cũ (`session.json`, `cloud-upload.json`, danh bạ sự kiện trong `app-state.json`) **không còn là nguồn dữ liệu** và không được chuyển sang database.
 - Thành phần:
   - `EventWorkspaceService` (Infrastructure): chọn/mở/tạo/kiểm tra sự kiện; bảng `Events` (danh bạ, sự kiện mở gần nhất, tên); `event.json` chỉ là dấu nhận diện thư mục.
@@ -254,7 +254,7 @@ Admin › Khung ảnh
   - Desktop: đường dẫn tương đối với thư mục sự kiện.
   - Cloud: đường dẫn tương đối với `Storage:RootPath`.
   - Đường dẫn đọc từ database luôn được kiểm tra không vượt ra ngoài thư mục được phép.
-- **Mỗi loại metadata chỉ có một nguồn chính.** Không còn đọc/ghi `session.json`/`cloud-upload.json`. Template Library/Editor **giữ nguyên JSON** (`template.json`, `library.json`). `settings.json` (cấu hình người dùng) và lựa chọn máy in trong `app-state.json` vẫn là file.
+- **Mỗi loại metadata chỉ có một nguồn chính.** Không còn đọc/ghi `session.json`/`cloud-upload.json`. Template Library/Editor **giữ nguyên JSON** (`template.json`, `library.json`). `appsettings.json` (cấu hình Desktop, cạnh file thực thi) và lựa chọn máy in trong `app-state.json` vẫn là file. File AppData `settings.json` cũ không còn được đọc và không bị tự động xóa.
 - **Không có Repository/Unit of Work:**
   - Service dùng `IDbContextFactory<T>`; mỗi thao tác một `DbContext` ngắn (các service đều là singleton).
   - Mỗi lần lưu phiên là một `SaveChanges` (một transaction).
@@ -337,7 +337,7 @@ Khách quét QR → Cloud /s/{token}: chưa có ảnh → trang chờ (tự làm
 ```
 
 - **Application** (`Photobooth.Application.Sharing`):
-  - `CloudShareOptions`: mục `cloud` của settings.json; cấu hình sai chỉ tắt chia sẻ, không làm mất cấu hình khác.
+  - `CloudShareOptions`: mục `cloud` của `appsettings.json` Desktop; cấu hình sai chỉ tắt chia sẻ, không làm mất cấu hình khác.
   - `ShareLinkFactory`: sinh token và URL, không gọi mạng.
   - `ShareLink`; `ICloudUploadQueue`.
   - `PhotoSessionService.EnsureShareLinkAsync(version)`: mỗi phiên bản thành phẩm có **một** token, ghi xuống đĩa trước khi trả về. Đã có thì trả lại đúng link cũ, nên in lại hay mở lại phiên không đổi QR. Phiên bản mới (chỉnh sửa lại) có token mới.

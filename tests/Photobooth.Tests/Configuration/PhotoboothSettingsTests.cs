@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Photobooth.Infrastructure.Configuration;
+using Photobooth.Infrastructure.Storage;
 using Photobooth.Tests.TestSupport;
 
 namespace Photobooth.Tests.Configuration;
@@ -10,7 +11,16 @@ public sealed class PhotoboothSettingsTests : IDisposable
 
     public void Dispose() => _temp.Dispose();
 
-    private string SettingsFile => Path.Combine(_temp.Path, "settings.json");
+    private string SettingsFile => Path.Combine(_temp.Path, "appsettings.json");
+
+    [Fact]
+    public void DesktopSettingsPath_IsBesideExecutable_NotInAppData()
+    {
+        var paths = new PhotoboothStoragePaths(_temp.Path);
+
+        Assert.Equal(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), paths.SettingsFilePath);
+        Assert.NotEqual(Path.Combine(paths.RootDirectory, "settings.json"), paths.SettingsFilePath);
+    }
 
     [Fact]
     public void Load_MissingFile_UsesDefaults()

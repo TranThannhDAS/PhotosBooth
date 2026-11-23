@@ -228,7 +228,7 @@ Test chạy **ứng dụng thật** (Kestrel, cổng ngẫu nhiên trên `127.0.
 
 ## Cấu hình phía Desktop
 
-Thêm mục `cloud` vào `%LOCALAPPDATA%\Photobooth\settings.json` của máy Photobooth, rồi khởi động lại ứng dụng:
+Chỉnh mục `cloud` trong `src/Photobooth.Desktop/appsettings.json` (khi chạy/publish: file nằm cạnh `Photobooth.exe`), rồi khởi động lại ứng dụng. Không còn đọc `%LOCALAPPDATA%\Photobooth\settings.json`:
 
 ```json
 {
@@ -240,6 +240,8 @@ Thêm mục `cloud` vào `%LOCALAPPDATA%\Photobooth\settings.json` của máy Ph
   }
 }
 ```
+
+Không commit API Key thật lên GitHub; chỉ bổ sung khóa trên máy vận hành hoặc dùng biến thể cấu hình không được theo dõi bởi Git. Trên máy cài trong `Program Files`, việc sửa file cạnh `.exe` có thể cần quyền quản trị.
 
 Trạng thái cấu hình và đồng bộ xem ở Admin → **Chia sẻ QR**. Chi tiết nghiệp vụ: `docs/BUSINESS_RULES.md` §4.7. Lưu trữ: `docs/EVENT_STORAGE.md` §4.1.
 

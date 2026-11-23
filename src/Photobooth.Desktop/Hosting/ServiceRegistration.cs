@@ -49,7 +49,7 @@ public static class ServiceRegistration
         services.AddSingleton(paths);
         services.AddSingleton(TimeProvider.System);
 
-        // Cấu hình: %LOCALAPPDATA%\Photobooth\settings.json (không bắt buộc), lỗi → mặc định.
+        // Cấu hình: appsettings.json cạnh file thực thi (không bắt buộc), lỗi → mặc định.
         services.AddSingleton(sp => PhotoboothSettings.Load(
             paths.SettingsFilePath, sp.GetRequiredService<ILoggerFactory>().CreateLogger("Photobooth.Settings")));
         services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Capture);

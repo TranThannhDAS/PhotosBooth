@@ -77,8 +77,8 @@ public sealed class PhotoboothStoragePaths
     /// <summary>SQLite chứa metadata nghiệp vụ (sự kiện, phiên, ảnh, phiên bản, in, chia sẻ, trạng thái upload).</summary>
     public string DatabaseFilePath => Path.Combine(RootDirectory, "photobooth.db");
 
-    /// <summary>File cấu hình tùy chọn (không bắt buộc tồn tại).</summary>
-    public string SettingsFilePath => Path.Combine(RootDirectory, "settings.json");
+    /// <summary>File cấu hình Desktop cạnh file thực thi, không nằm trong AppData.</summary>
+    public string SettingsFilePath => Path.Combine(AppContext.BaseDirectory, "appsettings.json");
 
     /// <summary>
     /// Kiểm tra đường dẫn nằm trong thư mục dữ liệu ứng dụng, một Event Workspace đã mở hoặc thư mục phiên đã đăng ký

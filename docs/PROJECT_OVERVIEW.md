@@ -92,7 +92,7 @@ Thời gian 3 giây là **giá trị mặc định cấu hình được**; số 
 ### Quyền riêng tư
 
 - Chỉ truy cập camera phục vụ phiên chụp.
-- Không tự động tải ảnh lên Internet, trừ ảnh **thành phẩm** khi chủ máy bật chia sẻ QR (`cloud.enabled` trong settings.json). Ảnh gốc không bao giờ được upload.
+- Không tự động tải ảnh lên Internet, trừ ảnh **thành phẩm** khi chủ máy bật chia sẻ QR (`cloud.enabled` trong `appsettings.json` của Desktop). Ảnh gốc không bao giờ được upload.
 - Dữ liệu được lưu cục bộ; cần thiết kế khả năng xóa ảnh và chính sách lưu trữ khi có người dùng thực tế.
 
 ## 6. Yêu cầu phi chức năng

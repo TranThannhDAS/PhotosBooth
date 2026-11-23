@@ -2,7 +2,7 @@
 @inject CloudUploadService Uploads
 @inject PhotoboothStoragePaths Paths
 
-@* Trạng thái chia sẻ QR cho người vận hành: cấu hình Cloud và tình hình đồng bộ ảnh (chỉ đọc, không sửa settings.json). *@
+@* Trạng thái chia sẻ QR cho người vận hành: cấu hình Cloud và tình hình đồng bộ ảnh (chỉ đọc, không sửa appsettings.json). *@
 <section class="panel-section">
     <h2 class="panel-title">Chia sẻ ảnh qua QR</h2>
     @if (Uploads.Configuration is { IsReady: true, BaseUrl: { } baseUrl })

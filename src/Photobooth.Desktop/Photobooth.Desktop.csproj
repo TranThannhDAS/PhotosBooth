@@ -32,6 +32,8 @@
   <ItemGroup>
     <!-- Template khung ảnh đi kèm ứng dụng (nạp lúc chạy, thêm template = thêm file JSON). -->
     <None Include="Templates\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- appsettings.json luôn là file riêng cạnh .exe kể cả khi publish single-file. -->
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
