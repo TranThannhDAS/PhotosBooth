@@ -1,0 +1,29 @@
+.canon-status {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.canon-status li {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-bg);
+    font-size: 0.875rem;
+}
+
+.canon-status li.is-warning {
+    border-color: var(--color-warning);
+    background: var(--color-warning-bg);
+}
+
+.canon-status-name {
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+}

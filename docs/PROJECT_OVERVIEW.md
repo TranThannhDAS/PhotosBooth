@@ -11,6 +11,8 @@ Dự án hướng đến một **máy Photobooth mini di động**, phục vụ 
 
 **Ưu tiên hiện tại là hoàn thiện phần mềm trước khi mua bất kỳ phần cứng bổ sung nào.** Giai đoạn phát triển dùng **webcam tích hợp trên laptop**, màn hình hiện có và hệ thống lưu file Windows. Không được yêu cầu có máy in, camera rời hay Internet để chạy luồng chính.
 
+**Cập nhật 26/11/2026:** bổ sung **máy ảnh Canon EOS qua Canon EDSDK** làm nguồn camera **tùy chọn** (thiết bị thử nghiệm: EOS M50 Mark II). Webcam laptop vẫn là nguồn mặc định; luồng chính vẫn phải chạy được khi không có máy ảnh.
+
 Mục tiêu của V1:
 
 1. Tạo ứng dụng desktop `.exe` có giao diện chụp ảnh dễ sử dụng.
@@ -30,6 +32,7 @@ Người dùng thao tác trực tiếp trên giao diện: bắt đầu, chọn t
 
 Cấu hình camera, thời gian đếm ngược, giới hạn an toàn số ảnh một phiên, template mặc định, thư mục lưu, chất lượng xuất ảnh và xem lịch sử phiên chụp. Trong V1, Admin chỉ quản lý thiết bị và dữ liệu cục bộ.
 Đã có (19/11/2026): chọn sự kiện (Event Workspace) ở màn khởi động, vào Admin bằng PIN; thư viện ảnh thành phẩm của sự kiện, chỉnh sửa lại (Manual Crop/bộ lọc) thành phiên bản mới, xuất và in lại; chọn máy in (giả lập hoặc máy in Windows).
+Đã có (26/11/2026): Admin › Camera liệt kê webcam và máy ảnh Canon đang kết nối, chọn webcam dùng cho Kiosk, xem thử hình; với máy Canon: xem Live View và chỉnh ISO, khẩu độ, tốc độ, bù sáng, cân bằng trắng/nhiệt độ màu, Picture Style (kèm chi tiết), kiểu lấy nét, chất lượng/tỉ lệ ảnh, tự tắt nguồn từ phần mềm (giả định ánh sáng: đèn LED trắng liên tục); lưu thành bộ thông số có tên và áp dụng lại khi máy bị chỉnh lệch.
 
 ## 3. Phạm vi chức năng V1
 
@@ -39,6 +42,7 @@ Cấu hình camera, thời gian đếm ngược, giới hạn an toàn số ản
 | Chọn template | Có | Chọn từ các template đang bật trong Template Library |
 | Quản lý/thiết kế template | Có (Phase 3) | Template Manager và Visual Template Editor trong Admin: tạo, sao chép, đổi tên, xóa, nhập/xuất `.zip`, bật/tắt, kéo-thả ô ảnh/chữ/hình/PNG, lớp, xem thử bằng Photo Composer — không cần viết JSON |
 | Webcam preview | Có | Hiển thị hình ảnh trực tiếp từ webcam laptop |
+| Máy ảnh Canon (EDSDK) | Tùy chọn — đang kiểm chứng | Kết nối USB, Live View, chụp và nhận ảnh gốc JPEG từ máy ảnh Canon EOS; chỉ đánh dấu đạt sau khi thử trên máy thật |
 | Chụp ảnh | Có | Số ảnh/phiên theo template đã chọn; đếm ngược trước mỗi ảnh |
 | Xem lại/chụp lại | Có | Xem kết quả trung gian; có thể chụp lại theo chính sách đã chọn |
 | Ghép ảnh | Có | Tạo ảnh thành phẩm theo cấu hình template |
@@ -140,7 +144,7 @@ Thời gian 3 giây là **giá trị mặc định cấu hình được**; số 
 
 Không tự triển khai hoặc yêu cầu mua ngay:
 
-- Máy ảnh Canon/Sony hay SDK máy ảnh chuyên dụng.
+- SDK máy ảnh khác ngoài Canon EDSDK (ví dụ Sony); bắt buộc phải có máy ảnh rời để chạy luồng chính.
 - Máy in ảnh và điều khiển giấy mực thực tế.
 - Cấu tạo cơ khí, nguồn pin, vỏ kiosk và màn hình cảm ứng rời.
 - Hệ thống tài khoản, thanh toán, nhận ảnh qua QR/cloud, đồng bộ máy chủ hoặc SaaS.

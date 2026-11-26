@@ -110,7 +110,7 @@ Chức năng điều phối chụp ảnh **không phụ thuộc trực tiếp v�
 
 Các khả năng nghiệp vụ cần tách:
 
-- Liệt kê/chọn nguồn camera khi được hỗ trợ.
+- Liệt kê/chọn nguồn camera khi được hỗ trợ. Đã có cho webcam (26/11/2026): `enumerateDevices()` trong WebView2 → Admin › Camera; lựa chọn (`deviceId` + tên) lưu trong `app-state.json` qua `CameraSelectionService`; `camera.js` mở đúng `deviceId`, đổi mã thì tìm lại theo tên (chỉ khi đúng một camera trùng tên), không có thì trả `CameraError.SelectedDeviceNotFound`.
 - Bắt đầu/dừng preview.
 - Chụp một ảnh từ camera đang hoạt động.
 - Phát hiện và phản hồi khi camera bị lỗi hoặc không có quyền truy cập.
@@ -130,6 +130,38 @@ Session Service → Lưu ảnh gốc
 ```
 
 Ảnh gốc nên có thông tin tối thiểu: `SessionId`, `PhotoId`, thời gian, thứ tự trong phiên, kích thước, đường dẫn file.
+
+### Máy ảnh Canon qua EDSDK (bổ sung 26/11/2026 — đang kiểm chứng)
+
+- Nguồn camera tùy chọn, hiện thực `ICameraDevice` bằng Canon EDSDK (P/Invoke tới `EDSDK.dll` 64-bit, khai báo lấy từ `EDSDK.cs` trong sample chính thức của Canon, **không** dùng binding bên thứ ba).
+- `EDSDK.dll`/`EdsImage.dll` (x64) được đưa vào repo tại `lib/EDSDK/win-x64/`.
+- Ảnh gốc được tải từ máy ảnh về bộ nhớ (`SaveTo = Host`) rồi đi qua cùng luồng lưu ảnh gốc như webcam.
+- Spike nằm ở `tools/CanonSpike/`, ngoài solution chính.
+- `EDSDK.cs` của Canon dùng `UnmanagedType.AsAny` cho `EdsSetPropertyData` — **không chạy trên .NET 10**; phải bổ sung overload kiểu cụ thể (xem `tools/CanonSpike/Native/EdsInterop.cs`).
+
+**Kết quả spike trên EOS M50 Mark II (26/11/2026, thử thật):**
+
+| Hạng mục | Kết quả |
+|---|---|
+| Luồng | Toàn bộ lệnh SDK và callback chạy trên **một luồng STA có Win32 message pump**; không cần `EdsGetEvent` |
+| Chụp | Gửi `PressShutterButton` → nhận `ObjectEvent_DirItemRequestTransfer` → `EdsDownload` vào memory stream: ~1,4 s/ảnh, ảnh gốc 6000×4000 JPEG có EXIF |
+| Lỗi chụp | `EDS_ERR_TAKE_PICTURE_AF_NG` (không lấy được nét), `0x8D0C` (máy đang ở chế độ quay phim) trả về **ngay khi gửi lệnh**, không cần chờ timeout |
+| Live View | ~30 fps, JPEG 960×640 ~185 KB/khung (~5,5 MB/s); không xung đột khi vừa kéo khung vừa chờ ảnh chụp. Số byte thật lấy bằng `EdsGetPosition`, không dùng `EdsGetLength` (trả về kích thước bộ đệm) |
+| Mất kết nối | Rút cáp/tắt máy → `StateEvent_Shutdown` (3/3 lần). Ngay sau khi cắm lại, máy có thể chưa xuất hiện trong danh sách vài giây → kết nối lại phải có thử lại |
+| Tên file trên máy | Đếm lại từ `IMG_0001` mỗi lần kết nối → không dùng làm định danh ảnh |
+
+**Triển khai (Giai đoạn 2, 26/11/2026) — project `src/Photobooth.Camera.Canon`** (`net10.0-windows`, chỉ tham chiếu `Photobooth.Application`):
+
+- `CanonSdkHost` (singleton): một luồng STA riêng khởi tạo/kết thúc SDK một lần, thực thi tuần tự mọi lệnh SDK và pump Windows message để nhận callback. Thiếu `EDSDK.dll`/sai kiến trúc → `CameraError.NotSupported`, không làm sập ứng dụng.
+- `CanonCameraDevice : ICameraDevice`: `StartAsync` tìm máy, mở session, `SaveTo = Host` (thử lại khi máy chưa xuất hiện/bận); `CaptureFrameAsync` bấm–nhả nút chụp → chờ ảnh mới bằng `TaskCompletionSource` (timeout/hủy) → tải JPEG gốc vào bộ nhớ. Chế độ RAW+JPEG: bỏ file RAW. Ảnh không do ứng dụng yêu cầu hoặc đến muộn: báo hủy với máy ảnh. `StateEvent_Shutdown` → `Faulted(CameraError.Disconnected)`; `StateEvent_WillSoonShutDown` → gia hạn hẹn giờ tắt nguồn.
+- `IEdsApi`/`NativeEdsApi`: lớp mỏng quanh EDSDK để kiểm thử bằng SDK giả (`tests/Photobooth.Camera.Canon.Tests`).
+- `CanonCameraDirectory`: liệt kê máy Canon đang kết nối (không mở session) cho Admin › Camera. Desktop tham chiếu project này từ 26/11/2026; `CanonSdkHost` chỉ được tạo khi mở Admin › Camera.
+- **Live View (Giai đoạn 3, 26/11/2026):** `CanonCameraDevice.StartLiveViewAsync` bật `Evf_OutputDevice |= PC` và chạy vòng lấy khung; mỗi khung là một công việc riêng trên luồng SDK (lệnh chụp xen vào được) và được đưa vào `LiveViewFrameBuffer` ngay trên luồng SDK (không thể có khung cũ sau khi mất kết nối). Bộ đệm chỉ giữ khung mới nhất.
+- **Truyền khung lên giao diện:** `LiveViewEndpoint` (Desktop) chặn `https://liveview.photobooth/canon/frame?after={seq}` bằng `WebResourceRequested` của WebView2 và trả JPEG nhị phân — không Base64, không mở cổng mạng, chỉ phục vụ origin nội bộ của ứng dụng. Yêu cầu được giữ tối đa 1 giây tới khi có khung mới; `wwwroot/js/liveview.js` chỉ xin khung tiếp theo sau khi vẽ xong khung trước lên `<canvas>`, nên tự điều tiết tốc độ.
+- **Thông số máy ảnh (26/11/2026):** `CanonCameraDevice.ReadSettingsAsync`/`SetSettingAsync`, chia 4 nhóm — Phơi sáng: chế độ chụp (chỉ đọc — vòng chế độ vật lý), ISO, khẩu độ, tốc độ, bù sáng; Màu sắc: cân bằng trắng, nhiệt độ màu (chỉ khi cân bằng trắng = Kelvin), Picture Style và chi tiết của kiểu đang chọn (tương phản, bão hòa, tông màu, độ nét — đọc/ghi `EdsPictureStyleDesc` theo mã kiểu; máy không hỗ trợ thì ẩn; **chưa kiểm chứng trên M50 Mark II**); Lấy nét: kiểu lấy nét Live View (khuôn mặt + bám theo…), thao tác lấy nét; Ảnh và vận hành: chất lượng ảnh (**chỉ cho chọn JPEG** — RAW/HEIF làm hỏng luồng chụp), tỉ lệ khung, tự tắt nguồn. Tỉ lệ khung và tự tắt nguồn là thuộc tính riêng (0x01…): adapter mở khóa trước `EdsOpenSession` như sample Canon. Giả định ánh sáng mặc định: đèn LED trắng liên tục — bộ đi kèm "Đèn LED trắng (điểm khởi đầu)" (M, 1/125, f/5.6, ISO 800, 5500 K, Chân dung, khuôn mặt + bám theo, JPEG L Fine, 3:2, không tự tắt). Danh sách giá trị lấy từ máy (`EdsGetPropertyDesc`) nên chỉ hiện giá trị hợp lệ ở chế độ hiện tại; bảng mã → nhãn trong `CanonSettingCatalog` (theo sample Canon). Giá trị được đặt thẳng lên máy ảnh và máy tự ghi nhớ. Máy báo đổi thuộc tính (`PropertyEvent`) → `SettingsChanged` → Admin đọc lại.
+- **Trạng thái máy (chỉ đọc):** `ReadStatusAsync` → % pin (`BatteryLevel`; `0xFFFFFFFF` = nguồn AC), mức cảnh báo nhiệt (`TempStatus`, thuộc tính riêng — Canon không cung cấp °C, chỉ mức: bình thường / nóng / giảm khung hình / tắt Live View / không cho chụp), tên ống kính. Cập nhật qua `StatusChanged` (PropertyEvent) và đọc lại định kỳ 30 giây trong Admin; cảnh báo khi pin < 20% hoặc quá nóng.
+- **Bộ thông số (preset):** quản trị viên lưu thông số đang chỉnh được thành bộ có tên (`CanonPreset`, chỉ lưu thông số đang chỉnh được + chế độ chụp lúc lưu để cảnh báo) và nhấn "Áp dụng" để đưa máy về đúng mẫu (`ApplyPresetAsync`: cân bằng trắng trước nhiệt độ màu; thông số không đặt được ở trạng thái hiện tại được bỏ qua kèm lý do). **Không lưu theo sự kiện; cùng mô hình Template Library** (đã chốt 26/11/2026): thư viện `%LOCALAPPDATA%/Photobooth/CameraPresets`, mỗi bộ một file `{id}.json` (`CanonPresetStore`, ghi tạm rồi đổi tên). Bộ đi kèm ứng dụng nằm ở `src/Photobooth.Desktop/CameraPresets/*.json`, được chép cạnh `Photobooth.exe` khi build/publish và chỉ dùng để khởi tạo thư viện lần đầu — thư viện đã có thì không bao giờ bị chép đè. Nhập/xuất file `.json` để chia sẻ giữa các máy; muốn thêm bộ mẫu đi kèm ứng dụng thì xuất rồi lưu vào thư mục nguồn đó. Máy đã có thư viện: nút "Thêm bộ mẫu còn thiếu" (`AddMissingBundledAsync`) chép các bộ đi kèm chưa có (theo mã), không ghi đè bộ đang có.
+- Hiện Live View và thông số chỉ dùng trong Admin › Camera. Chưa có: chọn Canon làm nguồn camera cho Kiosk (Giai đoạn 4). Kiểm tra thủ công với máy thật: `tools/CanonAdapterCheck`.
 
 ## 7. Session và workflow
 
@@ -232,6 +264,7 @@ Admin › Khung ảnh
 
 - File của phiên nằm trong thư mục sự kiện do người vận hành chọn: `{Sự kiện}/Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/` gồm `Template/` (snapshot + asset), `Originals/`, `Outputs/final-v{N}.png`, `Drafts/`.
 - `%LOCALAPPDATA%/Photobooth/` gồm log, `app-state.json` (chỉ còn máy in đang chọn), **`photobooth.db`** (SQLite) và hồ sơ WebView2. Cấu hình Desktop dùng `src/Photobooth.Desktop/appsettings.json`, được copy cạnh file `.exe` khi build/publish.
+- Log Desktop: file `photobooth-yyyyMMdd.log`, mặc định ở `%LOCALAPPDATA%/Photobooth/Logs`. Đổi được bằng mục `logging` trong `appsettings.json` (từ 26/11/2026): `directory` (tuyệt đối, có biến môi trường, hoặc tương đối so với `%LOCALAPPDATA%/Photobooth`) và `minimumLevel` (Trace…Critical, mặc định Information). Giá trị sai hoặc thư mục không ghi được → dùng mặc định cho riêng phần log và ghi cảnh báo; các cấu hình khác không bị ảnh hưởng.
 - **Cập nhật 23/11/2026 — metadata chuyển sang SQLite** (xem §9.1). Bản JSON cũ (`session.json`, `cloud-upload.json`, danh bạ sự kiện trong `app-state.json`) **không còn là nguồn dữ liệu** và không được chuyển sang database.
 - Thành phần:
   - `EventWorkspaceService` (Infrastructure): chọn/mở/tạo/kiểm tra sự kiện; bảng `Events` (danh bạ, sự kiện mở gần nhất, tên); `event.json` chỉ là dấu nhận diện thư mục.

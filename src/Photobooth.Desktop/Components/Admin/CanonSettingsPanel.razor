@@ -1,0 +1,525 @@
+@using System.Globalization
+@implements IDisposable
+@inject CanonCameraDevice Canon
+@inject CanonPresetStore Presets
+@inject WindowsShellService Shell
+@inject TimeProvider Clock
+@inject ILogger<CanonSettingsPanel> Logger
+
+@*
+    Thông số máy ảnh Canon theo nhóm: phơi sáng, màu sắc, lấy nét, ảnh và vận hành.
+    Danh sách giá trị lấy từ chính máy ảnh theo chế độ chụp hiện tại; đặt xong máy tự ghi nhớ.
+    Chỉ dùng khi máy ảnh đang kết nối (component cha chỉ hiển thị lúc đó).
+*@
+<div class="canon-settings">
+    <h3 class="canon-settings-title">Thông số máy ảnh</h3>
+    <p class="canon-led-hint">
+        Gợi ý với đèn LED trắng liên tục: chế độ <strong>M</strong>, tốc độ <strong>1/125</strong>, khẩu độ <strong>f/5.6</strong>,
+        cân bằng trắng <strong>Nhiệt độ màu ≈ 5500 K</strong> (khớp nhiệt độ ghi trên đèn), Picture Style <strong>Chân dung</strong>,
+        lấy nét <strong>Khuôn mặt + bám theo</strong>, rồi tăng/giảm <strong>ISO</strong> tới khi Live View sáng vừa.
+    </p>
+
+    @if (_settings is null)
+    {
+        <p class="panel-hint">Đang đọc thông số từ máy ảnh…</p>
+    }
+    else
+    {
+        @foreach (var group in CanonSettingCatalog.Groups)
+        {
+            var states = _settings.Where(s => CanonSettingCatalog.Group(s.Setting) == group).ToArray();
+            if (states.Length == 0)
+            {
+                continue;
+            }
+
+            <fieldset class="canon-group">
+                <legend>@CanonSettingCatalog.GroupName(group)</legend>
+                <div class="canon-settings-grid">
+                    @foreach (var state in states)
+                    {
+                        var setting = state.Setting;
+                        <div class="canon-setting">
+                            <label class="canon-setting-name" for="@InputId(setting)">@state.Name</label>
+                            @if (state.IsWritable)
+                            {
+                                <select id="@InputId(setting)" class="canon-select" disabled="@_saving" @onchange="e => ChangeAsync(setting, e)">
+                                    @if (state.Current is { } current && state.Options.All(o => o.Code != current.Code))
+                                    {
+                                        <option value="@Code(current.Code)" selected>@current.Label</option>
+                                    }
+                                    @foreach (var option in state.Options)
+                                    {
+                                        <option value="@Code(option.Code)" selected="@(state.Current?.Code == option.Code)">@option.Label</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                <span id="@InputId(setting)" class="canon-setting-value">@(state.Current?.Label ?? "—")</span>
+                                <small class="canon-setting-hint">@ReadOnlyHint(setting)</small>
+                            }
+                        </div>
+                    }
+                </div>
+            </fieldset>
+        }
+
+        @if (ModeHint is { } hint)
+        {
+            <p class="panel-hint">@hint</p>
+        }
+    }
+
+    <div class="canon-settings-actions">
+        <button type="button" class="btn btn-ghost" disabled="@_saving" @onclick="ReloadAsync">Đọc lại từ máy ảnh</button>
+    </div>
+
+    @if (_message is not null)
+    {
+        <StatusMessage Status="@_message" />
+    }
+
+    <div class="canon-presets">
+        <div class="canon-presets-header">
+            <h3 class="canon-settings-title">Bộ thông số đã lưu</h3>
+            <div class="canon-preset-actions">
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_presetBusy" @onclick="AddMissingBundledAsync">Thêm bộ mẫu còn thiếu</button>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_presetBusy" @onclick="ImportAsync">Nhập file .json</button>
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="() => Shell.OpenFolder(Presets.RootDirectory)">Mở thư mục</button>
+            </div>
+        </div>
+        <p class="panel-hint">
+            Chỉnh máy như ý rồi lưu thành bộ. Khi ai đó chỉnh lệch, nhấn “Áp dụng” để đưa máy về đúng mẫu.
+            Muốn bộ thông số đi kèm ứng dụng (như template mẫu): “Xuất” rồi lưu file vào src\Photobooth.Desktop\CameraPresets.
+        </p>
+
+        @if (_presets.Count == 0)
+        {
+            <p class="panel-hint">Chưa có bộ thông số nào.</p>
+        }
+        else
+        {
+            <ul class="canon-preset-list">
+                @foreach (var preset in _presets)
+                {
+                    var item = preset;
+                    <li>
+                        <div class="canon-preset-info">
+                            <strong>@item.Name</strong>
+                            <small>@Summary(item)</small>
+                        </div>
+                        <div class="canon-preset-actions">
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@Busy" @onclick="() => ApplyAsync(item)">Áp dụng</button>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="() => _confirm = (ConfirmKind.Overwrite, item)">Ghi đè bằng thông số hiện tại</button>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_presetBusy" @onclick="() => ExportAsync(item)">Xuất</button>
+                            <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => _confirm = (ConfirmKind.Delete, item)">Xóa</button>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+
+        <div class="canon-preset-new">
+            <input class="text-input" type="text" maxlength="@CanonPreset.MaxNameLength" placeholder="Tên bộ mới, ví dụ: Tiệc cưới – đèn vàng"
+                   aria-label="Tên bộ thông số mới" disabled="@Busy" @bind="_newName" @bind:event="oninput" />
+            <button type="button" class="btn btn-secondary" disabled="@(Busy || string.IsNullOrWhiteSpace(_newName))" @onclick="SaveNewAsync">Lưu thông số hiện tại</button>
+        </div>
+
+        @if (_applyResult is { } result)
+        {
+            <StatusMessage Status="@ApplyStatus(result)" />
+            @if (!result.FullyApplied)
+            {
+                <ul class="canon-apply-issues">
+                    @foreach (var issue in result.Items.Where(i => i.Status is CanonPresetApplyStatus.Skipped or CanonPresetApplyStatus.Failed))
+                    {
+                        <li><strong>@issue.Name = @issue.Label</strong>: @issue.Reason</li>
+                    }
+                </ul>
+            }
+        }
+
+        @if (_presetMessage is not null)
+        {
+            <StatusMessage Status="@_presetMessage" />
+        }
+    </div>
+</div>
+
+@if (_confirm is { Kind: ConfirmKind.Delete, Preset: var deleting })
+{
+    <ConfirmDialog Title="@($"Xóa bộ thông số “{deleting.Name}”?")"
+                   Message="File bộ thông số sẽ bị xóa và không khôi phục được. Thông số đang đặt trên máy ảnh không đổi."
+                   ConfirmText="Xóa" CancelText="Không xóa"
+                   OnConfirm="() => DeleteAsync(deleting)" OnCancel="() => _confirm = null" />
+}
+else if (_confirm is { Kind: ConfirmKind.Overwrite, Preset: var overwriting })
+{
+    <ConfirmDialog Title="@($"Ghi đè “{overwriting.Name}”?")"
+                   Message="Bộ thông số sẽ được thay bằng thông số đang đặt trên máy ảnh lúc này."
+                   ConfirmText="Ghi đè" CancelText="Quay lại"
+                   OnConfirm="() => OverwriteAsync(overwriting)" OnCancel="() => _confirm = null" />
+}
+
+@code {
+    private static readonly TimeSpan RefreshDebounce = TimeSpan.FromMilliseconds(250);
+
+    private IReadOnlyList<CanonSettingState>? _settings;
+    private bool _saving;
+    private bool _disposed;
+    private StatusInfo? _message;
+    private CancellationTokenSource? _refreshCts;
+
+    private IReadOnlyList<CanonPreset> _presets = [];
+    private string? _newName;
+    private bool _presetBusy;
+    private StatusInfo? _presetMessage;
+    private CanonPresetApplyResult? _applyResult;
+    private (ConfirmKind Kind, CanonPreset Preset)? _confirm;
+
+    private enum ConfirmKind
+    {
+        Delete,
+        Overwrite,
+    }
+
+    private bool Busy => _saving || _presetBusy || _settings is null;
+
+    private string? ModeHint
+    {
+        get
+        {
+            var mode = _settings?.FirstOrDefault(s => s.Setting == CanonSetting.ExposureMode)?.Current?.Code;
+            return mode switch
+            {
+                null or 3 => null,
+                0 or 1 or 2 => "Để chỉnh được đủ ISO, khẩu độ và tốc độ, xoay vòng chế độ trên máy ảnh về M.",
+                _ => "Máy ảnh đang ở chế độ tự động/cảnh: hầu hết thông số do máy tự chọn. Xoay vòng chế độ về M để chỉnh từ phần mềm.",
+            };
+        }
+    }
+
+    private static string InputId(CanonSetting setting) => $"canon-setting-{setting}";
+
+    private static string Code(uint code) => code.ToString(CultureInfo.InvariantCulture);
+
+    private static string ReadOnlyHint(CanonSetting setting) => setting switch
+    {
+        CanonSetting.ExposureMode => "Đổi bằng vòng chế độ trên máy ảnh.",
+        CanonSetting.ColorTemperature => "Chọn Cân bằng trắng = “Nhiệt độ màu (K)” để chỉnh.",
+        CanonSetting.ExposureCompensation => "Không có tác dụng ở chế độ M.",
+        CanonSetting.FocusOperation => "Máy ảnh tự quản lý khi dùng Live View.",
+        _ => "Không chỉnh được ở chế độ chụp hiện tại.",
+    };
+
+    private async Task AddMissingBundledAsync()
+    {
+        _presetBusy = true;
+        _presetMessage = null;
+        _applyResult = null;
+        try
+        {
+            var added = await Presets.AddMissingBundledAsync();
+            await LoadPresetsAsync();
+            _presetMessage = added.Count == 0
+                ? new StatusInfo(StatusKind.Info, "Thư viện đã có đủ các bộ mẫu đi kèm ứng dụng.")
+                : new StatusInfo(StatusKind.Success, $"Đã thêm {added.Count} bộ mẫu: {string.Join(", ", added.Select(p => p.Name))}.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogError(ex, "Không thêm được bộ thông số đi kèm ứng dụng");
+            _presetMessage = new StatusInfo(StatusKind.Error, "Không thêm được bộ mẫu.", "Kiểm tra quyền ghi thư mục dữ liệu ứng dụng.");
+        }
+        finally
+        {
+            _presetBusy = false;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Canon.SettingsChanged += OnSettingsChanged;
+        await Task.WhenAll(ReloadAsync(), LoadPresetsAsync());
+    }
+
+    // ---------------------------------------------------------------- Bộ thông số
+
+    private async Task LoadPresetsAsync() => _presets = await Presets.ListAsync();
+
+    private static string Summary(CanonPreset preset)
+    {
+        var values = preset.Values
+            .OrderBy(v => CanonSettingCatalog.All.ToList().IndexOf(v.Setting))
+            .Select(v => v.Setting == CanonSetting.Iso ? $"ISO {v.Label}" : v.Label);
+        var mode = preset.ExposureMode is { } code ? CanonSettingCatalog.Label(CanonSetting.ExposureMode, code) + " · " : string.Empty;
+        return $"{mode}{string.Join(" · ", values)} — lưu {preset.UpdatedAt.ToLocalTime():dd/MM/yyyy HH:mm}";
+    }
+
+    private async Task SaveNewAsync()
+    {
+        var name = _newName?.Trim();
+        if (CanonPreset.ValidateName(name) is { } problem)
+        {
+            _presetMessage = new StatusInfo(StatusKind.Warning, problem);
+            return;
+        }
+
+        if (_presets.Any(p => string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase)))
+        {
+            _presetMessage = new StatusInfo(StatusKind.Warning, "Đã có bộ thông số cùng tên.", "Đặt tên khác hoặc dùng “Ghi đè bằng thông số hiện tại”.");
+            return;
+        }
+
+        if (await SaveFromCameraAsync(Guid.NewGuid(), name!))
+        {
+            _newName = null;
+        }
+    }
+
+    private async Task OverwriteAsync(CanonPreset preset)
+    {
+        _confirm = null;
+        await SaveFromCameraAsync(preset.Id, preset.Name);
+    }
+
+    private async Task<bool> SaveFromCameraAsync(Guid id, string name)
+    {
+        _presetBusy = true;
+        _presetMessage = null;
+        _applyResult = null;
+        try
+        {
+            // Đọc lại từ máy ngay lúc lưu để chắc chắn lưu đúng giá trị đang đặt.
+            var current = await Canon.ReadSettingsAsync();
+            _settings = current;
+            var preset = CanonPreset.FromCurrent(id, name, Clock.GetUtcNow(), current);
+            if (preset.Values.Count == 0)
+            {
+                _presetMessage = new StatusInfo(StatusKind.Warning, "Không có thông số nào chỉnh được để lưu.", "Xoay vòng chế độ trên máy ảnh về M rồi thử lại.");
+                return false;
+            }
+
+            await Presets.SaveAsync(preset);
+            await LoadPresetsAsync();
+            _presetMessage = new StatusInfo(StatusKind.Success, $"Đã lưu bộ thông số “{preset.Name}” ({preset.Values.Count} thông số).");
+            return true;
+        }
+        catch (CameraException ex)
+        {
+            Logger.LogWarning(ex, "Không đọc được thông số máy ảnh để lưu bộ thông số");
+            _presetMessage = new StatusInfo(StatusKind.Error, "Không đọc được thông số từ máy ảnh.", "Kiểm tra kết nối rồi thử lại.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogError(ex, "Không ghi được file bộ thông số");
+            _presetMessage = new StatusInfo(StatusKind.Error, "Không ghi được file bộ thông số.", "Kiểm tra ổ đĩa còn trống và quyền ghi thư mục dữ liệu ứng dụng.");
+        }
+        finally
+        {
+            _presetBusy = false;
+        }
+
+        return false;
+    }
+
+    private async Task ApplyAsync(CanonPreset preset)
+    {
+        _presetBusy = true;
+        _presetMessage = null;
+        _applyResult = null;
+        try
+        {
+            _applyResult = await Canon.ApplyPresetAsync(preset);
+        }
+        catch (CameraException ex)
+        {
+            Logger.LogWarning(ex, "Không áp dụng được bộ thông số {PresetName}", preset.Name);
+            _presetMessage = new StatusInfo(StatusKind.Error, $"Không áp dụng được “{preset.Name}”.", "Máy ảnh có thể đã bị ngắt kết nối.");
+        }
+        finally
+        {
+            _presetBusy = false;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ImportAsync()
+    {
+        var file = await FilePicker.OpenAsync("Nhập bộ thông số máy ảnh", PresetFilter);
+        if (file is null)
+        {
+            return;
+        }
+
+        _presetBusy = true;
+        _presetMessage = null;
+        _applyResult = null;
+        try
+        {
+            var imported = await Presets.ImportAsync(file, Clock.GetUtcNow());
+            await LoadPresetsAsync();
+            _presetMessage = new StatusInfo(StatusKind.Success, $"Đã nhập bộ thông số “{imported.Name}”.");
+        }
+        catch (CanonPresetImportException ex)
+        {
+            _presetMessage = new StatusInfo(StatusKind.Error, "Không nhập được file.", ex.Message);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogError(ex, "Không nhập được file bộ thông số");
+            _presetMessage = new StatusInfo(StatusKind.Error, "Không nhập được file.", "Kiểm tra file không bị chương trình khác mở và còn quyền đọc/ghi.");
+        }
+        finally
+        {
+            _presetBusy = false;
+        }
+    }
+
+    private async Task ExportAsync(CanonPreset preset)
+    {
+        var file = await FilePicker.SaveAsync("Xuất bộ thông số máy ảnh", PresetFilter, $"{SafeFileName(preset.Name)}.json", ".json");
+        if (file is null)
+        {
+            return;
+        }
+
+        _presetBusy = true;
+        _presetMessage = null;
+        try
+        {
+            await Presets.ExportAsync(preset, file);
+            _presetMessage = new StatusInfo(StatusKind.Success, $"Đã xuất “{preset.Name}”.", file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogError(ex, "Không xuất được bộ thông số {PresetName}", preset.Name);
+            _presetMessage = new StatusInfo(StatusKind.Error, "Không xuất được file.", "Kiểm tra thư mục đích còn quyền ghi.");
+        }
+        finally
+        {
+            _presetBusy = false;
+        }
+    }
+
+    private const string PresetFilter = "Bộ thông số máy ảnh (*.json)|*.json";
+
+    private static string SafeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(name.Select(c => invalid.Contains(c) ? '-' : c).ToArray()).Trim();
+        return cleaned.Length == 0 ? "bo-thong-so" : cleaned;
+    }
+
+    private async Task DeleteAsync(CanonPreset preset)
+    {
+        _confirm = null;
+        _presetBusy = true;
+        _applyResult = null;
+        try
+        {
+            await Presets.DeleteAsync(preset.Id);
+            await LoadPresetsAsync();
+            _presetMessage = new StatusInfo(StatusKind.Success, $"Đã xóa bộ thông số “{preset.Name}”.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogError(ex, "Không xóa được bộ thông số {PresetName}", preset.Name);
+            _presetMessage = new StatusInfo(StatusKind.Error, "Không xóa được file bộ thông số.");
+        }
+        finally
+        {
+            _presetBusy = false;
+        }
+    }
+
+    private static StatusInfo ApplyStatus(CanonPresetApplyResult result)
+    {
+        var applied = result.Items.Count(i => i.Status == CanonPresetApplyStatus.Applied);
+        var unchanged = result.Items.Count(i => i.Status == CanonPresetApplyStatus.Unchanged);
+        var detail = $"Đặt lại {applied} thông số, {unchanged} thông số đã đúng sẵn.";
+        if (result.ExposureModeMismatch)
+        {
+            return new StatusInfo(StatusKind.Warning,
+                $"Máy ảnh đang ở chế độ {result.CurrentExposureMode}, bộ thông số được lưu ở chế độ {result.ExpectedExposureMode}.",
+                $"Xoay vòng chế độ trên máy ảnh về {result.ExpectedExposureMode} rồi nhấn “Áp dụng” lại. {detail}");
+        }
+
+        return result.FullyApplied
+            ? new StatusInfo(StatusKind.Success, "Máy ảnh đã về đúng bộ thông số.", detail)
+            : new StatusInfo(StatusKind.Warning, "Một số thông số chưa áp dụng được.", detail);
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _settings = await Canon.ReadSettingsAsync();
+        }
+        catch (CameraException ex)
+        {
+            Logger.LogWarning(ex, "Không đọc được thông số máy ảnh Canon");
+            _message = new StatusInfo(StatusKind.Error, "Không đọc được thông số từ máy ảnh.", "Kiểm tra kết nối rồi nhấn “Đọc lại từ máy ảnh”.");
+        }
+    }
+
+    private async Task ChangeAsync(CanonSetting setting, ChangeEventArgs e)
+    {
+        if (!uint.TryParse(e.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var code))
+        {
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+        try
+        {
+            await Canon.SetSettingAsync(setting, code);
+        }
+        catch (CameraException ex)
+        {
+            _message = new StatusInfo(StatusKind.Error, ex.Message, "Máy ảnh có thể đang bận hoặc không cho đổi ở chế độ chụp hiện tại.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+
+        // Đọc lại: đổi một thông số có thể làm đổi thông số khác (ví dụ cân bằng trắng → nhiệt độ màu).
+        await ReloadAsync();
+    }
+
+    /// <summary>Máy báo thông số đổi (xoay vòng chế độ, đổi trên máy): gom các sự kiện liên tiếp rồi đọc lại một lần.</summary>
+    private void OnSettingsChanged(object? sender, EventArgs e)
+    {
+        var cts = new CancellationTokenSource();
+        Interlocked.Exchange(ref _refreshCts, cts)?.Cancel();
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(RefreshDebounce, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (_disposed || _saving)
+            {
+                return;
+            }
+
+            await ReloadAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Canon.SettingsChanged -= OnSettingsChanged;
+        Interlocked.Exchange(ref _refreshCts, null)?.Cancel();
+    }
+}

@@ -32,6 +32,8 @@
   <ItemGroup>
     <!-- Template khung ảnh đi kèm ứng dụng (nạp lúc chạy, thêm template = thêm file JSON). -->
     <None Include="Templates\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Bộ thông số máy ảnh Canon dựng sẵn (Admin › Camera): đi kèm mọi bản build/publish, file riêng cạnh .exe. -->
+    <None Include="CameraPresets\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <!-- appsettings.json luôn là file riêng cạnh .exe kể cả khi publish single-file. -->
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
@@ -39,6 +41,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Photobooth.Application\Photobooth.Application.csproj" />
     <ProjectReference Include="..\Photobooth.Infrastructure\Photobooth.Infrastructure.csproj" />
+    <!-- Máy ảnh Canon qua EDSDK (kèm EDSDK.dll/EdsImage.dll x64): Admin › Camera (liệt kê, Live View, thông số). -->
+    <ProjectReference Include="..\Photobooth.Camera.Canon\Photobooth.Camera.Canon.csproj" />
   </ItemGroup>
 
 </Project>

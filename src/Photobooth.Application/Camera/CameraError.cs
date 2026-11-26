@@ -27,5 +27,8 @@ public enum CameraError
 
     /// <summary>Không mã hóa/đọc được khung hình chụp.</summary>
     CaptureFailed,
+
+    /// <summary>Không tìm thấy camera đã được chọn trong Quản trị (bị rút hoặc đổi). Không tự chuyển sang camera khác.</summary>
+    SelectedDeviceNotFound,
 }
 

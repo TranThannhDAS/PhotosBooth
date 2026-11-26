@@ -18,12 +18,14 @@ public partial class MainWindow : Window
 {
     private readonly ILogger<MainWindow> _logger;
     private readonly PhotoboothStoragePaths _paths;
+    private readonly IServiceProvider _services;
     private CoreWebView2? _coreWebView;
 
     public MainWindow(IServiceProvider services)
     {
         InitializeComponent();
 
+        _services = services;
         _logger = services.GetRequiredService<ILogger<MainWindow>>();
         _paths = services.GetRequiredService<PhotoboothStoragePaths>();
 
@@ -45,6 +47,7 @@ public partial class MainWindow : Window
         _coreWebView = e.WebView.CoreWebView2;
         _coreWebView.PermissionRequested += OnPermissionRequested;
         _coreWebView.ProcessFailed += OnProcessFailed;
+        _services.GetRequiredService<LiveViewEndpoint>().Attach(_coreWebView);
 
         var settings = _coreWebView.Settings;
         settings.IsStatusBarEnabled = false;

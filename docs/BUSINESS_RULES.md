@@ -12,6 +12,7 @@
 
 - Khách sử dụng luồng **Chào mừng → Chọn template → Camera preview → Chụp ảnh → Xem lại → Ghép ảnh → Xuất file → Hoàn tất**.
 - Sử dụng webcam tích hợp của laptop; không cần camera ngoài, máy in thật hoặc Internet.
+- Máy ảnh Canon EOS qua Canon EDSDK là nguồn camera **tùy chọn** (bổ sung 26/11/2026, đang kiểm chứng trên EOS M50 Mark II); không được làm luồng chính phụ thuộc vào nó.
 - **Số ảnh mỗi phiên do template khách chọn quyết định** (xem mục 6.1), không có giá trị mặc định cố định. Đếm ngược mặc định **3 giây trước mỗi lần chụp**, có thể cấu hình, độc lập với số ảnh.
 - Quản lý phiên (`SessionId`), thứ tự ảnh, lưu ảnh gốc và ảnh thành phẩm độc lập.
 - Cho xuất **JPEG, PNG và PDF**; dữ liệu được lưu cục bộ, không tải lên mạng.
@@ -20,7 +21,7 @@
 
 ### 1.2 Không thuộc V1 hiện tại
 
-- In tự động trên máy in vật lý, đọc trạng thái giấy/mực, SDK Canon/Sony.
+- In tự động trên máy in vật lý, đọc trạng thái giấy/mực, SDK máy in, SDK máy ảnh Sony.
 - QR nhận ảnh qua Internet, cloud, tài khoản khách, thanh toán và đồng bộ máy chủ.
 - Màn hình cảm ứng rời, khung cơ khí và cấp nguồn riêng.
 - Không coi adapter mock tương đương kết quả tích hợp phần cứng thật.
@@ -50,7 +51,7 @@
 | Giới hạn an toàn số ảnh | 10 (`capture.maxPhotosPerSession`) | Cấu hình được trong 1..20 để tránh phiên quá dài/tốn tài nguyên; template vượt giới hạn được hiển thị nhưng không chọn được, kèm lý do. Đây là giới hạn tài nguyên, **không** phải số ảnh mặc định |
 | Thời gian đếm ngược | 3 giây | Số nguyên dương, giới hạn min/max cụ thể `CHƯA CHỐT` |
 | Template | Các template mẫu đi kèm | Phải hợp lệ; số ảnh cần chụp lấy từ chính template |
-| Camera | Webcam laptop hiện có | Thông báo khi không tìm thấy hoặc không truy cập được |
+| Camera | Camera mặc định của Windows | Chọn webcam cho Kiosk trong Admin › Camera (lưu `app-state.json`, đã chốt 26/11/2026). Camera đã chọn không còn → Kiosk báo lỗi, **không** tự chuyển sang camera khác. Máy ảnh Canon (EDSDK) hiện chỉ được liệt kê, chưa chọn được cho Kiosk |
 | Khổ xuất ban đầu | 4 × 6 inch | Có thể cấu hình qua template/export preset |
 | Kích thước raster tham khảo | 1200 × 1800 px | Tương ứng 300 DPI cho 4 × 6 inch; không hardcode vào mọi mẫu |
 | Thư mục lưu | Event Workspace do người vận hành chọn | Bắt buộc trước khi phục vụ khách; kiểm tra tồn tại, quyền ghi, dung lượng (≥ 200 MB); không hardcode |

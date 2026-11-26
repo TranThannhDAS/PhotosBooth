@@ -27,7 +27,21 @@ public sealed record PrinterSelection
 }
 
 /// <summary>
-/// Trạng thái máy (không phải cấu hình người dùng sửa tay): máy in đã chọn.
+/// Webcam dùng cho Kiosk (chọn trong Admin). <see cref="WebcamDeviceId"/> null = camera mặc định của Windows.
+/// <see cref="WebcamLabel"/> dùng để hiển thị và tìm lại camera khi mã thiết bị thay đổi.
+/// </summary>
+public sealed record CameraSelection
+{
+    public string? WebcamDeviceId { get; init; }
+
+    public string? WebcamLabel { get; init; }
+
+    [JsonIgnore]
+    public bool IsDefault => string.IsNullOrEmpty(WebcamDeviceId);
+}
+
+/// <summary>
+/// Trạng thái máy (không phải cấu hình người dùng sửa tay): máy in và webcam đã chọn.
 /// Lưu ở %LOCALAPPDATA%\Photobooth\app-state.json, tách khỏi settings.json để ứng dụng không ghi đè file cấu hình.
 /// Sự kiện (đang dùng, danh bạ) nay nằm trong SQLite (bảng Events).
 /// </summary>
@@ -37,6 +51,9 @@ public sealed record AppState
     public string? LastEventFolder { get; init; }
 
     public PrinterSelection Printer { get; init; } = new();
+
+    /// <summary>Webcam dùng cho Kiosk; file cũ không có mục này → camera mặc định.</summary>
+    public CameraSelection Camera { get; init; } = new();
 
     /// <summary>KHÔNG CÒN DÙNG (bản JSON cũ). Chỉ giữ lại để đọc/ghi lại nguyên vẹn file cũ, không phải nguồn dữ liệu.</summary>
     public IReadOnlyList<KnownEventEntry> KnownEvents { get; init; } = [];

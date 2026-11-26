@@ -62,6 +62,12 @@
                 <TemplateManagerPanel OnEdit="key => _editingTemplate = key" />
                 break;
 
+            case AdminTab.Camera:
+                <div class="admin-narrow">
+                    <CameraPanel />
+                </div>
+                break;
+
             case AdminTab.Printer:
                 <div class="admin-narrow">
                     <PrinterPanel />
@@ -83,6 +89,7 @@
         Event,
         Gallery,
         Templates,
+        Camera,
         Printer,
         Sharing,
     }
@@ -111,6 +118,7 @@
         AdminTab.Event => "Sự kiện",
         AdminTab.Gallery => "Thư viện ảnh",
         AdminTab.Templates => "Khung ảnh",
+        AdminTab.Camera => "Camera",
         AdminTab.Sharing => "Chia sẻ QR",
         _ => "Máy in",
     };

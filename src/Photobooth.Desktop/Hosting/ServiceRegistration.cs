@@ -10,6 +10,7 @@ using Photobooth.Application.Printing;
 using Photobooth.Application.Sessions;
 using Photobooth.Application.Sharing;
 using Photobooth.Application.Templates;
+using Photobooth.Camera.Canon;
 using Photobooth.Desktop.Camera;
 using Photobooth.Desktop.Platform;
 using Photobooth.Infrastructure.Configuration;
@@ -32,13 +33,27 @@ public static class ServiceRegistration
     {
         var services = new ServiceCollection();
 
+        // Cấu hình: appsettings.json cạnh file thực thi (không bắt buộc), lỗi → mặc định.
+        // Đọc trước khi dựng logger vì mục "logging" quyết định nơi ghi log; thông báo lúc đọc được giữ tạm rồi ghi lại sau.
+        var startupLog = new StartupLogBuffer();
+        var settings = PhotoboothSettings.Load(paths.SettingsFilePath, startupLog);
+        var minimumLevel = settings.Logging.ResolveMinimumLevel(out var levelProblem);
+        var logsDirectory = settings.Logging.ResolveDirectory(paths.RootDirectory, paths.LogsDirectory, out var directoryProblem);
+        foreach (var problem in new[] { levelProblem, directoryProblem })
+        {
+            if (problem is not null)
+            {
+                startupLog.LogWarning("{Problem}", problem);
+            }
+        }
+
         services.AddLogging(builder =>
         {
-            builder.SetMinimumLevel(LogLevel.Information);
+            builder.SetMinimumLevel(minimumLevel);
 
             // Không ghi từng câu SQL của EF Core vào log (chỉ cảnh báo/lỗi).
             builder.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
-            builder.AddProvider(new FileLoggerProvider(paths.LogsDirectory, LogLevel.Information, TimeProvider.System));
+            builder.AddProvider(new FileLoggerProvider(logsDirectory, minimumLevel, TimeProvider.System));
         });
 
         services.AddWpfBlazorWebView();
@@ -49,9 +64,7 @@ public static class ServiceRegistration
         services.AddSingleton(paths);
         services.AddSingleton(TimeProvider.System);
 
-        // Cấu hình: appsettings.json cạnh file thực thi (không bắt buộc), lỗi → mặc định.
-        services.AddSingleton(sp => PhotoboothSettings.Load(
-            paths.SettingsFilePath, sp.GetRequiredService<ILoggerFactory>().CreateLogger("Photobooth.Settings")));
+        services.AddSingleton(settings);
         services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Capture);
         services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Export);
         services.AddSingleton(sp => sp.GetRequiredService<PhotoboothSettings>().Print);
@@ -103,14 +116,38 @@ public static class ServiceRegistration
         services.AddSingleton<ExportFolderService>();
         services.AddSingleton<WindowsShellService>();
 
+        // Webcam dùng cho Kiosk (chọn trong Admin › Camera, lưu app-state.json).
+        services.AddSingleton<CameraSelectionService>();
+
+        // Máy ảnh Canon (EDSDK): luồng SDK chỉ được tạo khi cần lần đầu (mở Admin › Camera).
+        // Hiện dùng trong Admin để liệt kê và xem Live View; Kiosk chưa chụp bằng Canon.
+        services.AddSingleton<CanonSdkHost>();
+        services.AddSingleton<CanonCameraDirectory>();
+        services.AddSingleton(new CanonCameraOptions());
+        services.AddSingleton<CanonCameraDevice>();
+
+        // Bộ thông số máy ảnh — cùng mô hình Template Library: thư viện %LOCALAPPDATA%\Photobooth\CameraPresets (ghi được);
+        // lần đầu chép từ CameraPresets/ đi kèm ứng dụng (src/Photobooth.Desktop/CameraPresets).
+        services.AddSingleton(sp => new CanonPresetStore(
+            Path.Combine(paths.RootDirectory, "CameraPresets"),
+            Path.Combine(AppContext.BaseDirectory, "CameraPresets"),
+            sp.GetRequiredService<ILogger<CanonPresetStore>>()));
+
+        // Khung Live View Canon phục vụ cho WebView2 tại https://liveview.photobooth/ (nhị phân, trong tiến trình).
+        services.AddSingleton<LiveViewEndpoint>();
+
         // Camera WebView2 phụ thuộc IJSRuntime của BlazorWebView → scoped theo WebView.
         services.AddScoped<WebViewCameraDevice>();
         services.AddScoped<ICameraDevice>(sp => sp.GetRequiredService<WebViewCameraDevice>());
 
-        return services.BuildServiceProvider(new ServiceProviderOptions
+        var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
             ValidateScopes = true,
         });
+
+        var settingsLogger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Photobooth.Settings");
+        startupLog.ReplayTo(settingsLogger);
+        settingsLogger.LogInformation("Ghi log vào {LogsDirectory} (mức tối thiểu {MinimumLevel})", logsDirectory, minimumLevel);        return provider;
     }
 }

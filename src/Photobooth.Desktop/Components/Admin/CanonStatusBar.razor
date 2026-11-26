@@ -1,0 +1,123 @@
+@implements IDisposable
+@inject CanonCameraDevice Canon
+@inject ILogger<CanonStatusBar> Logger
+
+@*
+    Trạng thái máy ảnh Canon: % pin (hoặc nguồn AC), cảnh báo nhiệt, ống kính.
+    Cập nhật khi máy báo thay đổi và định kỳ mỗi 30 giây (phòng khi máy không gửi sự kiện).
+    Chỉ hiển thị khi máy đang kết nối (component cha quyết định).
+*@
+@if (_status is { } status)
+{
+    <ul class="canon-status" aria-label="Trạng thái máy ảnh">
+        <li class="@(status.IsBatteryLow ? "is-warning" : null)">
+            <span class="canon-status-name">Pin</span>
+            <span>@BatteryText(status)</span>
+        </li>
+        <li class="@(status.IsOverheating ? "is-warning" : null)">
+            <span class="canon-status-name">Nhiệt độ</span>
+            <span>@CanonCameraStatus.TemperatureLabel(status.Temperature)</span>
+        </li>
+        @if (status.LensName is { } lens)
+        {
+            <li>
+                <span class="canon-status-name">Ống kính</span>
+                <span>@lens</span>
+            </li>
+        }
+    </ul>
+
+    @if (status.IsBatteryLow)
+    {
+        <StatusMessage Status="@LowBattery" />
+    }
+
+    @if (status.IsOverheating)
+    {
+        <StatusMessage Status="@Overheating" />
+    }
+}
+
+@code {
+    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(30);
+
+    private static readonly StatusInfo LowBattery = new(StatusKind.Warning,
+        $"Pin máy ảnh dưới {CanonCameraStatus.LowBatteryPercent}%.",
+        "Thay pin hoặc cắm bộ nguồn AC trước khi phục vụ khách.");
+
+    private static readonly StatusInfo Overheating = new(StatusKind.Warning,
+        "Máy ảnh đang quá nóng.",
+        "Tắt Live View một lúc, để máy nơi thoáng hoặc tránh nắng; máy có thể tạm ngừng Live View/ngừng chụp.");
+
+    private readonly CancellationTokenSource _lifetime = new();
+    private CanonCameraStatus? _status;
+
+    private static string BatteryText(CanonCameraStatus status) => status switch
+    {
+        { OnAcPower: true } => "Nguồn AC",
+        { BatteryPercent: { } percent } => $"{percent}%",
+        _ => "Không rõ",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Canon.StatusChanged += OnStatusChanged;
+        await RefreshAsync();
+        _ = RefreshPeriodicallyAsync(_lifetime.Token);
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            _status = await Canon.ReadStatusAsync(_lifetime.Token);
+        }
+        catch (CameraException ex)
+        {
+            // Mất kết nối: component cha sẽ tắt khu vực Canon; không cần báo lỗi riêng ở đây.
+            Logger.LogDebug(ex, "Không đọc được trạng thái máy ảnh Canon");
+        }
+        catch (OperationCanceledException)
+        {
+            // Component đã đóng.
+        }
+    }
+
+    private async Task RefreshPeriodicallyAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(RefreshInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Component đã đóng.
+        }
+    }
+
+    private void OnStatusChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () =>
+    {
+        if (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await RefreshAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Canon.StatusChanged -= OnStatusChanged;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

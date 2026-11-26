@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Adapter máy ảnh Canon EOS qua Canon EDSDK (P/Invoke tới EDSDK.dll).
+    Tách project riêng để DLL native và mã P/Invoke chỉ đi kèm khi ứng dụng dùng máy ảnh Canon.
+    Chỉ có DLL x64 (lib/EDSDK/win-x64) → tiến trình sử dụng phải chạy 64-bit.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Photobooth.Camera.Canon</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Photobooth.Application\Photobooth.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- EDSDK 13.21.10 (x64), giữ nguyên bản Canon cung cấp. Được chép sang thư mục output của project tham chiếu. -->
+    <None Include="..\..\lib\EDSDK\win-x64\*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Photobooth.Camera.Canon.Tests" />
+  </ItemGroup>
+
+</Project>

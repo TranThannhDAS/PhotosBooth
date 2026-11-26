@@ -1,0 +1,409 @@
+@using Photobooth.Desktop.Hosting
+@implements IAsyncDisposable
+@inject WebViewCameraDevice Camera
+@inject CameraSelectionService CameraSelection
+@inject CanonCameraDirectory CanonCameras
+@inject CanonCameraDevice Canon
+@inject IJSRuntime JS
+@inject ILogger<CameraPanel> Logger
+
+@*
+    Admin › Camera: liệt kê webcam Windows nhận thấy, chọn webcam dùng cho Kiosk (lưu app-state.json), xem thử hình.
+    Máy ảnh Canon (EDSDK) chỉ được liệt kê để kiểm tra kết nối; chưa chọn được cho Kiosk (cần Live View).
+*@
+<div class="camera-admin">
+    <section class="panel-section">
+        <h2 class="panel-title">Webcam dùng cho Kiosk</h2>
+
+        @if (_loadingWebcams)
+        {
+            <p class="panel-hint">Đang tìm webcam…</p>
+        }
+        else
+        {
+            <div class="format-group" role="radiogroup" aria-label="Webcam dùng cho Kiosk">
+                <label class="format-option">
+                    <input type="radio" name="webcam" checked="@(_choiceId is null)" @onchange="() => ChooseAsync(null, null)" />
+                    <span><strong>Camera mặc định của Windows</strong><small>Windows tự chọn (thường là webcam tích hợp của laptop).</small></span>
+                </label>
+
+                @for (var i = 0; i < _webcams.Count; i++)
+                {
+                    var webcam = _webcams[i];
+                    var name = DisplayName(webcam, i);
+                    <label class="format-option">
+                        <input type="radio" name="webcam" checked="@(_choiceId == webcam.DeviceId)" @onchange="() => ChooseAsync(webcam.DeviceId, webcam.Label)" />
+                        <span>
+                            <strong>@name</strong>
+                            <small>@(IsSaved(webcam.DeviceId) ? "Đang dùng cho Kiosk." : "Webcam Windows nhận thấy.")</small>
+                        </span>
+                    </label>
+                }
+
+                @if (SavedMissing)
+                {
+                    <label class="format-option">
+                        <input type="radio" name="webcam" checked="@(_choiceId == Saved.WebcamDeviceId)" @onchange="() => ChooseAsync(Saved.WebcamDeviceId, Saved.WebcamLabel)" />
+                        <span>
+                            <strong>@(string.IsNullOrEmpty(Saved.WebcamLabel) ? "Camera đã chọn trước đây" : Saved.WebcamLabel)</strong>
+                            <small>Không tìm thấy — Kiosk sẽ báo lỗi cho đến khi camera được cắm lại hoặc bạn chọn camera khác.</small>
+                        </span>
+                    </label>
+                }
+            </div>
+
+            @if (_webcams.Count == 0)
+            {
+                <p class="panel-hint">Windows không nhận thấy webcam nào. Kiểm tra camera đã được cắm/bật rồi nhấn “Quét lại”.</p>
+            }
+        }
+
+        <video @ref="_previewElement" class="camera-preview @(_previewing ? null : "is-hidden")"
+               autoplay muted playsinline aria-label="Xem thử hình từ webcam"></video>
+
+        <div class="camera-actions">
+            <button type="button" class="btn btn-secondary" disabled="@(_loadingWebcams || _busy)" @onclick="() => LoadWebcamsAsync(requestLabels: true)">Quét lại</button>
+            <button type="button" class="btn btn-secondary" disabled="@(_loadingWebcams || _busy)" @onclick="TogglePreviewAsync">
+                @(_previewing ? "Tắt xem thử" : "Xem thử")
+            </button>
+            <button type="button" class="btn btn-primary" disabled="@(_busy || !Changed)" @onclick="SaveAsync">Lưu và áp dụng</button>
+        </div>
+
+        <p class="panel-hint">Khi quét, đèn webcam có thể bật thoáng qua để Windows cho biết tên thiết bị.</p>
+
+        @if (_webcamMessage is not null)
+        {
+            <StatusMessage Status="@_webcamMessage" />
+        }
+    </section>
+
+    <section class="panel-section">
+        <h2 class="panel-title">Máy ảnh Canon (EDSDK)</h2>
+        <p class="panel-hint">Kiểm tra kết nối USB và xem Live View. Kiosk chưa chụp bằng máy ảnh Canon.</p>
+
+        @if (_canon is null)
+        {
+            <p class="panel-hint">Đang tìm máy ảnh Canon…</p>
+        }
+        else if (!_canon.SdkAvailable)
+        {
+            <StatusMessage Status="@CanonUnavailable" />
+        }
+        else if (_canon.Cameras.Count == 0)
+        {
+            <p class="panel-hint">Không có máy ảnh Canon nào đang kết nối. Cắm cáp USB, bật máy ảnh, tắt EOS Utility/EOS Webcam Utility rồi nhấn “Quét lại”.</p>
+        }
+        else
+        {
+            <ul class="camera-list">
+                @foreach (var camera in _canon.Cameras)
+                {
+                    <li><strong>@camera.Name</strong><small>Đã kết nối qua USB</small></li>
+                }
+            </ul>
+        }
+
+        @if (_canonLive)
+        {
+            <CanonStatusBar />
+        }
+
+        @* Canvas luôn nằm trong DOM để ElementReference ổn định; chỉ ẩn/hiện bằng CSS. *@
+        <div class="canon-liveview @(_canonLive ? null : "is-hidden")">
+            <canvas @ref="_canonCanvas" class="camera-preview" aria-label="Live View máy ảnh Canon"></canvas>
+            <span @ref="_canonFps" class="canon-fps" aria-live="off"></span>
+        </div>
+
+        <div class="camera-actions">
+            <button type="button" class="btn btn-secondary" disabled="@(_canon is null || _canonBusy || _canonLive)" @onclick="ScanCanonAsync">Quét lại</button>
+            @if (_canonLive)
+            {
+                <button type="button" class="btn btn-secondary" disabled="@_canonBusy" @onclick="DisconnectCanonAsync">Ngắt kết nối</button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-primary" disabled="@(_canonBusy || _canon is not { Cameras.Count: > 0 })" @onclick="ConnectCanonAsync">
+                    @(_canonBusy ? "Đang kết nối…" : "Kết nối và xem Live View")
+                </button>
+            }
+        </div>
+
+        @if (_canonMessage is not null)
+        {
+            <StatusMessage Status="@_canonMessage" />
+        }
+
+        @if (_canonLive)
+        {
+            <CanonSettingsPanel />
+        }
+    </section>
+</div>
+
+@code {
+    private static readonly StatusInfo CanonUnavailable = new(StatusKind.Warning,
+        "Không dùng được thư viện Canon EDSDK trên máy này.",
+        "Kiểm tra EDSDK.dll và EdsImage.dll nằm cạnh Photobooth.exe và ứng dụng chạy 64-bit.");
+
+    private ElementReference _previewElement;
+    private IReadOnlyList<WebcamInfo> _webcams = [];
+    private string? _choiceId;
+    private string? _choiceLabel;
+    private bool _loadingWebcams = true;
+    private bool _busy;
+    private bool _previewing;
+    private bool _disposed;
+    private StatusInfo? _webcamMessage;
+    private CanonCameraScanResult? _canon;
+    private ElementReference _canonCanvas;
+    private ElementReference _canonFps;
+    private bool _canonBusy;
+    private bool _canonLive;
+    private StatusInfo? _canonMessage;
+
+    private CameraSelection Saved => CameraSelection.Selection;
+
+    private bool Changed => _choiceId != Saved.WebcamDeviceId;
+
+    private bool SavedMissing => !Saved.IsDefault && _webcams.All(w => w.DeviceId != Saved.WebcamDeviceId);
+
+    private bool IsSaved(string deviceId) => deviceId == Saved.WebcamDeviceId;
+
+    private static string DisplayName(WebcamInfo webcam, int index) =>
+        string.IsNullOrWhiteSpace(webcam.Label) ? $"Camera {index + 1}" : webcam.Label;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _choiceId = Saved.WebcamDeviceId;
+        _choiceLabel = Saved.WebcamLabel;
+        Camera.Faulted += OnCameraFaulted;
+        Canon.Faulted += OnCanonFaulted;
+
+        // Hai việc độc lập: webcam qua WebView2, Canon qua luồng EDSDK riêng.
+        await Task.WhenAll(LoadWebcamsAsync(requestLabels: true), ScanCanonAsync());
+    }
+
+    private async Task LoadWebcamsAsync(bool requestLabels)
+    {
+        _loadingWebcams = true;
+        _webcamMessage = null;
+        StateHasChanged();
+        try
+        {
+            var result = await Camera.ListWebcamsAsync(requestLabels);
+            _webcams = result.Devices;
+            if (result.Error is { } error && _webcams.All(w => string.IsNullOrEmpty(w.Label)))
+            {
+                _webcamMessage = error == CameraError.PermissionDenied
+                    ? UiText.ForCameraError(error)
+                    : new StatusInfo(StatusKind.Warning, "Không đọc được tên webcam.", "Camera có thể đang được ứng dụng khác sử dụng.");
+            }
+            else if (SavedMissing)
+            {
+                _webcamMessage = new StatusInfo(StatusKind.Warning, "Không tìm thấy webcam đã chọn trước đây.", Saved.WebcamLabel);
+            }
+        }
+        finally
+        {
+            _loadingWebcams = false;
+        }
+    }
+
+    private async Task ScanCanonAsync()
+    {
+        _canon = null;
+        StateHasChanged();
+        _canon = await CanonCameras.ScanAsync();
+    }
+
+    private async Task ChooseAsync(string? deviceId, string? label)
+    {
+        _choiceId = deviceId;
+        _choiceLabel = label;
+        _webcamMessage = null;
+        if (_previewing)
+        {
+            await StartPreviewAsync();
+        }
+    }
+
+    private async Task TogglePreviewAsync()
+    {
+        if (_previewing)
+        {
+            await StopPreviewAsync();
+        }
+        else
+        {
+            await StartPreviewAsync();
+        }
+    }
+
+    private async Task StartPreviewAsync()
+    {
+        _busy = true;
+        try
+        {
+            Camera.AttachPreview(_previewElement);
+            var result = await Camera.StartPreviewAsync(new CameraSelection { WebcamDeviceId = _choiceId, WebcamLabel = _choiceLabel });
+            if (_disposed)
+            {
+                return;
+            }
+
+            _previewing = result.Succeeded;
+            _webcamMessage = result.Succeeded ? null : UiText.ForCameraError(result.Error);
+        }
+        catch (OperationCanceledException)
+        {
+            _previewing = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StopPreviewAsync()
+    {
+        _previewing = false;
+        await Camera.StopAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            var label = _choiceId is null ? null : _choiceLabel;
+            await CameraSelection.SaveAsync(new CameraSelection { WebcamDeviceId = _choiceId, WebcamLabel = label });
+            _webcamMessage = new StatusInfo(StatusKind.Success, "Đã lưu webcam dùng cho Kiosk.", "Áp dụng từ lượt chụp tiếp theo.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogError(ex, "Không lưu được lựa chọn webcam");
+            _webcamMessage = new StatusInfo(StatusKind.Error, "Không lưu được lựa chọn webcam.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OnCameraFaulted(object? sender, CameraError error) => _ = InvokeAsync(() =>
+    {
+        if (_disposed || !_previewing)
+        {
+            return;
+        }
+
+        _previewing = false;
+        _webcamMessage = UiText.ForCameraError(error);
+        StateHasChanged();
+    });
+
+    // ---------------------------------------------------------------- Canon Live View
+
+    private async Task ConnectCanonAsync()
+    {
+        _canonBusy = true;
+        _canonMessage = null;
+        try
+        {
+            var start = await Canon.StartAsync();
+            if (!start.Succeeded)
+            {
+                _canonMessage = CanonError(start.Error);
+                return;
+            }
+
+            await Canon.StartLiveViewAsync();
+            if (_disposed)
+            {
+                return;
+            }
+
+            _canonLive = true;
+            await JS.InvokeVoidAsync("photoboothLiveView.start", _canonCanvas, LiveViewEndpoint.BaseUrl + "canon/frame", _canonFps);
+            _canonMessage = new StatusInfo(StatusKind.Success, $"Đã kết nối {Canon.CameraName}.");
+        }
+        catch (CameraException ex)
+        {
+            Logger.LogWarning(ex, "Không bật được Live View máy ảnh Canon");
+            _canonMessage = CanonError(ex.Error);
+            await Canon.StopAsync();
+        }
+        finally
+        {
+            _canonBusy = false;
+        }
+    }
+
+    private async Task DisconnectCanonAsync()
+    {
+        _canonBusy = true;
+        try
+        {
+            await StopCanonAsync();
+            _canonMessage = null;
+        }
+        finally
+        {
+            _canonBusy = false;
+        }
+    }
+
+    private async Task StopCanonAsync()
+    {
+        _canonLive = false;
+        try
+        {
+            await JS.InvokeVoidAsync("photoboothLiveView.stop", _canonCanvas, _canonFps);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or ObjectDisposedException or JSException)
+        {
+            // WebView đang đóng: vòng hiển thị trong trang đã dừng cùng trang.
+        }
+
+        // Ngắt hẳn session để máy ảnh không bị giữ (EOS Utility hoặc ứng dụng khác có thể cần dùng).
+        await Canon.StopAsync();
+    }
+
+    private static StatusInfo CanonError(CameraError? error) => error switch
+    {
+        CameraError.NotFound => new(StatusKind.Error, "Không tìm thấy máy ảnh Canon.", "Kiểm tra cáp USB và máy ảnh đã bật rồi thử lại."),
+        CameraError.InUse => new(StatusKind.Error, "Máy ảnh Canon đang bận hoặc được ứng dụng khác sử dụng.", "Tắt EOS Utility/EOS Webcam Utility rồi thử lại."),
+        CameraError.NotSupported => CanonUnavailable,
+        CameraError.Disconnected => new(StatusKind.Error, "Máy ảnh Canon bị ngắt kết nối.", "Kiểm tra cáp USB/nguồn máy ảnh rồi kết nối lại."),
+        _ => new(StatusKind.Error, "Không kết nối được máy ảnh Canon.", "Thử tắt rồi bật lại máy ảnh, sau đó kết nối lại."),
+    };
+
+    private void OnCanonFaulted(object? sender, CameraError error) => _ = InvokeAsync(async () =>
+    {
+        if (_disposed || !_canonLive)
+        {
+            return;
+        }
+
+        await StopCanonAsync();
+        _canonMessage = CanonError(error);
+        StateHasChanged();
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        Camera.Faulted -= OnCameraFaulted;
+        Canon.Faulted -= OnCanonFaulted;
+        if (_previewing)
+        {
+            _previewing = false;
+            await Camera.StopAsync();
+        }
+
+        if (_canonLive)
+        {
+            await StopCanonAsync();
+        }
+    }
+}

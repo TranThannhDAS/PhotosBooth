@@ -1,0 +1,7 @@
+# Native/EDSDK.cs là file gốc của Canon (sample C#, EDSDK 13.21.10), giữ nguyên không chỉnh sửa.
+# Tắt các cảnh báo nullable/obsolete chỉ cho riêng file này; code của dự án vẫn được kiểm tra đầy đủ.
+[Native/EDSDK.cs]
+dotnet_diagnostic.CS8601.severity = none
+dotnet_diagnostic.CS8605.severity = none
+dotnet_diagnostic.CS0618.severity = none
+dotnet_diagnostic.CS9125.severity = none

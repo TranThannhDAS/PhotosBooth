@@ -53,6 +53,78 @@
         return devices.some(d => d.kind === 'videoinput');
     }
 
+    function isMissingDeviceError(err) {
+        return !!err && (err.name === 'OverconstrainedError' || err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError');
+    }
+
+    async function videoInputs() {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter(d => d.kind === 'videoinput');
+    }
+
+    // Tên/mã thiết bị chỉ có sau khi trang đã được cấp quyền camera: mở camera thật ngắn rồi tắt ngay.
+    async function ensureDeviceLabels() {
+        let inputs = await videoInputs();
+        if (inputs.length > 0 && inputs.every(d => d.deviceId && d.label)) {
+            return inputs;
+        }
+        const probe = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+        stopTracks(probe);
+        return await videoInputs();
+    }
+
+    // Mở camera theo lựa chọn trong Admin. Không có lựa chọn → camera mặc định (như trước).
+    // Mã thiết bị không còn khớp → tìm lại theo tên (chỉ khi đúng một camera trùng tên); không tìm thấy → lỗi riêng,
+    // KHÔNG tự chuyển sang camera khác.
+    async function openStream(options) {
+        const size = { width: { ideal: options.idealWidth }, height: { ideal: options.idealHeight } };
+        if (!options.deviceId) {
+            const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...size, facingMode: 'user' } });
+            return { mediaStream, resolvedDeviceId: null };
+        }
+
+        try {
+            const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...size, deviceId: { exact: options.deviceId } } });
+            return { mediaStream, resolvedDeviceId: options.deviceId };
+        } catch (err) {
+            if (!isMissingDeviceError(err)) {
+                throw err;
+            }
+        }
+
+        const matches = options.deviceLabel
+            ? (await ensureDeviceLabels()).filter(d => d.label === options.deviceLabel)
+            : [];
+        if (matches.length !== 1) {
+            throw Object.assign(new Error('Không tìm thấy camera đã chọn.'), { name: 'SelectedDeviceMissing' });
+        }
+
+        const resolvedDeviceId = matches[0].deviceId;
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...size, deviceId: { exact: resolvedDeviceId } } });
+        return { mediaStream, resolvedDeviceId };
+    }
+
+    // Danh sách webcam cho Admin. requestLabels: được phép mở camera thoáng qua để lấy tên (chỉ khi chưa có camera nào đang chạy).
+    async function listDevices(requestLabels) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+            return { devices: [], errorName: 'NotSupported' };
+        }
+
+        let errorName = null;
+        let inputs;
+        try {
+            inputs = requestLabels && !stream ? await ensureDeviceLabels() : await videoInputs();
+        } catch (err) {
+            errorName = (err && err.name) || 'Error';
+            inputs = await videoInputs();
+        }
+
+        return {
+            devices: inputs.filter(d => d.deviceId).map(d => ({ deviceId: d.deviceId, label: d.label || '' })),
+            errorName
+        };
+    }
+
     function waitForVideoReady(videoElement) {
         if (videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
             return Promise.resolve();
@@ -92,14 +164,9 @@
                 return { ok: false, errorName: 'NoDevice' };
             }
 
-            candidate = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: {
-                    width: { ideal: options.idealWidth },
-                    height: { ideal: options.idealHeight },
-                    facingMode: 'user'
-                }
-            });
+            const opened = await openStream(options);
+            candidate = opened.mediaStream;
+            const resolvedDeviceId = opened.resolvedDeviceId;
 
             if (myGeneration !== generation) {
                 stopTracks(candidate);
@@ -146,7 +213,14 @@
             };
             videoElement.addEventListener('resize', onVideoResize);
 
-            return { ok: true, width: videoElement.videoWidth, height: videoElement.videoHeight };
+            const activeTrack = candidate.getVideoTracks()[0];
+            return {
+                ok: true,
+                width: videoElement.videoWidth,
+                height: videoElement.videoHeight,
+                resolvedDeviceId,
+                label: (activeTrack && activeTrack.label) || ''
+            };
         } catch (err) {
             if (myGeneration !== generation) {
                 // Đã có lệnh stop/start mới: chỉ dọn stream của lần start này.
@@ -187,7 +261,7 @@
         return new Uint8Array(await blob.arrayBuffer());
     }
 
-    window.photoboothCamera = Object.freeze({ start, stop, capture });
+    window.photoboothCamera = Object.freeze({ start, stop, capture, listDevices });
 
     // Phòng hờ: giải phóng camera khi trang bị gỡ (tải lại giao diện, đóng cửa sổ).
     window.addEventListener('pagehide', stop);

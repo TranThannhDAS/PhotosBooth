@@ -5,6 +5,8 @@ using Microsoft.JSInterop;
 using Photobooth.Application.Camera;
 using Photobooth.Application.Photos;
 using Photobooth.Application.Sessions;
+using Photobooth.Desktop.Platform;
+using Photobooth.Infrastructure.Events;
 
 namespace Photobooth.Desktop.Camera;
 
@@ -20,15 +22,21 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
 
     private readonly IJSRuntime _jsRuntime;
     private readonly CaptureOptions _options;
+    private readonly CameraSelectionService _selection;
     private readonly ILogger<WebViewCameraDevice> _logger;
     private DotNetObjectReference<WebViewCameraDevice>? _selfReference;
     private ElementReference? _previewElement;
     private bool _disposed;
 
-    public WebViewCameraDevice(IJSRuntime jsRuntime, CaptureOptions options, ILogger<WebViewCameraDevice> logger)
+    public WebViewCameraDevice(
+        IJSRuntime jsRuntime,
+        CaptureOptions options,
+        CameraSelectionService selection,
+        ILogger<WebViewCameraDevice> logger)
     {
         _jsRuntime = jsRuntime;
         _options = options;
+        _selection = selection;
         _logger = logger;
     }
 
@@ -45,7 +53,40 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
     /// <summary>Gắn phần tử &lt;video&gt; dùng để hiển thị preview. Phải gọi trước <see cref="StartAsync"/>.</summary>
     public void AttachPreview(ElementReference videoElement) => _previewElement = videoElement;
 
-    public async Task<CameraStartResult> StartAsync(CancellationToken cancellationToken = default)
+    /// <summary>Mở webcam đã chọn trong Admin (hoặc camera mặc định nếu chưa chọn).</summary>
+    public Task<CameraStartResult> StartAsync(CancellationToken cancellationToken = default) =>
+        StartCoreAsync(_selection.Selection, rememberResolvedDevice: true, cancellationToken);
+
+    /// <summary>Mở một webcam cụ thể để xem thử trong Admin, không thay đổi lựa chọn đã lưu.</summary>
+    public Task<CameraStartResult> StartPreviewAsync(CameraSelection selection, CancellationToken cancellationToken = default) =>
+        StartCoreAsync(selection, rememberResolvedDevice: false, cancellationToken);
+
+    /// <summary>
+    /// Danh sách webcam Windows nhận thấy. <paramref name="requestLabels"/>: cho phép bật camera thoáng qua để lấy tên thiết bị
+    /// (WebView2 chỉ cho biết tên sau khi đã cấp quyền camera) — chỉ dùng khi người quản trị chủ động mở danh sách.
+    /// </summary>
+    public async Task<WebcamListResult> ListWebcamsAsync(bool requestLabels, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        try
+        {
+            var result = await _jsRuntime.InvokeAsync<JsListResult>("photoboothCamera.listDevices", cancellationToken, requestLabels);
+            var devices = (result.Devices ?? [])
+                .Where(d => !string.IsNullOrEmpty(d.DeviceId))
+                .Select(d => new WebcamInfo(d.DeviceId!, d.Label ?? string.Empty))
+                .ToArray();
+            var error = result.ErrorName is null ? (CameraError?)null : MapBrowserError(result.ErrorName);
+            return new WebcamListResult(devices, error);
+        }
+        catch (JSException ex)
+        {
+            _logger.LogWarning(ex, "Không đọc được danh sách webcam");
+            return new WebcamListResult([], CameraError.Unknown);
+        }
+    }
+
+    private async Task<CameraStartResult> StartCoreAsync(
+        CameraSelection selection, bool rememberResolvedDevice, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_previewElement is null)
@@ -65,7 +106,13 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
                 cancellationToken,
                 _previewElement.Value,
                 _selfReference,
-                new { idealWidth = _options.IdealWidthPixels, idealHeight = _options.IdealHeightPixels });
+                new
+                {
+                    idealWidth = _options.IdealWidthPixels,
+                    idealHeight = _options.IdealHeightPixels,
+                    deviceId = selection.IsDefault ? null : selection.WebcamDeviceId,
+                    deviceLabel = selection.IsDefault ? null : selection.WebcamLabel,
+                });
         }
         catch (JSException ex)
         {
@@ -77,7 +124,16 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
         {
             IsActive = true;
             FrameSize = result.Width > 0 && result.Height > 0 ? (result.Width, result.Height) : null;
-            _logger.LogInformation("Camera đã sẵn sàng ({Width}x{Height})", result.Width, result.Height);
+            _logger.LogInformation("Camera {Camera} đã sẵn sàng ({Width}x{Height})", result.Label, result.Width, result.Height);
+
+            if (rememberResolvedDevice
+                && !selection.IsDefault
+                && !string.IsNullOrEmpty(result.ResolvedDeviceId)
+                && result.ResolvedDeviceId != selection.WebcamDeviceId)
+            {
+                await _selection.RememberResolvedDeviceAsync(selection.WebcamDeviceId!, result.ResolvedDeviceId);
+            }
+
             return CameraStartResult.Success();
         }
 
@@ -212,6 +268,7 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
 
     internal static CameraError MapBrowserError(string? errorName) => errorName switch
     {
+        "SelectedDeviceMissing" => CameraError.SelectedDeviceNotFound,
         "NoDevice" or "NotFoundError" or "DevicesNotFoundError" or "OverconstrainedError" => CameraError.NotFound,
         "NotAllowedError" or "PermissionDeniedError" or "SecurityError" => CameraError.PermissionDenied,
         "NotReadableError" or "TrackStartError" or "AbortError" => CameraError.InUse,
@@ -219,6 +276,16 @@ public sealed class WebViewCameraDevice : ICameraDevice, IAsyncDisposable
         _ => CameraError.Unknown,
     };
 
-    private sealed record JsStartResult(bool Ok, string? ErrorName, int Width, int Height);
+    private sealed record JsStartResult(bool Ok, string? ErrorName, int Width, int Height, string? ResolvedDeviceId, string? Label);
+
+    private sealed record JsListResult(JsDevice[]? Devices, string? ErrorName);
+
+    private sealed record JsDevice(string? DeviceId, string? Label);
 }
+
+/// <summary>Một webcam Windows nhận thấy. <see cref="Label"/> rỗng khi chưa được cấp quyền camera.</summary>
+public sealed record WebcamInfo(string DeviceId, string Label);
+
+/// <summary>Kết quả liệt kê webcam; <see cref="Error"/> khác null khi không lấy được đầy đủ (ví dụ chưa có quyền).</summary>
+public sealed record WebcamListResult(IReadOnlyList<WebcamInfo> Devices, CameraError? Error);
 

@@ -4,6 +4,7 @@ using Photobooth.Application.Export;
 using Photobooth.Application.Printing;
 using Photobooth.Application.Sessions;
 using Photobooth.Application.Sharing;
+using Photobooth.Infrastructure.Logging;
 
 namespace Photobooth.Infrastructure.Configuration;
 
@@ -26,6 +27,12 @@ public sealed record PhotoboothSettings
     /// Mặc định tắt. Không được Validate() kiểm tra: cấu hình sai chỉ tắt chia sẻ QR, không làm mất các cấu hình khác.
     /// </summary>
     public CloudShareOptions Cloud { get; init; } = new();
+
+    /// <summary>
+    /// Mục "logging": ví dụ { "directory": "D:\\PhotoboothLogs", "minimumLevel": "Information" }.
+    /// Không được Validate() kiểm tra: giá trị sai chỉ đưa riêng mục log về mặc định (xem <see cref="LoggingOptions"/>).
+    /// </summary>
+    public LoggingOptions Logging { get; init; } = new();
 
     public void Validate()
     {
