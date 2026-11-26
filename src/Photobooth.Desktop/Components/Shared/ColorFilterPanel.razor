@@ -1,0 +1,106 @@
+@inherits SessionScreenBase
+
+@* Bộ lọc màu dùng chung cho Kiosk và màn chỉnh lại ảnh trong Admin. *@
+<section class="panel-section">
+    <div class="panel-header-row">
+        <h2 class="panel-title">Bộ lọc màu</h2>
+        <span class="filter-active-badge">@UiText.FilterLabel(CurrentFilter)</span>
+    </div>
+    <div class="filter-grid" role="radiogroup" aria-label="Bộ lọc màu">
+        @foreach (var filter in Enum.GetValues<ColorFilter>())
+        {
+            var value = filter;
+            var active = CurrentFilter == value;
+            <button type="button"
+                    class="filter-card @(active ? "is-active" : null)"
+                    role="radio"
+                    aria-checked="@(active ? "true" : "false")"
+                    aria-label="@($"{UiText.FilterLabel(value)} ({UiText.FilterSubtitle(value)})")"
+                    disabled="@(!CanSelectFilter)"
+                    @onclick="() => ApplyFilterAsync(value)">
+                <span class="filter-thumb">
+                    @if (FirstPhotoKey is { } photoKey)
+                    {
+                        <ImageView Class="filter-thumb-image"
+                                   Key="@($"{photoKey}-{value}")"
+                                   Alt="@UiText.FilterLabel(value)"
+                                   Loader="@(ct => Sessions.GetFilterPreviewAsync(value, FilterThumbWidth, ct))" />
+                    }
+                    @if (active)
+                    {
+                        <span class="filter-check" aria-hidden="true">✓</span>
+                    }
+                </span>
+                <span class="filter-name">@UiText.FilterLabel(value)</span>
+                <span class="filter-subtitle">@UiText.FilterSubtitle(value)</span>
+            </button>
+        }
+    </div>
+</section>
+
+@code {
+    private const int FilterThumbWidth = 160;
+
+    private ColorFilter? _pendingFilter;
+    private bool _applyingFilter;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<StatusInfo?> OnMessage { get; set; }
+
+    /// <summary>Cho phép chọn bộ lọc kế tiếp khi lệnh trước đang ghép, chỉ dùng lựa chọn cuối.</summary>
+    private bool CanSelectFilter => !Disabled && Session is { CanEdit: true, AllSlotsFilled: true } s
+        && (s.Composed is not null || s.State == PhotoSessionState.Composing || _applyingFilter);
+
+    private ColorFilter CurrentFilter => _pendingFilter ?? Session?.Filter ?? ColorFilter.None;
+
+    private Guid? FirstPhotoKey => Session?.Slots.FirstOrDefault(p => p is not null)?.PhotoId;
+
+    private async Task ApplyFilterAsync(ColorFilter filter)
+    {
+        if (!CanSelectFilter || filter == CurrentFilter)
+        {
+            return;
+        }
+
+        _pendingFilter = filter;
+        await OnMessage.InvokeAsync(null);
+        if (_applyingFilter)
+        {
+            return;
+        }
+
+        _applyingFilter = true;
+        try
+        {
+            while (!IsDisposed && _pendingFilter is { } target)
+            {
+                var outcome = await Sessions.ComposeAsync(target);
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                // Nếu có lựa chọn mới khi đang ghép, chỉ giữ lựa chọn cuối.
+                if (_pendingFilter != target)
+                {
+                    continue;
+                }
+
+                _pendingFilter = null;
+                if (outcome == CompositionOutcome.Failed)
+                {
+                    await OnMessage.InvokeAsync(UiText.CompositionFailed);
+                }
+
+                break;
+            }
+        }
+        finally
+        {
+            _applyingFilter = false;
+        }
+    }
+}
