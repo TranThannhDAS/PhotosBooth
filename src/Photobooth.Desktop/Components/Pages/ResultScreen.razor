@@ -1,7 +1,7 @@
 @inherits SessionScreenBase
 @inject ILogger<ResultScreen> Logger
 
-<SessionLayout Step="3" Class="screen-result" OnCancel="OnCancel" ConfirmCancel="@(Session?.Exports.Count == 0)" CancelDisabled="@Busy">
+<SessionLayout Step="3" Class="screen-result" OnCancel="OnCancel" ConfirmCancel="@(Session?.Exports.Count == 0)" CancelDisabled="@(Busy || _showViewer)">
     <ChildContent>
         <div class="result-photo-first">
             <div class="result-photo-heading">
@@ -128,6 +128,14 @@
     private bool _showViewer;
     private bool _showOptions;
     private bool _showSaveDialog;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        // Mở chế độ xem lớn ngay khi bước Thành phẩm được tạo.
+        // Nếu Photo Composer còn xử lý, hộp xem sẽ hiện khi ảnh đã sẵn sàng.
+        _showViewer = true;
+    }
 
     [Parameter, EditorRequired]
     public EventCallback OnCancel { get; set; }
