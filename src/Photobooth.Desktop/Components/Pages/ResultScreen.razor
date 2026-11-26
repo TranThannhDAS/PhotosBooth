@@ -43,7 +43,7 @@
                     </div>
                     <div class="result-modal-content">
                         <EditToolsPanel Preview="_preview" Disabled="@Busy" OnMessage="ShowMessage"
-                                        OnEditOpened="CloseOptions" />
+                                        ShowFilters="false" OnEditOpened="CloseOptions" />
 
                         <section class="panel-section">
                             <h2 class="panel-title">Ảnh đã chụp</h2>
@@ -73,6 +73,9 @@
                         </section>
 
                         <PrintPanel @ref="_print" Disabled="@Busy" OnStateChanged="StateHasChanged" />
+
+                        @* Bộ lọc màu ở cuối danh sách thao tác để ưu tiên chỉnh ảnh và in. *@
+                        <ColorFilterPanel Disabled="@Busy" OnMessage="ShowMessage" />
                     </div>
                 </section>
             </div>
