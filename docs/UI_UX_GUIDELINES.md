@@ -94,13 +94,13 @@ Hoàn thành → Phiên mới
 ### 4.5 Xem thành phẩm (`Result`)
 
 - Ưu tiên hiển thị ảnh ghép lớn, giữ đúng tỉ lệ template; không cắt mất mép quan trọng.
-- Màn Thành phẩm ở Kiosk dùng bố cục **photo-first**: ảnh ghép chiếm phần lớn chiều cao còn lại giữa header/footer; không có cột tùy chọn thường trực. Nút **Chỉnh sửa / In ảnh** mở hộp điều khiển, **Lưu ảnh** mở hộp chọn JPEG/PNG/PDF, còn **Phóng to** mở trình xem riêng (vừa màn hình hoặc 200%).
-- Trong popup **Chỉnh sửa / In ảnh**, đặt **Bộ lọc màu** ở cuối, sau lựa chọn ô ảnh, ảnh nguồn và bảng in. Giữ nguyên khả năng đổi nhanh bộ lọc khi Photo Composer đang xử lý.
+- Màn Thành phẩm ở Kiosk dùng bố cục **ảnh lớn bên trái và panel thao tác bên phải** trên màn hình ngang; panel hiển thị trực tiếp **Chỉnh sửa ảnh → Ảnh đã chụp → In ảnh → Bộ lọc màu** và cuộn độc lập nếu nội dung dài. Ảnh giữ đúng tỷ lệ template, tận dụng chiều cao màn hình; không làm nhỏ ảnh chỉ để lấp đầy chiều ngang. Trên màn hình hẹp, panel chuyển xuống dưới ảnh.
+- **Bộ lọc màu nằm cuối panel**, giữ khả năng đổi nhanh bộ lọc khi Photo Composer đang xử lý. **Lưu ảnh** vẫn mở hộp chọn JPEG/PNG/PDF và **Phóng to** mở trình xem lớn (vừa màn hình hoặc 200%). Nền Kiosk dùng xám than rất đậm và các khối điều khiển có phân tách nhẹ; không thay đổi bố cục/màu cho Admin.
 - **Toàn màn hình là trạng thái cửa sổ của toàn ứng dụng**, không thuộc riêng trình xem ảnh. WPF mở mặc định không viền/toàn màn hình ngay khi khởi chạy; nút **Toàn màn hình / Thu nhỏ cửa sổ** đặt ở header chung của các màn hình (màn mở đầu và Chào mừng có nút ở góc trên), có thể bật/tắt mà không thay đổi ảnh hay phiên đang chạy. Tắt chế độ này khôi phục kích thước/vị trí cửa sổ ban đầu.
 - **Khi vừa đến bước Thành phẩm**, tự động mở trình xem ảnh lớn (khi Photo Composer có kết quả); phóng vừa vùng xem, chưa zoom 200%. Chạm/click vùng tối ngoài **ảnh thực tế** đóng trình xem và trở về bố cục Thành phẩm, **không thoát toàn màn hình của ứng dụng**. Chạm ảnh hay nút trong trình xem không đóng. Nút **Phóng to 200%** vẫn là tùy chọn bổ sung; Esc đóng trình xem.
 - Trình xem không tự chỉnh crop/template, không ghi đè ảnh, không tự in hay lưu và không làm thay đổi độ phân giải file.
 - Popup chỉnh vùng cắt đóng khi chạm/nhấp vào vùng mờ bên ngoài, tương tự **Hủy**: không tự áp dụng crop chưa xác nhận. Tương tác bên trong popup, đặc biệt kéo/chụm trên ảnh, không được làm đóng popup.
-- Khi đang xuất file hoặc gửi lệnh in, khóa việc đóng popup tùy chọn liên quan để tránh ngắt thao tác. Không thay đổi quy tắc xác nhận in, lưu phiên bản và kết thúc phiên.
+- Khi đang xuất file hoặc gửi lệnh in, khóa các thao tác gây xung đột; panel chỉnh sửa/in nằm cố định, còn popup Lưu ảnh vẫn không được đóng giữa lúc đang xuất. Không thay đổi quy tắc xác nhận in, lưu phiên bản và kết thúc phiên.
 - Hành động chính: **Lưu/Xuất ảnh**; có lựa chọn định dạng JPEG, PNG, PDF.
 - Hiển thị tiến trình và kết quả riêng cho từng định dạng được yêu cầu.
 - Khi xuất thành công, hiển thị thông báo **“Đã lưu ảnh”** và vị trí/tùy chọn mở thư mục khi có thể.
