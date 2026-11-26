@@ -12,8 +12,6 @@
                 <div class="result-photo-actions">
                     <button type="button" class="btn btn-secondary btn-sm" disabled="@(!HasComposed || Busy)"
                             @onclick="() => _showViewer = true">Phóng to</button>
-                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(Busy || !HasComposed)"
-                            @onclick="() => _showOptions = true">Chỉnh sửa / In ảnh</button>
                 </div>
             </div>
 
@@ -22,63 +20,54 @@
                 <StatusMessage Status="@_message" />
             }
 
-            <div class="result-photo-stage">
-                <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
+            <div class="result-photo-main">
+                <div class="result-photo-stage">
+                    <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
+                </div>
+
+                <aside class="result-photo-sidebar" aria-label="Chỉnh sửa và in ảnh thành phẩm">
+                    <EditToolsPanel Preview="_preview" Disabled="@Busy" OnMessage="ShowMessage"
+                                    ShowFilters="false" />
+
+                    <section class="panel-section">
+                        <h2 class="panel-title">Ảnh đã chụp</h2>
+                        <div class="slot-strip" aria-label="Ảnh nguồn của phiên">
+                            @if (Session is not null)
+                            {
+                                @for (var i = 0; i < Session.RequiredPhotoCount; i++)
+                                {
+                                    var position = i;
+                                    var photo = Session.Slots[position];
+                                    <div class="source-thumb">
+                                        <div class="slot-thumb">
+                                            @if (photo is not null)
+                                            {
+                                                <ImageView Class="slot-thumb-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
+                                                           Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 240, ct))" />
+                                            }
+                                            <span class="slot-thumb-number">@(position + 1)</span>
+                                        </div>
+                                        <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => Retake(position)">
+                                            Chụp lại
+                                        </button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </section>
+
+                    <PrintPanel @ref="_print" Disabled="@Busy" OnStateChanged="StateHasChanged" />
+
+                    @* Bộ lọc màu luôn nằm cuối danh sách thao tác trong sidebar. *@
+                    <ColorFilterPanel Disabled="@(_completing || _export?.IsExporting == true || _print?.IsPrinting == true)"
+                                      OnMessage="ShowMessage" />
+                </aside>
             </div>
         </div>
 
         @if (_showViewer && HasComposed)
         {
             <ResultPhotoViewer OnClose="CloseViewer" />
-        }
-
-        @if (_showOptions)
-        {
-            <div class="dialog-backdrop result-modal-backdrop" @onclick="CloseOptions">
-                <section class="dialog result-modal-dialog" role="dialog" aria-modal="true"
-                         aria-labelledby="result-options-title" @onclick:stopPropagation="true">
-                    <div class="result-modal-header">
-                        <h2 id="result-options-title" class="dialog-title">Chỉnh sửa và in ảnh</h2>
-                        <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="CloseOptions">Đóng</button>
-                    </div>
-                    <div class="result-modal-content">
-                        <EditToolsPanel Preview="_preview" Disabled="@Busy" OnMessage="ShowMessage"
-                                        ShowFilters="false" OnEditOpened="CloseOptions" />
-
-                        <section class="panel-section">
-                            <h2 class="panel-title">Ảnh đã chụp</h2>
-                            <div class="slot-strip" aria-label="Ảnh nguồn của phiên">
-                                @if (Session is not null)
-                                {
-                                    @for (var i = 0; i < Session.RequiredPhotoCount; i++)
-                                    {
-                                        var position = i;
-                                        var photo = Session.Slots[position];
-                                        <div class="source-thumb">
-                                            <div class="slot-thumb">
-                                                @if (photo is not null)
-                                                {
-                                                    <ImageView Class="slot-thumb-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
-                                                               Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 240, ct))" />
-                                                }
-                                                <span class="slot-thumb-number">@(position + 1)</span>
-                                            </div>
-                                            <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => Retake(position)">
-                                                Chụp lại
-                                            </button>
-                                        </div>
-                                    }
-                                }
-                            </div>
-                        </section>
-
-                        <PrintPanel @ref="_print" Disabled="@Busy" OnStateChanged="StateHasChanged" />
-
-                        @* Bộ lọc màu ở cuối danh sách thao tác để ưu tiên chỉnh ảnh và in. *@
-                        <ColorFilterPanel Disabled="@(_completing || _export?.IsExporting == true || _print?.IsPrinting == true)" OnMessage="ShowMessage" />
-                    </div>
-                </section>
-            </div>
         }
 
         @if (_showSaveDialog)
@@ -126,7 +115,6 @@
     private StatusInfo? _message;
     private bool _completing;
     private bool _showViewer;
-    private bool _showOptions;
     private bool _showSaveDialog;
 
     protected override void OnInitialized()
@@ -161,14 +149,6 @@
 
     private void CloseViewer() => _showViewer = false;
 
-    private void CloseOptions()
-    {
-        if (!Busy)
-        {
-            _showOptions = false;
-        }
-    }
-
     private void CloseSaveDialog()
     {
         if (!Busy)
@@ -184,7 +164,6 @@
             return;
         }
 
-        _showOptions = false;
         Sessions.BeginRetake(position);
     }
 
