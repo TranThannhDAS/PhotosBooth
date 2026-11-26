@@ -13,7 +13,7 @@
                 <button type="button" class="btn btn-secondary btn-sm" @onclick="Close">Đóng</button>
             </div>
         </div>
-        <div class="result-viewer-scroll @(_zoomed ? "is-zoomed" : null)">
+        <div class="result-viewer-scroll @(_zoomed ? "is-zoomed" : null)" style="@ViewerStyle">
             @if (Session?.Composed is { } composed)
             {
                 <ImageView Class="result-viewer-image" Key="@composed.FilePath" Alt="Ảnh thành phẩm phóng lớn"
@@ -25,6 +25,10 @@
 
 @code {
     private bool _zoomed;
+
+    private string ViewerStyle => Session?.Template?.Canvas is { } canvas
+        ? $"--viewer-aspect: {canvas.WidthPixels} / {canvas.HeightPixels};"
+        : "--viewer-aspect: 2 / 3;";
 
     [Parameter, EditorRequired]
     public EventCallback OnClose { get; set; }
