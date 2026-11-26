@@ -9,8 +9,8 @@
     Photo Composer render lại sau khi áp dụng. Với ô fit=contain: chỉ hiển thị trọn ảnh đúng tỉ lệ
     (object-fit: contain) kèm nút chụp lại trong phiên khách, không bật Manual Crop.
 *@
-<div class="dialog-backdrop">
-    <div class="dialog crop-dialog @(IsCropSupported ? null : "is-contain")" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+<div class="dialog-backdrop" @onclick="CancelAsync">
+    <div @onclick:stopPropagation="true" class="dialog crop-dialog @(IsCropSupported ? null : "is-contain")" role="dialog" aria-modal="true" aria-labelledby="crop-title">
         <h2 id="crop-title" class="dialog-title">@(IsCropSupported ? "Chỉnh ảnh" : "Xem ảnh") — @SlotLabel</h2>
         <p class="dialog-message">
             @(IsCropSupported
