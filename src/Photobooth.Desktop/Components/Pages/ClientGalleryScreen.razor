@@ -26,6 +26,7 @@
         </div>
 
         <div class="client-gallery-header-actions">
+            <FullscreenToggle />
             @if (_selectedDetail is null)
             {
                 <button type="button" class="btn btn-ghost btn-sm" disabled="@_loadingList" @onclick="LoadListAsync">
