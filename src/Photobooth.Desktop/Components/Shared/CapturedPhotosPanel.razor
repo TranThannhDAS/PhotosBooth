@@ -12,14 +12,14 @@
         }
     </div>
 
-    @if (Session?.Photos is not { Count: > 0 } photos)
+    @if (Session?.Photos is not { Count: > 0 })
     {
         <p class="panel-hint">Phiên này chưa có ảnh gốc.</p>
     }
     else
     {
         <div class="captured-photos-grid">
-            @foreach (var photo in photos.OrderBy(p => p.Sequence))
+            @foreach (var photo in Session!.Photos.OrderBy(p => p.Sequence))
             {
                 var item = photo;
                 var selected = IsCurrentPhoto(item);
