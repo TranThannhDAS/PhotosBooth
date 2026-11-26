@@ -1,5 +1,4 @@
 @inherits SessionScreenBase
-@implements IDisposable
 @inject WindowFullscreenService Fullscreen
 
 @* Xem lớn thành phẩm. Toàn màn hình là chế độ cửa sổ WPF, không phải phóng to ảnh bằng CSS. *@
@@ -105,12 +104,15 @@
         await OnClose.InvokeAsync();
     }
 
-    public void Dispose()
+    protected override ValueTask DisposeCoreAsync()
     {
+        // SessionScreenBase triển khai IAsyncDisposable; luôn khôi phục cửa sổ nếu component bị hủy.
         if (_fullscreen)
         {
             Fullscreen.Exit();
             _fullscreen = false;
         }
+
+        return ValueTask.CompletedTask;
     }
 }
