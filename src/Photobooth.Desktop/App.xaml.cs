@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -23,6 +23,12 @@ public partial class App : System.Windows.Application
 
     private ServiceProvider? _services;
     private ILogger<App>? _logger;
+
+    static App()
+    {
+        // Dùng ngăn xếp WM_POINTER thay cho WISP cũ để cử chỉ cảm ứng (vuốt cuộn) truyền đúng vào WebView2/BlazorWebView.
+        AppContext.SetSwitch("Switch.System.Windows.Input.Stylus.EnablePointerSupport", true);
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {

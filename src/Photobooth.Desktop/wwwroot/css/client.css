@@ -60,6 +60,7 @@
     padding: 24px 28px;
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
+    touch-action: pan-y;
 }
 
 .client-mode .screen-footer {
