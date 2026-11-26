@@ -115,6 +115,7 @@ public static class ServiceRegistration
         // Tích hợp nền tảng Windows.
         services.AddSingleton<ExportFolderService>();
         services.AddSingleton<WindowsShellService>();
+        services.AddSingleton<WindowFullscreenService>();
 
         // Webcam dùng cho Kiosk (chọn trong Admin › Camera, lưu app-state.json).
         services.AddSingleton<CameraSelectionService>();
