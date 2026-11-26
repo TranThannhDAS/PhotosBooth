@@ -28,12 +28,19 @@ public partial class MainWindow : Window
         _services = services;
         _logger = services.GetRequiredService<ILogger<MainWindow>>();
         _paths = services.GetRequiredService<PhotoboothStoragePaths>();
+        services.GetRequiredService<WindowFullscreenService>().Attach(this);
 
         BlazorHost.Services = services;
         BlazorHost.RootComponents.Add(new RootComponent { Selector = "#app", ComponentType = typeof(PhotoboothApp) });
         BlazorHost.BlazorWebViewInitializing += OnWebViewInitializing;
         BlazorHost.BlazorWebViewInitialized += OnWebViewInitialized;
         BlazorHost.UrlLoading += OnUrlLoading;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _services.GetRequiredService<WindowFullscreenService>().Detach(this);
+        base.OnClosed(e);
     }
 
     private void OnWebViewInitializing(object? sender, BlazorWebViewInitializingEventArgs e)
