@@ -99,7 +99,8 @@ public sealed class WindowFullscreenService
             return;
         }
 
-        Exit();
+        // Cửa sổ đã đóng, không được khôi phục trạng thái trên HWND đã hủy.
         _window = null;
+        IsFullscreen = false;
     }
 }
