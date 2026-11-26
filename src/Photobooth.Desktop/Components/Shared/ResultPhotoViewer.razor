@@ -1,38 +1,30 @@
 @inherits SessionScreenBase
 @inject WindowFullscreenService Fullscreen
 
-@* Xem lớn thành phẩm. Toàn màn hình là chế độ cửa sổ WPF, không phải phóng to ảnh bằng CSS. *@
-<div class="dialog-backdrop result-viewer-backdrop @(_fullscreen ? "is-immersive" : null)" @onclick="CloseAsync">
+@* Chế độ xem ảnh lớn độc lập với trạng thái toàn màn hình của cửa sổ WPF.
+   Chạm vùng tối ngoài ảnh để đóng; nhấp vào ảnh/điều khiển không đóng. *@
+<div class="dialog-backdrop result-viewer-backdrop" @onclick="CloseAsync">
     <section @ref="_viewer" tabindex="-1"
              class="result-viewer" role="dialog" aria-modal="true" aria-label="Xem lớn ảnh thành phẩm"
-             @onclick:stopPropagation="true" @onkeydown="HandleKeyDown">
-        @if (_fullscreen)
-        {
-            <button type="button" class="btn btn-secondary btn-sm result-viewer-exit-fullscreen"
-                    @onclick="ToggleFullscreen" aria-label="Thoát toàn màn hình">
-                Thoát toàn màn hình
-            </button>
-        }
-        else
-        {
-            <div class="result-viewer-toolbar">
-                <strong>Xem ảnh thành phẩm</strong>
-                <div class="result-viewer-buttons">
-                    <button type="button" class="btn btn-secondary btn-sm" @onclick="ToggleZoom">
-                        @(_zoomed ? "Vừa màn hình" : "Phóng to 200%")
-                    </button>
-                    <button type="button" class="btn btn-secondary btn-sm" @onclick="ToggleFullscreen">
-                        Toàn màn hình
-                    </button>
-                    <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseAsync">Đóng</button>
-                </div>
+             @onkeydown="HandleKeyDown">
+        <div class="result-viewer-toolbar" @onclick:stopPropagation="true">
+            <strong>Xem ảnh thành phẩm</strong>
+            <div class="result-viewer-buttons">
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="ToggleZoom">
+                    @(_zoomed ? "Vừa màn hình" : "Phóng to 200%")
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseAsync">
+                    Đóng xem lớn
+                </button>
             </div>
-        }
+        </div>
         <div class="result-viewer-scroll @(_zoomed ? "is-zoomed" : null)" style="@ViewerStyle">
             @if (Session?.Composed is { } composed)
             {
-                <ImageView Class="result-viewer-image" Key="@composed.FilePath" Alt="Ảnh thành phẩm phóng lớn"
-                           Loader="@(ct => Sessions.GetComposedPreviewAsync(2400, ct))" />
+                <div class="result-viewer-image-hit" @onclick:stopPropagation="true">
+                    <ImageView Class="result-viewer-image" Key="@composed.FilePath" Alt="Ảnh thành phẩm phóng lớn"
+                               Loader="@(ct => Sessions.GetComposedPreviewAsync(2400, ct))" />
+                </div>
             }
         </div>
     </section>
@@ -41,11 +33,11 @@
 @code {
     private ElementReference _viewer;
     private bool _zoomed;
-    private bool _fullscreen;
 
     private string ViewerStyle => Session?.Template?.Canvas is { } canvas
-        ? $"--viewer-aspect: {canvas.WidthPixels} / {canvas.HeightPixels};"
-        : "--viewer-aspect: 2 / 3;";
+        ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"--viewer-aspect: {canvas.WidthPixels} / {canvas.HeightPixels}; --viewer-ratio: {(double)canvas.WidthPixels / canvas.HeightPixels};")
+        : "--viewer-aspect: 2 / 3; --viewer-ratio: 0.666667;";
 
     [Parameter, EditorRequired]
     public EventCallback OnClose { get; set; }
@@ -60,59 +52,25 @@
 
     private void ToggleZoom() => _zoomed = !_zoomed;
 
-    private void ToggleFullscreen()
-    {
-        if (_fullscreen)
-        {
-            Fullscreen.Exit();
-            _fullscreen = false;
-        }
-        else
-        {
-            _zoomed = false;
-            _fullscreen = Fullscreen.Enter();
-        }
-    }
-
     private async Task HandleKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
         if (e.Key == "F11")
         {
-            ToggleFullscreen();
-        }
-        else if (e.Key == "Escape")
-        {
-            if (_fullscreen)
+            // F11 điều khiển cửa sổ của toàn ứng dụng, không chỉ trình xem ảnh.
+            if (Fullscreen.IsFullscreen)
             {
-                ToggleFullscreen();
+                Fullscreen.Exit();
             }
             else
             {
-                await CloseAsync();
+                Fullscreen.Enter();
             }
         }
-    }
-
-    private async Task CloseAsync()
-    {
-        if (_fullscreen)
+        else if (e.Key == "Escape")
         {
-            Fullscreen.Exit();
-            _fullscreen = false;
+            await CloseAsync();
         }
-
-        await OnClose.InvokeAsync();
     }
 
-    protected override ValueTask DisposeCoreAsync()
-    {
-        // SessionScreenBase triển khai IAsyncDisposable; luôn khôi phục cửa sổ nếu component bị hủy.
-        if (_fullscreen)
-        {
-            Fullscreen.Exit();
-            _fullscreen = false;
-        }
-
-        return ValueTask.CompletedTask;
-    }
+    private Task CloseAsync() => OnClose.InvokeAsync();
 }
