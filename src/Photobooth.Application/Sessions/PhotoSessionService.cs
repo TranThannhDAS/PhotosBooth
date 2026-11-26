@@ -730,6 +730,23 @@ public sealed partial class PhotoSessionService
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Xem mọi ảnh gốc đã chụp trong phiên hiện tại, bao gồm ảnh cũ đã bị thay khi chụp lại.
+    /// Tìm bằng PhotoId trong lịch sử phiên; không nhận đường dẫn file từ giao diện.
+    /// </summary>
+    public async Task<byte[]?> GetCapturedPhotoPreviewAsync(Guid photoId, int maxWidthPixels, CancellationToken cancellationToken = default)
+    {
+        var photo = Current?.Photos.FirstOrDefault(p => p.PhotoId == photoId);
+        if (photo is null)
+        {
+            return null;
+        }
+
+        return await _previewRenderer
+            .RenderPreviewAsync(photo.OriginalFilePath, photo.Mirrored, maxWidthPixels, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Ảnh xem trước của thành phẩm (đã có hướng đúng, không lật thêm).</summary>
     public async Task<byte[]?> GetComposedPreviewAsync(int maxWidthPixels, CancellationToken cancellationToken = default)
     {
