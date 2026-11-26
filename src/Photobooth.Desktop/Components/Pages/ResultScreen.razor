@@ -28,32 +28,9 @@
 
                 <aside class="result-photo-sidebar" aria-label="Chỉnh sửa, bộ lọc và in ảnh thành phẩm">
                     <div class="result-photo-tools" aria-label="Công cụ chỉnh ảnh có thể cuộn">
-                        <section class="panel-section">
-                            <h2 class="panel-title">Ảnh đã chụp</h2>
-                            <div class="slot-strip" aria-label="Ảnh nguồn của phiên">
-                                @if (Session is not null)
-                                {
-                                    @for (var i = 0; i < Session.RequiredPhotoCount; i++)
-                                    {
-                                        var position = i;
-                                        var photo = Session.Slots[position];
-                                        <div class="source-thumb">
-                                            <div class="slot-thumb">
-                                                @if (photo is not null)
-                                                {
-                                                    <ImageView Class="slot-thumb-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
-                                                               Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 240, ct))" />
-                                                }
-                                                <span class="slot-thumb-number">@(position + 1)</span>
-                                            </div>
-                                            <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => Retake(position)">
-                                                Chụp lại
-                                            </button>
-                                        </div>
-                                    }
-                                }
-                            </div>
-                        </section>
+                        <CapturedPhotosPanel Preview="_preview" Disabled="@Busy"
+                                             ShowRetake="true" OnRetake="Retake" />
+
                         <EditToolsPanel Preview="_preview" Disabled="@Busy" OnMessage="ShowMessage"
                                         ShowFilters="false" />
 
