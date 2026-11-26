@@ -12,7 +12,7 @@
                 var slotIndex = i;
                 var edited = Session.SlotCrops.ElementAtOrDefault(slotIndex) is not null;
                 <button type="button" class="chip @(edited ? "is-active" : null)"
-                        disabled="@(!CanEdit)" @onclick="() => Preview?.OpenEditor(slotIndex) ?? Task.CompletedTask">
+                        disabled="@(!CanEdit)" @onclick="() => OpenEditorAsync(slotIndex)">
                     @UiText.SlotLabel(slotIndex, template.Slots[slotIndex])
                 </button>
             }
@@ -76,6 +76,25 @@
 
     [Parameter]
     public EventCallback<StatusInfo?> OnMessage { get; set; }
+
+    /// <summary>Đóng hộp tùy chọn trước khi trình crop hiển thị ở màn Thành phẩm.</summary>
+    [Parameter]
+    public EventCallback OnEditOpened { get; set; }
+
+    private async Task OpenEditorAsync(int index)
+    {
+        if (!CanEdit || Preview is null)
+        {
+            return;
+        }
+
+        if (OnEditOpened.HasDelegate)
+        {
+            await OnEditOpened.InvokeAsync();
+        }
+
+        await Preview.OpenEditor(index);
+    }
 
     private bool CanEdit => !Disabled && Session is { Composed: not null, CanEdit: true, State: not PhotoSessionState.Composing };
 
