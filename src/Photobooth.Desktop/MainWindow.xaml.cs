@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Photobooth.Desktop.Components;
 using Photobooth.Desktop.Hosting;
+using Photobooth.Desktop.Platform;
 using Photobooth.Infrastructure.Storage;
 
 namespace Photobooth.Desktop;
