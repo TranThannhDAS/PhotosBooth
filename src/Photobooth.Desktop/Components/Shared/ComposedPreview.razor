@@ -6,10 +6,11 @@
     tọa độ template; chạm vào ô → mở hộp ảnh (Manual Crop cho ô cover, xem trọn ảnh/chụp lại cho ô contain).
     Không có engine dựng ảnh thứ hai.
 *@
-<section class="result-preview" aria-label="Ảnh thành phẩm">
+<section class="result-preview @(OnBackgroundClick.HasDelegate ? "has-zoom-background" : null)"
+         aria-label="Ảnh thành phẩm" @onclick="HandleBackgroundClickAsync">
     @if (Session?.Template is { } template)
     {
-        <div class="canvas-frame" style="@CanvasFrameStyle(template.Canvas)">
+        <div class="canvas-frame" style="@CanvasFrameStyle(template.Canvas)" @onclick:stopPropagation="true">
             <ImageView Class="result-image" Key="@PreviewKey" Alt="Ảnh thành phẩm"
                        Loader="@(ct => Sessions.GetComposedPreviewAsync(PreviewMaxWidth, ct))" />
             @foreach (var element in TemplateLayers.GetRenderOrder(template))
@@ -101,6 +102,21 @@
     /// <summary>Thông báo cho màn hình cha hiển thị (null = xóa thông báo).</summary>
     [Parameter]
     public EventCallback<StatusInfo?> OnMessage { get; set; }
+
+    /// <summary>
+    /// Chỉ màn Thành phẩm truyền callback: chạm vùng trống xung quanh canvas để mở xem lớn.
+    /// Chạm ô trong canvas vẫn ưu tiên chỉnh vùng cắt, không phóng to.
+    /// </summary>
+    [Parameter]
+    public EventCallback OnBackgroundClick { get; set; }
+
+    private async Task HandleBackgroundClickAsync()
+    {
+        if (OnBackgroundClick.HasDelegate && !Disabled && !IsComposing && Session?.Composed is not null)
+        {
+            await OnBackgroundClick.InvokeAsync();
+        }
+    }
 
     private bool IsComposing => Session?.State == PhotoSessionState.Composing;
 

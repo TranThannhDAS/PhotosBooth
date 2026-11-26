@@ -2579,8 +2579,19 @@ body {
     height: 100%;
 }
 
+/* Chỉnh ảnh cuộn riêng; in ảnh luôn nằm dưới và ngoài vùng cuộn. */
 .result-photo-sidebar {
     display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.result-photo-tools {
+    display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: var(--space-3);
     min-width: 0;
@@ -2594,8 +2605,36 @@ body {
     scrollbar-color: #606366 transparent;
 }
 
-.result-photo-sidebar .panel-section {
+.result-photo-tools .panel-section {
     flex: none;
+}
+
+.result-photo-print {
+    flex: none;
+    min-width: 0;
+    max-height: min(43%, 310px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: 0 -7px 20px rgba(0, 0, 0, 0.14);
+}
+
+.result-photo-print > .panel-section {
+    margin: 0;
+    border: 0;
+    border-radius: inherit;
+}
+
+/* Nhận biết khu vực có thể mở xem lớn; không đè lên ô crop. */
+.result-preview.has-zoom-background {
+    cursor: zoom-in;
+}
+
+.result-preview.has-zoom-background .canvas-frame,
+.result-preview.has-zoom-background .slot-hit {
+    cursor: pointer;
 }
 
 
@@ -2758,6 +2797,17 @@ body {
         flex: none;
         overflow: visible;
         padding: 0;
+    }
+
+    .result-photo-tools {
+        flex: none;
+        overflow: visible;
+        padding: 0;
+    }
+
+    .result-photo-print {
+        max-height: none;
+        overflow: visible;
     }
 }
 

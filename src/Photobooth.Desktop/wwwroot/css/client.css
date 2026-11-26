@@ -845,3 +845,58 @@
         grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     }
 }
+
+
+/* Sidebar Thành phẩm luôn hiển thị; giữ nền than và viền tương phản nhẹ. */
+.client-mode .result-photo-sidebar .panel-section {
+    padding: 14px;
+    gap: 12px;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+}
+
+.client-mode .result-photo-sidebar .slot-strip {
+    grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+    gap: 8px;
+}
+
+.client-mode .result-photo-sidebar .source-thumb .btn {
+    min-width: 0;
+}
+
+.client-mode .result-photo-sidebar .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.client-mode .result-photo-stage .result-preview {
+    background: var(--color-stage);
+}
+
+@media (max-width: 960px) {
+    .client-mode .result-photo-sidebar {
+        overflow: visible;
+    }
+}
+
+
+/* Ưu tiên diện tích theo chiều cao cho ảnh 4x6 trên màn hình Kiosk 15.6 inch. */
+.client-mode .screen-result .screen-body {
+    padding: 12px 18px;
+    overflow: hidden;
+    scrollbar-gutter: auto;
+}
+
+.client-mode .screen-result .screen-footer {
+    min-height: 80px;
+    padding: 10px 18px;
+}
+
+.client-mode .result-photo-sidebar .panel-hint {
+    font-size: 0.875rem;
+}
+
+@media (max-width: 900px) {
+    .client-mode .screen-result .screen-body {
+        padding: 12px;
+    }
+}
