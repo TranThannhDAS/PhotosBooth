@@ -94,6 +94,9 @@ Hoàn thành → Phiên mới
 ### 4.5 Xem thành phẩm (`Result`)
 
 - Ưu tiên hiển thị ảnh ghép lớn, giữ đúng tỉ lệ template; không cắt mất mép quan trọng.
+- Màn Thành phẩm ở Kiosk dùng bố cục **photo-first**: ảnh ghép chiếm phần lớn chiều cao còn lại giữa header/footer; không có cột tùy chọn thường trực. Nút **Chỉnh sửa / In ảnh** mở hộp điều khiển, **Lưu ảnh** mở hộp chọn JPEG/PNG/PDF, còn **Phóng to** mở trình xem riêng (vừa màn hình hoặc 200%).
+- Popup chỉnh vùng cắt đóng khi chạm/nhấp vào vùng mờ bên ngoài, tương tự **Hủy**: không tự áp dụng crop chưa xác nhận. Tương tác bên trong popup, đặc biệt kéo/chụm trên ảnh, không được làm đóng popup.
+- Khi đang xuất file hoặc gửi lệnh in, khóa việc đóng popup tùy chọn liên quan để tránh ngắt thao tác. Không thay đổi quy tắc xác nhận in, lưu phiên bản và kết thúc phiên.
 - Hành động chính: **Lưu/Xuất ảnh**; có lựa chọn định dạng JPEG, PNG, PDF.
 - Hiển thị tiến trình và kết quả riêng cho từng định dạng được yêu cầu.
 - Khi xuất thành công, hiển thị thông báo **“Đã lưu ảnh”** và vị trí/tùy chọn mở thư mục khi có thể.
