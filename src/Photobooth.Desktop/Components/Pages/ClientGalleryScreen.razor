@@ -1,0 +1,384 @@
+@implements IDisposable
+@using Photobooth.Application.Events
+@inject ClientEventGalleryService Gallery
+@inject EventWorkspaceService Workspaces
+@inject ILogger<ClientGalleryScreen> Logger
+
+@*
+    Thư viện sự kiện cho chế độ khách (chỉ xem, offline, chỉ hiển thị các phiên của sự kiện hiện tại).
+    Không cho lọc/đổi sự kiện, không chỉnh sửa, xóa, in, xuất hay tác động tới phiên chụp đang có.
+*@
+<div class="screen client-gallery-screen">
+    <header class="screen-header client-gallery-header">
+        <div class="client-gallery-brand">
+            <span class="brand-name">
+                <BrandLogo Size="34" />
+                <span>Photobooth Mini</span>
+            </span>
+            <span class="client-gallery-divider" aria-hidden="true">/</span>
+            <div class="client-gallery-heading">
+                <h1>@(_selectedDetail is null ? "Thư viện sự kiện" : "Chi tiết phiên chụp")</h1>
+                @if (EventDisplayName is not null)
+                {
+                    <span class="client-gallery-event-name">@EventDisplayName</span>
+                }
+            </div>
+        </div>
+
+        <div class="client-gallery-header-actions">
+            @if (_selectedDetail is null)
+            {
+                <button type="button" class="btn btn-ghost btn-sm" disabled="@_loadingList" @onclick="LoadListAsync">
+                    Tải lại
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="BackToList">
+                    Quay lại danh sách
+                </button>
+            }
+            <button type="button" class="btn btn-ghost btn-sm" @onclick="CloseAsync">@BackLabel</button>
+        </div>
+    </header>
+
+    <main class="screen-body client-gallery-body">
+        @if (_selectedDetail is { } detail)
+        {
+            <ClientSessionDetailView @key="detail.SessionId" Detail="detail" />
+        }
+        else
+        {
+            <div class="gallery client-gallery">
+                <div class="client-gallery-bar">
+                    <p class="panel-hint">
+                        @if (_sessions is not null)
+                        {
+                            <span>@_sessions.Count phiên trong sự kiện hiện tại · Chế độ chỉ xem</span>
+                        }
+                        else
+                        {
+                            <span>Chế độ chỉ xem các phiên trong sự kiện hiện tại</span>
+                        }
+                    </p>
+                </div>
+
+                @if (_detailError is not null)
+                {
+                    <StatusMessage Status="@_detailError">
+                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_loadingList" @onclick="LoadListAsync">Tải lại danh sách</button>
+                    </StatusMessage>
+                }
+
+                @if (_loadingList && _sessions is null)
+                {
+                    <div class="center-state">
+                        <span class="spinner" aria-hidden="true"></span>
+                        <p>Đang tải danh sách phiên chụp…</p>
+                    </div>
+                }
+                else if (_listError is not null)
+                {
+                    <StatusMessage Status="@_listError">
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@_loadingList" @onclick="LoadListAsync">Thử lại</button>
+                    </StatusMessage>
+                }
+                else if (_sessions is { Count: 0 })
+                {
+                    <div class="center-state client-gallery-empty">
+                        <p>Sự kiện này chưa có phiên chụp nào.</p>
+                        <p class="panel-hint">Các phiên chụp mới sẽ tự động hiển thị tại đây sau khi lưu.</p>
+                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_loadingList" @onclick="LoadListAsync">Tải lại</button>
+                    </div>
+                }
+                else if (_sessions is not null)
+                {
+                    <div class="gallery-grid client-gallery-grid">
+                        @foreach (var summary in _sessions.Take(_visible))
+                        {
+                            var item = summary;
+                            var isOpening = _loadingDetail && string.Equals(_openingKey, item.SessionKey, StringComparison.OrdinalIgnoreCase);
+                            <button type="button"
+                                    class="gallery-card client-gallery-card @(isOpening ? "is-opening" : null)"
+                                    disabled="@_loadingDetail"
+                                    @onclick="() => OpenSessionAsync(item)">
+                                @if (item.HasThumbnail && item.LatestVersionNumber is { } versionNumber)
+                                {
+                                    <ImageView Class="gallery-thumb client-gallery-thumb"
+                                               Key="@($"{item.EventKey}-{item.SessionKey}-v{versionNumber}")"
+                                               Alt="@($"Ảnh thành phẩm phiên lúc {UiText.LocalTime(item.CreatedAt)}")"
+                                               Loader="@(ct => Gallery.GetSessionThumbnailAsync(item, ThumbnailWidth, ct))" />
+                                }
+                                else
+                                {
+                                    <div class="gallery-thumb client-gallery-thumb-empty" aria-hidden="true">
+                                        <span>@(item.VersionCount == 0 ? "Chưa có thành phẩm" : "Thiếu ảnh thành phẩm")</span>
+                                    </div>
+                                }
+                                <span class="gallery-time">@UiText.LocalTime(item.CreatedAt)</span>
+                                <span class="gallery-meta">
+                                    @(item.TemplateName ?? "Không rõ khung")
+                                </span>
+                                <span class="gallery-meta">
+                                    @item.PhotoCount ảnh gốc
+                                    @if (item.VersionCount > 0)
+                                    {
+                                        <span> · @item.VersionCount phiên bản</span>
+                                    }
+                                    @if (item.PrintJobCount > 0)
+                                    {
+                                        <span> · @item.PrintJobCount lần in</span>
+                                    }
+                                </span>
+                                @if (item.Problem is not null)
+                                {
+                                    <span class="client-gallery-note">@item.Problem</span>
+                                }
+                            </button>
+                        }
+                    </div>
+
+                    @if (_sessions.Count > _visible)
+                    {
+                        <div class="gallery-more">
+                            <button type="button" class="btn btn-secondary" @onclick="ShowMore">
+                                Xem thêm (@(_sessions.Count - _visible))
+                            </button>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </main>
+
+    <footer class="screen-footer">
+        @if (_selectedDetail is not null)
+        {
+            <button type="button" class="btn btn-secondary" @onclick="BackToList">Quay lại danh sách</button>
+        }
+        else
+        {
+            <span class="panel-hint">Chạm vào một phiên để xem ảnh thành phẩm và toàn bộ ảnh gốc.</span>
+        }
+        <button type="button" class="btn btn-primary" @onclick="CloseAsync">@BackLabel</button>
+    </footer>
+</div>
+
+@code {
+    private const int PageSize = 18;
+    private const int ThumbnailWidth = 360;
+
+    private ClientEventInfo? _currentEvent;
+    private IReadOnlyList<ClientSessionSummary>? _sessions;
+    private ClientSessionDetail? _selectedDetail;
+    private int _visible = PageSize;
+    private bool _loadingList;
+    private bool _loadingDetail;
+    private string? _openingKey;
+    private StatusInfo? _listError;
+    private StatusInfo? _detailError;
+    private CancellationTokenSource? _loadCts;
+    private long _requestSeq;
+    private bool _disposed;
+
+    [Parameter]
+    public string BackLabel { get; set; } = "Về màn hình chính";
+
+    [Parameter, EditorRequired]
+    public EventCallback OnClose { get; set; }
+
+    private string? EventDisplayName => _currentEvent?.Name ?? Gallery.GetCurrentEvent()?.Name;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Workspaces.Changed += OnWorkspaceChanged;
+        await LoadListAsync();
+    }
+
+    private async Task LoadListAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var (seq, token) = BeginRequest();
+        _loadingList = true;
+        _loadingDetail = false;
+        _openingKey = null;
+        _listError = null;
+        _detailError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Gallery.ListSessionsAsync(token);
+            if (_disposed || token.IsCancellationRequested || seq != _requestSeq)
+            {
+                return;
+            }
+
+            _currentEvent = result.Event;
+            _sessions = result.Sessions;
+            _visible = PageSize;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (EventWorkspaceUnavailableException ex)
+        {
+            if (_disposed || seq != _requestSeq)
+            {
+                return;
+            }
+
+            Logger.LogWarning(ex, "Không mở được thư viện sự kiện cho khách");
+            _sessions = null;
+            _selectedDetail = null;
+            _listError = new StatusInfo(StatusKind.Error, "Không thể mở thư viện sự kiện lúc này.", ex.Message);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            if (_disposed || seq != _requestSeq)
+            {
+                return;
+            }
+
+            Logger.LogWarning(ex, "Lỗi đọc danh sách phiên trong thư viện sự kiện");
+            _sessions = null;
+            _selectedDetail = null;
+            _listError = new StatusInfo(StatusKind.Error, "Không đọc được danh sách phiên của sự kiện.", "Vui lòng nhấn “Thử lại” hoặc báo nhân viên kiểm tra.");
+        }
+        finally
+        {
+            if (!_disposed && seq == _requestSeq)
+            {
+                _loadingList = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task OpenSessionAsync(ClientSessionSummary summary)
+    {
+        if (_disposed || _loadingDetail)
+        {
+            return;
+        }
+
+        var (seq, token) = BeginRequest();
+        _loadingDetail = true;
+        _openingKey = summary.SessionKey;
+        _detailError = null;
+        StateHasChanged();
+
+        try
+        {
+            var detail = await Gallery.GetSessionDetailAsync(summary.SessionKey, token);
+            if (_disposed || token.IsCancellationRequested || seq != _requestSeq)
+            {
+                return;
+            }
+
+            _currentEvent = new ClientEventInfo(detail.EventKey, detail.EventName);
+            _selectedDetail = detail;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException or InvalidDataException or EventWorkspaceUnavailableException or IOException or UnauthorizedAccessException)
+        {
+            if (_disposed || seq != _requestSeq)
+            {
+                return;
+            }
+
+            Logger.LogWarning(ex, "Không mở được chi tiết phiên {SessionId}", summary.SessionId);
+            _selectedDetail = null;
+            _detailError = new StatusInfo(StatusKind.Error, "Không mở được chi tiết phiên này.", "Phiên có thể không còn khả dụng trong sự kiện hiện tại. Hãy tải lại danh sách.");
+        }
+        finally
+        {
+            if (!_disposed && seq == _requestSeq)
+            {
+                _loadingDetail = false;
+                _openingKey = null;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void BackToList()
+    {
+        CancelPendingRequest();
+        _selectedDetail = null;
+        _detailError = null;
+        _loadingDetail = false;
+        _openingKey = null;
+    }
+
+    private void ShowMore() => _visible += PageSize;
+
+    private async Task CloseAsync()
+    {
+        CancelPendingRequest();
+        await OnClose.InvokeAsync();
+    }
+
+    private void OnWorkspaceChanged(object? sender, EventArgs e)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            // Bỏ ngay kết quả cũ khi sự kiện thay đổi.
+            CancelPendingRequest();
+            _currentEvent = Gallery.GetCurrentEvent();
+            _sessions = null;
+            _selectedDetail = null;
+            _listError = null;
+            _detailError = null;
+            _loadingList = false;
+            _loadingDetail = false;
+            _openingKey = null;
+            StateHasChanged();
+        });
+    }
+
+    private (long Seq, CancellationToken Token) BeginRequest()
+    {
+        CancelPendingRequest();
+        _loadCts = new CancellationTokenSource();
+        return (_requestSeq, _loadCts.Token);
+    }
+
+    private void CancelPendingRequest()
+    {
+        _requestSeq++;
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Workspaces.Changed -= OnWorkspaceChanged;
+        CancelPendingRequest();
+    }
+}

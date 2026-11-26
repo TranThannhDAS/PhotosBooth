@@ -8,7 +8,7 @@
         <div class="page-heading">
             <h1>Chọn khung ảnh</h1>
             <p>
-                Chạm vào một mẫu rồi nhấn “Tiếp tục”.
+                Chạm vào một mẫu rồi nhấn “Tiếp tục”, hoặc nhấp đúp vào mẫu để chọn ngay.
                 @if (_selected is not null)
                 {
                     <span>Với khung “@_selected.Name”, bạn sẽ chụp <strong>@_selected.RequiredPhotoCount ảnh</strong>.</span>
@@ -36,8 +36,9 @@
                             class="template-card @(selected ? "is-selected" : null)"
                             role="radio"
                             aria-checked="@(selected ? "true" : "false")"
-                            disabled="@(!compatible)"
-                            @onclick="() => _selected = item">
+                            disabled="@(!compatible || _continuing)"
+                            @onclick="() => _selected = item"
+                            @ondblclick="() => SelectAndContinue(item)">
                         <ImageView Class="template-preview"
                                    Key="@item.Id"
                                    Alt="@($"Xem trước khung {item.Name}")"
@@ -65,13 +66,14 @@
     </ChildContent>
     <Footer>
         <button type="button" class="btn btn-secondary" @onclick="OnCancel">Quay lại</button>
-        <button type="button" class="btn btn-primary btn-lg" disabled="@(_selected is null)" @onclick="Continue">Tiếp tục</button>
+        <button type="button" class="btn btn-primary btn-lg" disabled="@(_selected is null || _continuing)" @onclick="Continue">Tiếp tục</button>
     </Footer>
 </SessionLayout>
 
 @code {
     private IReadOnlyList<PhotoTemplate>? _templates;
     private PhotoTemplate? _selected;
+    private bool _continuing;
 
     [Parameter, EditorRequired]
     public EventCallback OnCancel { get; set; }
@@ -87,9 +89,27 @@
 
     private void Continue()
     {
-        if (_selected is not null && !Sessions.SelectTemplate(_selected))
+        if (_selected is null || _continuing)
         {
+            return;
+        }
+
+        _continuing = true;
+        if (!Sessions.SelectTemplate(_selected))
+        {
+            _continuing = false;
             Logger.LogWarning("Không chọn được template {TemplateId}", _selected.Id);
         }
+    }
+
+    private void SelectAndContinue(PhotoTemplate template)
+    {
+        if (!Sessions.IsTemplateSupported(template))
+        {
+            return;
+        }
+
+        _selected = template;
+        Continue();
     }
 }

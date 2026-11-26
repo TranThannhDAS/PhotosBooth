@@ -238,7 +238,9 @@ Admin › Khung ảnh
   - `ISessionArchive` → `EventSessionArchive`: cấp thư mục phiên, ghi metadata phiên vào SQLite trong một transaction, ghi snapshot template (file), tạo phiên bản thành phẩm, liệt kê và mở lại phiên (đường dẫn trong database được kiểm tra không thoát khỏi thư mục sự kiện).
   - `PhotoSessionService` (partial `PhotoSessionService.Archive.cs`): ghi metadata sau mỗi ảnh/phiên bản/xuất/in; `ConfirmOutputAsync` (phiên bản bất biến); mở lại, chỉnh sửa lại, hủy/lưu; `RequestPrintAsync`.
   - `PhotoboothStoragePaths` đăng ký thư mục của từng phiên và các Event Workspace đã mở (phạm vi được phép đọc ảnh).
-  - `EventGalleryService` + `AdminAccessService`: thư viện ảnh chỉ dùng được trong Admin (PIN), không mở được sau khi đã vào Kiosk.
+  - `EventGalleryService` + `AdminAccessService`: thư viện ảnh quản trị (lọc nhiều sự kiện, chỉnh sửa/xuất/in lại) chỉ dùng được trong Admin (PIN), không mở được sau khi đã vào Kiosk.
+  - `ClientEventGalleryService` (quyết định mới của chủ sản phẩm): thư viện sự kiện chỉ-xem (read-only) cho Client Mode, giới hạn chặt trong sự kiện hiện tại qua `ISessionArchive` + `IImagePreviewRenderer`, không mở khóa Admin, không gọi `PhotoSessionService.OpenArchivedSession` và hoạt động hoàn toàn offline.
+  - `ArchivedSession.PersistedState` giữ trạng thái kết thúc đã lưu để thư viện Client phân biệt phiên hoàn thành/hủy; `ArchivedSession.Session.State` vẫn phục vụ luồng mở lại để chỉnh sửa của Admin. Không đổi schema database.
 ### 9.1 Lưu trữ metadata bằng database (đã chốt 23/11/2026)
 
 | | Desktop | Cloud |

@@ -4,24 +4,29 @@
 @inject ILogger<CropEditor> Logger
 
 @*
-    Chỉnh vùng cắt cho MỘT ô ảnh (Manual Crop). Bản nháp chỉ nằm trong component này:
-    "Áp dụng" mới gửi về phiên; "Hủy"/đóng thì bỏ toàn bộ thay đổi dang dở.
-    Hình trong khung chỉ là xem trước tạm (CSS); thành phẩm được Photo Composer render lại sau khi áp dụng.
+    Hộp xem/chỉnh MỘT ô ảnh. Với ô fit=cover: chỉnh vùng cắt (Manual Crop), bản nháp chỉ nằm trong
+    component này ("Áp dụng" mới gửi về phiên; "Hủy"/đóng thì bỏ thay đổi dang dở) và thành phẩm được
+    Photo Composer render lại sau khi áp dụng. Với ô fit=contain: chỉ hiển thị trọn ảnh đúng tỉ lệ
+    (object-fit: contain) kèm nút chụp lại trong phiên khách, không bật Manual Crop.
 *@
 <div class="dialog-backdrop">
-    <div class="dialog crop-dialog" role="dialog" aria-modal="true" aria-labelledby="crop-title">
-        <h2 id="crop-title" class="dialog-title">Chỉnh ảnh — @SlotLabel</h2>
-        <p class="dialog-message">Kéo ảnh bằng một ngón tay để đổi vị trí. Chụm hoặc mở hai ngón tay (hoặc dùng nút −/+) để thu nhỏ, phóng to.</p>
+    <div class="dialog crop-dialog @(IsCropSupported ? null : "is-contain")" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+        <h2 id="crop-title" class="dialog-title">@(IsCropSupported ? "Chỉnh ảnh" : "Xem ảnh") — @SlotLabel</h2>
+        <p class="dialog-message">
+            @(IsCropSupported
+                ? "Kéo ảnh bằng một ngón tay để đổi vị trí. Chụm hoặc mở hai ngón tay (hoặc dùng nút −/+) để thu nhỏ, phóng to."
+                : "Ô này hiển thị trọn ảnh nên không hỗ trợ kéo hoặc phóng to vùng cắt.")
+        </p>
 
         <div class="crop-stage">
-            <div @ref="_viewport" class="crop-viewport" style="@ViewportStyle" aria-label="Vùng ảnh hiển thị trong ô">
-                <img @ref="_image" class="crop-image" alt="" draggable="false" />
+            <div @ref="_viewport" class="crop-viewport @(IsCropSupported ? null : "is-contain")" style="@ViewportStyle" aria-label="Vùng ảnh hiển thị trong ô">
+                <img @ref="_image" class="crop-image @(IsCropSupported ? null : "is-contain") @(_loadState != LoadState.Ready ? "is-hidden" : null)" alt="" draggable="false" />
                 @if (_loadState != LoadState.Ready)
                 {
                     <div class="image-view-overlay @(_loadState == LoadState.Failed ? "image-view-error" : null)">
                         @if (_loadState == LoadState.Failed)
                         {
-                            <span>Không tải được ảnh để chỉnh.</span>
+                            <span>@(IsCropSupported ? "Không tải được ảnh để chỉnh." : "Không tải được ảnh để xem.")</span>
                         }
                         else
                         {
@@ -32,24 +37,43 @@
             </div>
         </div>
 
-        <div class="crop-controls">
-            <div class="crop-zoom">
-                <button type="button" class="btn btn-secondary crop-step" aria-label="Thu nhỏ"
-                        disabled="@(_loadState != LoadState.Ready || ZoomPercent <= ZoomPercentMin)" @onclick="() => StepZoomAsync(-ZoomStepPercent)">−</button>
-                <input type="range" aria-label="Mức phóng to" min="@ZoomPercentMin" max="@ZoomPercentMax" step="1" value="@ZoomPercent"
-                       disabled="@(_loadState != LoadState.Ready)" @oninput="OnZoomInputAsync" aria-valuetext="@($"{ZoomPercent}%")" />
-                <button type="button" class="btn btn-secondary crop-step" aria-label="Phóng to"
-                        disabled="@(_loadState != LoadState.Ready || ZoomPercent >= ZoomPercentMax)" @onclick="() => StepZoomAsync(ZoomStepPercent)">+</button>
-                <output>@ZoomPercent%</output>
+        @if (IsCropSupported)
+        {
+            <div class="crop-controls">
+                <div class="crop-zoom">
+                    <button type="button" class="btn btn-secondary crop-step" aria-label="Thu nhỏ"
+                            disabled="@(_loadState != LoadState.Ready || ZoomPercent <= ZoomPercentMin)" @onclick="() => StepZoomAsync(-ZoomStepPercent)">−</button>
+                    <input type="range" aria-label="Mức phóng to" min="@ZoomPercentMin" max="@ZoomPercentMax" step="1" value="@ZoomPercent"
+                           disabled="@(_loadState != LoadState.Ready)" @oninput="OnZoomInputAsync" aria-valuetext="@($"{ZoomPercent}%")" />
+                    <button type="button" class="btn btn-secondary crop-step" aria-label="Phóng to"
+                            disabled="@(_loadState != LoadState.Ready || ZoomPercent >= ZoomPercentMax)" @onclick="() => StepZoomAsync(ZoomStepPercent)">+</button>
+                    <output>@ZoomPercent%</output>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" disabled="@(_loadState != LoadState.Ready || _isAuto)" @onclick="ResetToAutoAsync">
+                    Khôi phục Auto Crop
+                </button>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" disabled="@(_loadState != LoadState.Ready || _isAuto)" @onclick="ResetToAutoAsync">
-                Khôi phục Auto Crop
-            </button>
-        </div>
+        }
 
         <div class="dialog-actions">
-            <button type="button" class="btn btn-secondary" @onclick="OnCancel">Hủy</button>
-            <button type="button" class="btn btn-primary" disabled="@(_loadState != LoadState.Ready)" @onclick="ApplyAsync">Áp dụng</button>
+            @if (OnRetake.HasDelegate)
+            {
+                <button type="button" class="btn btn-secondary crop-retake"
+                        disabled="@(_closing || RetakeDisabled)"
+                        aria-label="@($"Chụp lại ảnh {Slot.PhotoIndex + 1}")"
+                        @onclick="RetakeAsync">
+                    Chụp lại ảnh @(Slot.PhotoIndex + 1)
+                </button>
+            }
+            @if (IsCropSupported)
+            {
+                <button type="button" class="btn btn-secondary" disabled="@_closing" @onclick="CancelAsync">Hủy</button>
+                <button type="button" class="btn btn-primary" disabled="@(_closing || _loadState != LoadState.Ready)" @onclick="ApplyAsync">Áp dụng</button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-primary" disabled="@_closing" @onclick="CancelAsync">Đóng</button>
+            }
         </div>
     </div>
 </div>
@@ -79,6 +103,7 @@
 
     // true = bản nháp đang là Auto Crop của template (áp dụng sẽ xóa chỉnh thủ công của ô).
     private bool _isAuto;
+    private bool _closing;
     private bool _disposed;
 
     /// <summary>Template của phiên (snapshot).</summary>
@@ -104,7 +129,17 @@
     [Parameter, EditorRequired]
     public EventCallback OnCancel { get; set; }
 
+    /// <summary>Chụp lại ảnh nguồn của ô đang chỉnh (chỉ truyền khi phiên khách được phép chụp lại).</summary>
+    [Parameter]
+    public EventCallback OnRetake { get; set; }
+
+    /// <summary>Khóa nút chụp lại khi màn hình cha đang bận hoặc phiên chưa sẵn sàng.</summary>
+    [Parameter]
+    public bool RetakeDisabled { get; set; }
+
     private TemplateSlot Slot => Template.Slots[SlotIndex];
+
+    private bool IsCropSupported => SlotCrop.IsSupported(Slot);
 
     private string SlotLabel => UiText.SlotLabel(SlotIndex, Slot);
 
@@ -117,6 +152,15 @@
 
     protected override void OnInitialized()
     {
+        if (!IsCropSupported)
+        {
+            _zoom = SlotCrop.MinZoom;
+            _focalX = Slot.FocalPoint.X;
+            _focalY = Slot.FocalPoint.Y;
+            _isAuto = true;
+            return;
+        }
+
         var initial = Confirmed ?? SlotCrop.AutoFor(Slot);
         (_zoom, _focalX, _focalY) = (initial.Zoom, initial.FocalX, initial.FocalY);
         _isAuto = Confirmed is null;
@@ -133,7 +177,12 @@
         {
             // Ảnh xem trước của ảnh nguồn đã lật đúng hướng khách thấy lúc chụp — cùng hệ tọa độ với SlotCrop.
             var bytes = await Sessions.GetSlotPreviewAsync(Photo.Position, 1600, _cts.Token);
-            if (bytes is null || _disposed)
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (bytes is null || bytes.Length == 0)
             {
                 _loadState = LoadState.Failed;
                 return;
@@ -142,6 +191,18 @@
             using (var stream = new DotNetStreamReference(new MemoryStream(bytes)))
             {
                 await JS.InvokeVoidAsync("photoboothPhotoView.show", _cts.Token, _image, stream, "image/jpeg");
+            }
+
+            if (_disposed)
+            {
+                return;
+            }
+
+            // Ô contain luôn hiển thị trọn ảnh qua CSS object-fit: contain, không gắn JS crop editor.
+            if (!IsCropSupported)
+            {
+                _loadState = LoadState.Ready;
+                return;
             }
 
             _selfReference = DotNetObjectReference.Create(this);
@@ -173,7 +234,7 @@
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or CompositionException or JSException or JSDisconnectedException)
         {
-            Logger.LogWarning(ex, "Không mở được trình chỉnh vùng cắt cho ô #{SlotIndex}", SlotIndex);
+            Logger.LogWarning(ex, "Không mở được hộp ảnh cho ô #{SlotIndex}", SlotIndex);
             _loadState = LoadState.Failed;
         }
         finally
@@ -189,7 +250,7 @@
     [JSInvokable]
     public void OnCropChanged(double zoom, double focalX, double focalY)
     {
-        if (_disposed)
+        if (_disposed || !IsCropSupported)
         {
             return;
         }
@@ -252,13 +313,63 @@
         }
     }
 
-    private Task ApplyAsync()
+    private async Task ApplyAsync()
     {
-        // Kẹp về miền hợp lệ để sai số dấu phẩy động từ JS không làm crop bị từ chối.
-        SlotCrop? crop = _isAuto
-            ? null
-            : new SlotCrop(Math.Clamp(_zoom, SlotCrop.MinZoom, SlotCrop.MaxZoom), Math.Clamp(_focalX, 0, 1), Math.Clamp(_focalY, 0, 1));
-        return OnApply.InvokeAsync(crop);
+        if (_disposed || _closing || !IsCropSupported || _loadState != LoadState.Ready)
+        {
+            return;
+        }
+
+        _closing = true;
+        try
+        {
+            // Kẹp về miền hợp lệ để sai số dấu phẩy động từ JS không làm crop bị từ chối.
+            SlotCrop? crop = _isAuto
+                ? null
+                : new SlotCrop(Math.Clamp(_zoom, SlotCrop.MinZoom, SlotCrop.MaxZoom), Math.Clamp(_focalX, 0, 1), Math.Clamp(_focalY, 0, 1));
+            await OnApply.InvokeAsync(crop);
+        }
+        finally
+        {
+            _closing = false;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_disposed || _closing)
+        {
+            return;
+        }
+
+        _closing = true;
+        try
+        {
+            await OnCancel.InvokeAsync();
+        }
+        finally
+        {
+            _closing = false;
+        }
+    }
+
+    private async Task RetakeAsync()
+    {
+        if (_disposed || _closing || RetakeDisabled || !OnRetake.HasDelegate)
+        {
+            return;
+        }
+
+        _closing = true;
+        try
+        {
+            // Bỏ bản nháp crop chưa áp dụng: đóng hộp và chuyển sang chụp lại, không gọi OnApply.
+            await OnRetake.InvokeAsync();
+        }
+        finally
+        {
+            _closing = false;
+        }
     }
 
     private void Store(EditorState state) => (_zoom, _focalX, _focalY) = (state.Zoom, state.Fx, state.Fy);

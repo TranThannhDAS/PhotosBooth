@@ -47,6 +47,20 @@ public static class UiText
         _ => status.ToString(),
     };
 
+    public static string SessionStateLabel(PhotoSessionState state, bool hasOutputVersion) => state switch
+    {
+        PhotoSessionState.Completed => "Đã hoàn thành",
+        PhotoSessionState.Ready when hasOutputVersion => "Đã có thành phẩm",
+        PhotoSessionState.Ready => "Chưa có thành phẩm",
+        PhotoSessionState.Reviewing => "Chưa ghép thành phẩm",
+        PhotoSessionState.Composing => "Đang ghép ảnh",
+        PhotoSessionState.Capturing => "Đang chụp",
+        PhotoSessionState.Previewing => "Đang xem trước",
+        PhotoSessionState.Cancelled => "Đã hủy",
+        PhotoSessionState.Created => "Mới tạo",
+        _ => state.ToString(),
+    };
+
     public static string LocalTime(DateTimeOffset value) =>
         value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture);
 

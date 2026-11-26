@@ -1,5 +1,5 @@
 @* Khung chung cho các màn hình trong phiên: thương hiệu, chỉ báo bước, nút hủy phiên, nội dung và thanh hành động. *@
-<div class="screen">
+<div class="screen @(FullscreenContent ? "is-fullscreen-content" : null)">
     <header class="screen-header">
         <span class="brand-name">
             <BrandLogo Size="34" />
@@ -18,7 +18,19 @@
         </ol>
         @if (OnCancel.HasDelegate)
         {
-            <button type="button" class="btn btn-ghost" disabled="@CancelDisabled" @onclick="RequestCancelAsync">Hủy phiên</button>
+            <button type="button" class="btn btn-ghost @(CancelAsClose ? "capture-close" : null)"
+                    aria-label="@(CancelAsClose ? "Thoát phiên chụp" : "Hủy phiên")"
+                    title="@(CancelAsClose ? "Thoát phiên chụp" : null)"
+                    disabled="@CancelDisabled" @onclick="RequestCancelAsync">
+                @if (CancelAsClose)
+                {
+                    <span aria-hidden="true">×</span>
+                }
+                else
+                {
+                    <span>Hủy phiên</span>
+                }
+            </button>
         }
     </header>
 
@@ -62,6 +74,13 @@
 
     [Parameter]
     public bool CancelDisabled { get; set; }
+
+    [Parameter]
+    public bool CancelAsClose { get; set; }
+
+    /// <summary>Ẩn thanh tiêu đề và chân trang để vùng nội dung phủ toàn bộ cửa sổ.</summary>
+    [Parameter]
+    public bool FullscreenContent { get; set; }
 
     /// <summary>Hỏi xác nhận trước khi hủy (khi đã có ảnh).</summary>
     [Parameter]

@@ -1,8 +1,8 @@
 @inherits SessionScreenBase
 @* Logic của màn hình nằm ở CaptureScreen.razor.cs. *@
-<SessionLayout Step="1" OnCancel="OnCancel" CancelDisabled="@IsCapturing" ConfirmCancel="@(Session?.Photos.Count > 0)">
+<SessionLayout Step="1" OnCancel="ExitCaptureAsync" CancelDisabled="@_exiting" CancelAsClose="true" FullscreenContent="@IsCapturing">
     <ChildContent>
-        <div class="capture-layout">
+        <div class="capture-layout @(IsCapturing ? "is-capturing" : null)">
             <section class="stage" aria-label="Khung hình camera">
                 @* Video luôn nằm trong DOM để ElementReference ổn định; chỉ ẩn/hiện bằng CSS. *@
                 <video @ref="_videoElement"
@@ -71,10 +71,36 @@
                             break;
                     }
                 }
+                else if (IsCapturing)
+                {
+                    <div class="stage-badge">@ProgressTitle</div>
+                }
+
+                @if (IsCapturing)
+                {
+                    <button type="button"
+                            class="btn btn-ghost capture-close stage-close"
+                            aria-label="Thoát phiên chụp"
+                            title="Thoát phiên chụp"
+                            disabled="@_exiting"
+                            @onclick="ExitCaptureAsync">
+                        <span aria-hidden="true">×</span>
+                    </button>
+
+                    <div class="stage-capture-actions">
+                        <button type="button"
+                                class="btn btn-secondary stage-stop-btn"
+                                disabled="@_exiting"
+                                @onclick="CancelCapture">
+                            @(_exiting ? "Đang thoát…" : "Dừng chụp")
+                        </button>
+                    </div>
+                }
             </section>
 
             <aside class="side-panel" aria-label="Điều khiển chụp ảnh">
                 <div class="capture-progress">
+                    <span class="capture-eyebrow">Khoảnh khắc của bạn</span>
                     <span class="capture-progress-title">@ProgressTitle</span>
                     <span class="capture-progress-detail">Khung: @Session?.Template?.Name</span>
                 </div>
@@ -100,7 +126,7 @@
                 <StatusMessage Status="@CameraStatus">
                     @if (_cameraState is CameraUiState.Failed or CameraUiState.Off)
                     {
-                        <button type="button" class="btn btn-secondary" @onclick="StartCameraAsync">Thử lại</button>
+                        <button type="button" class="btn btn-secondary" disabled="@_exiting" @onclick="StartCameraAsync">Thử lại</button>
                         @if (_cameraError == CameraError.PermissionDenied)
                         {
                             <button type="button" class="btn btn-ghost" @onclick="OpenCameraSettings">Mở cài đặt camera</button>
@@ -114,7 +140,7 @@
                 }
 
                 <button type="button" class="toggle @(Mirror ? "is-on" : null)" aria-pressed="@(Mirror ? "true" : "false")"
-                        disabled="@IsCapturing" @onclick="ToggleMirror">
+                        disabled="@(IsCapturing || _exiting)" @onclick="ToggleMirror">
                     <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                     <span>Lật ảnh như gương</span>
                 </button>
@@ -124,15 +150,15 @@
     <Footer>
         @if (IsCapturing)
         {
-            <button type="button" class="btn btn-secondary" @onclick="CancelCapture">Dừng chụp</button>
+            <button type="button" class="btn btn-secondary" disabled="@_exiting" @onclick="CancelCapture">Dừng chụp</button>
         }
         else if (Session?.IsRetake == true)
         {
-            <button type="button" class="btn btn-secondary" @onclick="KeepOldPhotosAsync">Giữ ảnh cũ</button>
+            <button type="button" class="btn btn-secondary" disabled="@_exiting" @onclick="KeepOldPhotosAsync">Giữ ảnh cũ</button>
         }
         else if (Session?.Photos.Count == 0)
         {
-            <button type="button" class="btn btn-secondary" @onclick="ChangeTemplateAsync">Đổi khung ảnh</button>
+            <button type="button" class="btn btn-secondary" disabled="@_exiting" @onclick="ChangeTemplateAsync">Đổi khung ảnh</button>
         }
         else
         {

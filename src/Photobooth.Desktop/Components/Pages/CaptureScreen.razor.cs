@@ -24,6 +24,8 @@ public sealed partial class CaptureScreen : SessionScreenBase
     private CameraError? _cameraError;
     private CaptureProgress? _progress;
     private StatusInfo? _message;
+    private Task? _captureTask;
+    private bool _exiting;
 
     private enum CameraUiState
     {
@@ -54,12 +56,18 @@ public sealed partial class CaptureScreen : SessionScreenBase
     private bool CanCapture =>
         Session is { State: PhotoSessionState.Previewing, PendingPositions.Count: > 0 }
         && _cameraState == CameraUiState.Ready
-        && _captureCts is null;
+        && _captureCts is null
+        && !_exiting;
 
     private string PrimaryLabel
     {
         get
         {
+            if (_exiting)
+            {
+                return "Đang thoát…";
+            }
+
             if (IsCapturing || Session is null)
             {
                 return "Đang chụp…";
@@ -155,7 +163,7 @@ public sealed partial class CaptureScreen : SessionScreenBase
 
     private async Task StartCameraAsync()
     {
-        if (IsDisposed || _cameraState == CameraUiState.Connecting)
+        if (IsDisposed || _exiting || _cameraState == CameraUiState.Connecting)
         {
             return;
         }
@@ -203,13 +211,19 @@ public sealed partial class CaptureScreen : SessionScreenBase
         StateHasChanged();
     }
 
-    private async Task CaptureAsync()
+    private Task CaptureAsync()
     {
         if (!CanCapture)
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        _captureTask = CaptureCoreAsync();
+        return _captureTask;
+    }
+
+    private async Task CaptureCoreAsync()
+    {
         _message = null;
         _captureCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
         var progress = new Progress<CaptureProgress>(value => _ = InvokeAsync(() =>
@@ -226,7 +240,7 @@ public sealed partial class CaptureScreen : SessionScreenBase
         try
         {
             var result = await Sessions.CaptureSequenceAsync(Camera, progress, _captureCts.Token);
-            if (result.Succeeded && Sessions.Current?.State == PhotoSessionState.Reviewing)
+            if (result.Succeeded && !_exiting && Sessions.Current?.State == PhotoSessionState.Reviewing)
             {
                 // Đủ ảnh theo template → tự ghép và chuyển sang màn xem thành phẩm (Photo Preview).
                 // Ghép lỗi thì phiên ở lại màn xem lại với thông báo và nút "Ghép ảnh" để thử lại.
@@ -267,6 +281,52 @@ public sealed partial class CaptureScreen : SessionScreenBase
     }
 
     private void CancelCapture() => _captureCts?.Cancel();
+
+    private async Task ExitCaptureAsync()
+    {
+        if (_exiting || IsDisposed)
+        {
+            return;
+        }
+
+        _exiting = true;
+        var sessionId = Session?.SessionId;
+        try
+        {
+            _captureCts?.Cancel();
+            // Khung hình đã lấy phải được ghi và cập nhật metadata trước khi kết thúc phiên.
+            if (_captureTask is not null)
+            {
+                await _captureTask;
+            }
+
+            // Phiên có thể vừa chuyển sang xem lại ở ảnh cuối; vẫn hoàn tất yêu cầu thoát,
+            // nhưng không được kết thúc một phiên mới do thao tác khác tạo ra.
+            if (Sessions.Current?.SessionId != sessionId)
+            {
+                return;
+            }
+
+            await Camera.StopAsync();
+            _cameraState = CameraUiState.Off;
+            if (Sessions.Current?.SessionId == sessionId)
+            {
+                await OnCancel.InvokeAsync();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Không thoát được phiên chụp");
+            if (!IsDisposed)
+            {
+                _message = new StatusInfo(StatusKind.Error, "Chưa thoát được phiên chụp.", "Ảnh đã chụp vẫn được giữ. Vui lòng thử lại.");
+            }
+        }
+        finally
+        {
+            _exiting = false;
+        }
+    }
 
     private void ToggleMirror() => Sessions.SetMirror(!Mirror);
 

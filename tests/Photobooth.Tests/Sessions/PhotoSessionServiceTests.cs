@@ -327,6 +327,56 @@ public sealed class PhotoSessionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CancelDuringSave_WaitsForOriginalThenEndingSessionKeepsPhoto()
+    {
+        var store = new PausedOriginalPhotoStore(new LocalOriginalPhotoStore(_paths));
+        var service = CreatePreviewingService(store: store);
+        using var cts = new CancellationTokenSource();
+        var capture = service.CaptureSequenceAsync(_camera, null, cts.Token);
+        try
+        {
+            await store.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await cts.CancelAsync();
+            Assert.False(capture.IsCompleted);
+            Assert.Equal(PhotoSessionState.Capturing, service.Current!.State);
+        }
+        finally
+        {
+            store.Release.TrySetResult();
+        }
+
+        var result = await capture.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(CaptureFailureReason.Cancelled, result.Failure);
+        Assert.Equal(1, result.CapturedCount);
+        var photo = Assert.Single(service.Current!.Photos);
+        Assert.Equal(photo, service.Current.Slots[0]);
+        Assert.True(File.Exists(photo.OriginalFilePath));
+
+        service.EndCurrentSession();
+
+        Assert.Equal(PhotoSessionState.Cancelled, service.Current.State);
+        Assert.Equal(photo, Assert.Single(service.Current.Photos));
+        Assert.True(File.Exists(photo.OriginalFilePath));
+    }
+
+    private sealed class PausedOriginalPhotoStore(IOriginalPhotoStore inner) : IOriginalPhotoStore
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<StoredOriginal> SaveOriginalAsync(Guid sessionId, Guid photoId, int sequence,
+            ReadOnlyMemory<byte> jpegData, CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return await inner.SaveOriginalAsync(sessionId, photoId, sequence, jpegData, cancellationToken);
+        }
+
+        public Task<byte[]> ReadOriginalAsync(string filePath, CancellationToken cancellationToken = default) =>
+            inner.ReadOriginalAsync(filePath, cancellationToken);
+    }
+
+    [Fact]
     public async Task CaptureSequence_InvalidImage_IsNotCounted()
     {
         var service = CreatePreviewingService();
@@ -435,6 +485,212 @@ public sealed class PhotoSessionServiceTests : IDisposable
 
         Assert.False(service.BeginRetake(0));
         Assert.False(service.ReturnToReview());
+    }
+
+    [Fact]
+    public async Task RetakeSharedPhoto_FromReadyWithCrops_ResetsOnlyAffectedSlotsAndKeepsOtherCrops()
+    {
+        var service = CreateService();
+        service.StartNewSession();
+        var template = TestTemplates.WithPhotoIndexes(0, 1, 0);
+        Assert.True(service.SelectTemplate(template));
+        service.MarkPreviewReady();
+        Assert.True((await service.CaptureSequenceAsync(_camera, null)).Succeeded);
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ComposeAsync(ColorFilter.None));
+
+        var cropSlot0 = new SlotCrop(1.5, 0.25, 0.4);
+        var cropSlot1 = new SlotCrop(2.0, 0.6, 0.35);
+        var cropSlot2 = new SlotCrop(1.8, 0.75, 0.65);
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ApplySlotCropAsync(0, cropSlot0));
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ApplySlotCropAsync(1, cropSlot1));
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ApplySlotCropAsync(2, cropSlot2));
+
+        var oldPhoto0 = service.Current!.Slots[0]!;
+        var oldPhoto1 = service.Current.Slots[1]!;
+        var composedBefore = service.Current.Composed!;
+
+        // Chọn chụp lại từ ô 2 (SlotIndex = 2 → PhotoIndex = 0, không truyền SlotIndex = 2).
+        var photoIndex = service.Current.Template!.Slots[2].PhotoIndex;
+        Assert.Equal(0, photoIndex);
+        Assert.True(service.BeginRetake(photoIndex));
+
+        // Trước khi ảnh mới lưu thành công: ảnh cũ, crop đã xác nhận và thành phẩm cũ vẫn được giữ.
+        Assert.Equal(PhotoSessionState.Previewing, service.Current!.State);
+        Assert.True(service.Current.IsRetake);
+        Assert.Equal([0], service.Current.PendingPositions);
+        Assert.Same(oldPhoto0, service.Current.Slots[0]);
+        Assert.Equal([cropSlot0, cropSlot1, cropSlot2], service.Current.SlotCrops);
+        Assert.Same(composedBefore, service.Current.Composed);
+
+        // Chụp lại thành công rồi ghép lại: ô 0 và ô 2 (dùng ảnh 0) về Auto Crop, ô 1 giữ crop.
+        var retake = await service.CaptureSequenceAsync(_camera, null);
+        Assert.True(retake.Succeeded);
+        Assert.Equal(1, retake.CapturedCount);
+        Assert.Equal(PhotoSessionState.Reviewing, service.Current!.State);
+        Assert.NotEqual(oldPhoto0, service.Current.Slots[0]);
+        Assert.Same(oldPhoto1, service.Current.Slots[1]);
+        Assert.True(File.Exists(oldPhoto0.OriginalFilePath));
+        Assert.Equal(3, service.Current.Photos.Count);
+        Assert.Equal([null, cropSlot1, null], service.Current.SlotCrops);
+        Assert.Null(service.Current.Composed);
+
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ComposeAsync());
+        Assert.Equal(PhotoSessionState.Ready, service.Current!.State);
+        Assert.NotNull(service.Current.Composed);
+        Assert.Equal([null, cropSlot1, null], service.Current.Composed!.SlotCrops);
+        Assert.Equal([0, 1, 0], service.Current.Template!.Slots.Select(s => s.PhotoIndex));
+    }
+
+    [Fact]
+    public async Task RetakeSingle_FailedOrKeptOld_PreservesOldPhotoAndConfirmedCrops()
+    {
+        var service = await CreateReviewingServiceAsync();
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ComposeAsync(ColorFilter.None));
+
+        var crop0 = new SlotCrop(1.4, 0.3, 0.5);
+        var crop1 = new SlotCrop(1.9, 0.7, 0.4);
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ApplySlotCropAsync(0, crop0));
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ApplySlotCropAsync(1, crop1));
+        var oldPhoto1 = service.Current!.Slots[1]!;
+        var oldComposed = service.Current.Composed!;
+
+        Assert.True(service.BeginRetake(1));
+        _camera.NextFrame = _ => throw new CameraException(CameraError.CaptureFailed, "lỗi camera");
+        var failed = await service.CaptureSequenceAsync(_camera, null);
+
+        Assert.False(failed.Succeeded);
+        Assert.Equal(0, failed.CapturedCount);
+        Assert.Equal(PhotoSessionState.Previewing, service.Current!.State);
+        Assert.Same(oldPhoto1, service.Current.Slots[1]);
+        Assert.Equal([crop0, crop1, null, null], service.Current.SlotCrops);
+
+        // Khách chọn "Giữ ảnh cũ": giữ nguyên ảnh cũ, crop đã xác nhận và thành phẩm cũ.
+        Assert.True(service.ReturnToReview());
+        Assert.Equal(PhotoSessionState.Reviewing, service.Current!.State);
+        Assert.Empty(service.Current.PendingPositions);
+        Assert.Same(oldPhoto1, service.Current.Slots[1]);
+        Assert.Equal([crop0, crop1, null, null], service.Current.SlotCrops);
+
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ComposeAsync());
+        Assert.Equal(PhotoSessionState.Ready, service.Current!.State);
+        Assert.Equal(oldComposed.FilePath, service.Current.Composed!.FilePath);
+    }
+
+    [Fact]
+    public async Task BeginRetake_RejectsOutOfRangePositionArchivedAndComposing()
+    {
+        var paused = new PausedComposer(new SkiaPhotoComposer(_paths, NullLogger<SkiaPhotoComposer>.Instance));
+        var service = CreateService(composer: paused);
+        service.StartNewSession();
+        Assert.True(service.SelectTemplate(TestTemplates.WithPhotoIndexes(0, 1, 0)));
+        service.MarkPreviewReady();
+        Assert.True((await service.CaptureSequenceAsync(_camera, null)).Succeeded);
+
+        // Khi đang ghép ảnh (Composing): từ chối BeginRetake.
+        var composeTask = service.ComposeAsync(ColorFilter.None);
+        try
+        {
+            await paused.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(PhotoSessionState.Composing, service.Current!.State);
+            Assert.False(service.BeginRetake(0));
+        }
+        finally
+        {
+            paused.Release.TrySetResult();
+        }
+
+        Assert.Equal(CompositionOutcome.Succeeded, await composeTask.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(PhotoSessionState.Ready, service.Current!.State);
+
+        // Vị trí âm hoặc vượt số ảnh nguồn (ví dụ truyền nhầm SlotIndex = 2 cho template chỉ có 2 ảnh nguồn).
+        Assert.False(service.BeginRetake(-1));
+        Assert.False(service.BeginRetake(2));
+        Assert.Equal(PhotoSessionState.Ready, service.Current!.State);
+
+        // Phiên Admin mở lại (IsArchived = true): không cho chụp lại.
+        var archivedSnapshot = service.Current!;
+        Assert.True(await service.CompleteSessionAsync());
+        Assert.True(service.OpenArchivedSession(new ArchivedSession("archived-1", archivedSnapshot, null)));
+        Assert.True(service.Current!.IsArchived);
+        Assert.False(service.BeginRetake(0));
+        Assert.Equal(PhotoSessionState.Ready, service.Current.State);
+    }
+
+    [Fact]
+    public async Task RetakeContainSlotPhoto_UsesPhotoIndex_KeepsContainFitAndUnaffectedCoverCrops()
+    {
+        var baseTemplate = TestTemplates.WithPhotoIndexes(0, 1, 1);
+        var mixedTemplate = baseTemplate with
+        {
+            Slots =
+            [
+                baseTemplate.Slots[0] with { Fit = ImageFit.Cover },
+                baseTemplate.Slots[1] with { Fit = ImageFit.Contain },
+                baseTemplate.Slots[2] with { Fit = ImageFit.Cover },
+            ],
+        };
+
+        var service = CreateService();
+        service.StartNewSession();
+        Assert.True(service.SelectTemplate(mixedTemplate));
+        service.MarkPreviewReady();
+        Assert.True((await service.CaptureSequenceAsync(_camera, null)).Succeeded);
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ComposeAsync(ColorFilter.None));
+
+        var cropCover0 = new SlotCrop(1.6, 0.3, 0.4);
+        var cropCover2 = new SlotCrop(1.9, 0.7, 0.6);
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ApplySlotCropAsync(0, cropCover0));
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ApplySlotCropAsync(2, cropCover2));
+
+        // Ô contain không hỗ trợ Manual Crop: áp crop bị từ chối và không làm mất crop của các ô cover.
+        var containSlot = service.Current!.Template!.Slots[1];
+        Assert.False(SlotCrop.IsSupported(containSlot));
+        Assert.Equal(CompositionOutcome.NotReady, await service.ApplySlotCropAsync(1, new SlotCrop(1.5, 0.5, 0.5)));
+        Assert.Equal([cropCover0, null, cropCover2], service.Current.SlotCrops);
+
+        var oldPhoto0 = service.Current.Slots[0]!;
+        var oldPhoto1 = service.Current.Slots[1]!;
+
+        // Chụp lại ảnh từ ô contain (SlotIndex = 1 → PhotoIndex = 1).
+        Assert.True(service.BeginRetake(containSlot.PhotoIndex));
+        Assert.Equal([1], service.Current!.PendingPositions);
+        var retake = await service.CaptureSequenceAsync(_camera, null);
+        Assert.True(retake.Succeeded);
+
+        Assert.Same(oldPhoto0, service.Current!.Slots[0]);
+        Assert.NotEqual(oldPhoto1, service.Current.Slots[1]);
+        Assert.True(File.Exists(oldPhoto1.OriginalFilePath));
+        Assert.Equal(ImageFit.Contain, service.Current.Template!.Slots[1].Fit);
+        Assert.Equal([cropCover0, null, null], service.Current.SlotCrops);
+
+        Assert.Equal(CompositionOutcome.Succeeded, await service.ComposeAsync());
+        Assert.Equal(PhotoSessionState.Ready, service.Current!.State);
+        Assert.Equal([cropCover0, null, null], service.Current.Composed!.SlotCrops);
+
+        // Phiên cũ mở lại trong Admin không cho chụp lại ảnh của ô contain.
+        var archivedSnapshot = service.Current;
+        Assert.True(await service.CompleteSessionAsync());
+        Assert.True(service.OpenArchivedSession(new ArchivedSession("archived-contain", archivedSnapshot, null)));
+        Assert.False(service.BeginRetake(containSlot.PhotoIndex));
+    }
+
+    private sealed class PausedComposer(IPhotoComposer inner) : IPhotoComposer
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<ComposedImage> ComposeAsync(CompositionRequest request, CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return await inner.ComposeAsync(request, cancellationToken);
+        }
+
+        public Task<byte[]> RenderTemplatePreviewAsync(PhotoTemplate template, int maxWidthPixels, CancellationToken cancellationToken = default) =>
+            inner.RenderTemplatePreviewAsync(template, maxWidthPixels, cancellationToken);
+
+        public Task<byte[]> RenderTemplateSampleAsync(PhotoTemplate template, TemplateSampleContent content, int maxWidthPixels, CancellationToken cancellationToken = default) =>
+            inner.RenderTemplateSampleAsync(template, content, maxWidthPixels, cancellationToken);
     }
 
     [Fact]

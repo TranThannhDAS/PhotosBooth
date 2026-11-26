@@ -1,0 +1,355 @@
+@inject ClientEventGalleryService Gallery
+
+@*
+    Chi tiết chỉ-xem của một phiên trong sự kiện hiện tại ở chế độ khách:
+    - Xem thành phẩm theo từng phiên bản (có phóng to và xem lớn).
+    - Xem toàn bộ ảnh gốc theo thứ tự chụp (kể cả ảnh chụp lại), bấm xem lớn.
+    - Xem thông tin phiên, mã QR đã tạo (nếu có), tóm tắt xuất và lịch sử in ở dạng chỉ đọc.
+    Không có bất kỳ thao tác chỉnh sửa, chụp lại, xóa, in, xuất, mở Explorer hay tạo QR mới nào.
+*@
+<div class="client-detail-layout">
+    <div class="client-detail-main">
+        <section class="client-detail-stage" aria-label="Ảnh thành phẩm">
+            <div class="result-preview detail-viewer client-detail-viewer @(_zoomed ? "is-zoomed" : null)">
+                @if (SelectedVersion is { } version)
+                {
+                    if (version.IsFileAvailable)
+                    {
+                        <div class="detail-scroll">
+                            <ImageView Class="detail-image"
+                                       Key="@($"{Detail.EventKey}-{Detail.SessionKey}-v{version.Version}-{_zoomed}")"
+                                       Alt="@($"Ảnh thành phẩm phiên bản v{version.Version}")"
+                                       Loader="@(ct => Gallery.GetVersionPreviewAsync(Detail.SessionKey, version.Version, _zoomed ? 2400 : 1200, ct))" />
+                        </div>
+                        <div class="client-detail-viewer-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _zoomed = !_zoomed">
+                                @(_zoomed ? "Thu nhỏ" : "Phóng to")
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => OpenVersionLightbox(version)">
+                                Xem lớn
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="center-state">
+                            <p>Thiếu file ảnh thành phẩm cho phiên bản v@(version.Version).</p>
+                            <p class="panel-hint">Bạn vẫn có thể xem các phiên bản khác hoặc ảnh gốc bên dưới.</p>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="center-state">
+                        <p>Phiên này chưa có ảnh thành phẩm.</p>
+                        @if (Detail.Photos.Count > 0)
+                        {
+                            <p class="panel-hint">Bạn vẫn có thể xem toàn bộ ảnh gốc đã chụp bên dưới.</p>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel-section client-originals-section" aria-label="Toàn bộ ảnh gốc">
+            <div class="panel-header-row">
+                <h2 class="panel-title">Ảnh gốc đã chụp (@Detail.Photos.Count)</h2>
+                @if (HasRetakePhotos)
+                {
+                    <span class="client-badge client-badge-muted">Bao gồm ảnh chụp lại</span>
+                }
+            </div>
+
+            @if (Detail.Photos.Count == 0)
+            {
+                <p class="panel-hint">Phiên này chưa có ảnh gốc nào.</p>
+            }
+            else
+            {
+                <div class="client-originals-grid">
+                    @foreach (var photo in Detail.Photos)
+                    {
+                        var item = photo;
+                        var isReplaced = HasSelectedSlots && !item.IsSelectedInCurrentSlots;
+                        if (item.IsFileAvailable)
+                        {
+                            <button type="button"
+                                    class="client-original-card @(isReplaced ? "is-replaced" : "is-selected-slot")"
+                                    @onclick="() => OpenPhotoLightbox(item)">
+                                <ImageView Class="client-original-thumb"
+                                           Key="@($"{Detail.EventKey}-{Detail.SessionKey}-photo-{item.PhotoId}-thumb")"
+                                           Alt="@($"Ảnh gốc lần chụp {item.Sequence}")"
+                                           Loader="@(ct => Gallery.GetOriginalPhotoPreviewAsync(Detail.SessionKey, item.PhotoId, OriginalThumbWidth, ct))" />
+                                <div class="client-original-meta">
+                                    <span class="client-original-title">#@item.Sequence · Vị trí @(item.Position + 1)</span>
+                                    @if (HasSelectedSlots)
+                                    {
+                                        <span class="client-badge @(item.IsSelectedInCurrentSlots ? "client-badge-accent" : "client-badge-muted")">
+                                            @(item.IsSelectedInCurrentSlots ? "Đang dùng" : "Đã thay")
+                                        </span>
+                                    }
+                                </div>
+                                <span class="client-original-sub">
+                                    @item.CapturedAt.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
+                                    @if (item.WidthPixels > 0 && item.HeightPixels > 0)
+                                    {
+                                        <span> · @(item.WidthPixels)×@(item.HeightPixels)</span>
+                                    }
+                                </span>
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="client-original-card is-missing">
+                                <div class="client-original-thumb client-gallery-thumb-empty" aria-hidden="true">Thiếu file</div>
+                                <div class="client-original-meta">
+                                    <span class="client-original-title">#@item.Sequence · Vị trí @(item.Position + 1)</span>
+                                    @if (HasSelectedSlots)
+                                    {
+                                        <span class="client-badge @(item.IsSelectedInCurrentSlots ? "client-badge-accent" : "client-badge-muted")">
+                                            @(item.IsSelectedInCurrentSlots ? "Đang dùng" : "Đã thay")
+                                        </span>
+                                    }
+                                </div>
+                                <span class="client-original-sub">Không tìm thấy file ảnh gốc</span>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </section>
+    </div>
+
+    <aside class="side-panel client-detail-side" aria-label="Thông tin phiên">
+        <section class="panel-section">
+            <h2 class="panel-title">Thông tin phiên</h2>
+            <dl class="detail-info client-detail-info">
+                <dt>Mã phiên</dt>
+                <dd class="client-session-key">@Detail.SessionKey</dd>
+                <dt>Sự kiện</dt>
+                <dd>@Detail.EventName</dd>
+                <dt>Thời gian chụp</dt>
+                <dd>@UiText.LocalTime(Detail.CreatedAt)</dd>
+                <dt>Trạng thái</dt>
+                <dd>@UiText.SessionStateLabel(Detail.State, Detail.Versions.Count > 0)</dd>
+                <dt>Khung ảnh</dt>
+                <dd>@(Detail.TemplateName ?? "Không còn bản lưu khung ảnh")</dd>
+                @if (Detail.RequiredPhotoCount > 0)
+                {
+                    <dt>Số ảnh nguồn</dt>
+                    <dd>@Detail.RequiredPhotoCount</dd>
+                }
+                <dt>Ảnh đã chụp</dt>
+                <dd>@Detail.CapturedPhotoCount</dd>
+                <dt>Bộ lọc màu</dt>
+                <dd>@UiText.FilterLabel(SelectedVersion?.Filter ?? Detail.Filter)</dd>
+                @if (Detail.Versions.Count > 0)
+                {
+                    <dt>Phiên bản</dt>
+                    <dd>@Detail.Versions.Count</dd>
+                }
+            </dl>
+
+            @if (Detail.Versions.Count > 0)
+            {
+                <p class="panel-hint">Phiên bản thành phẩm (đang xem: v@(SelectedVersion?.Version))</p>
+                <div class="chip-group" role="radiogroup" aria-label="Phiên bản thành phẩm">
+                    @foreach (var v in Detail.Versions)
+                    {
+                        var versionNumber = v.Version;
+                        var active = SelectedVersion?.Version == versionNumber;
+                        <button type="button"
+                                class="chip @(active ? "is-active" : null)"
+                                role="radio"
+                                aria-checked="@(active ? "true" : "false")"
+                                title="@UiText.LocalTime(v.CreatedAt)"
+                                @onclick="() => SelectVersion(versionNumber)">
+                            v@(versionNumber)@(versionNumber == LatestVersion?.Version ? " (mới nhất)" : null)
+                        </button>
+                    }
+                </div>
+                @if (SelectedVersion is { } currentVersion)
+                {
+                    <p class="panel-hint">
+                        Tạo lúc @UiText.LocalTime(currentVersion.CreatedAt)
+                        @if (currentVersion.WidthPixels > 0 && currentVersion.HeightPixels > 0)
+                        {
+                            <span> · @(currentVersion.WidthPixels)×@(currentVersion.HeightPixels) px</span>
+                        }
+                        @if (currentVersion.Dpi > 0)
+                        {
+                            <span> · @currentVersion.Dpi DPI</span>
+                        }
+                    </p>
+                }
+            }
+
+            @if (Detail.Notice is not null)
+            {
+                <StatusMessage Status="@(new StatusInfo(StatusKind.Info, Detail.Notice))" />
+            }
+        </section>
+
+        @if (SelectedVersion?.Share is { } share)
+        {
+            <section class="panel-section">
+                <h2 class="panel-title">Mã QR đã tạo (v@(SelectedVersion.Version))</h2>
+                <ShareQrCard @key="share.Token"
+                             Link="share"
+                             Title="Quét mã QR để tải ảnh về điện thoại"
+                             ShowDetails="false" />
+            </section>
+        }
+
+        @if (Detail.Exports.Count > 0)
+        {
+            <section class="panel-section">
+                <h2 class="panel-title">Lịch sử xuất ảnh (@Detail.Exports.Count)</h2>
+                <p class="panel-hint">@ExportFormatSummary</p>
+                <ul class="client-readonly-list">
+                    @foreach (var export in Detail.Exports.Reverse())
+                    {
+                        <li>
+                            <strong>@UiText.FormatLabel(export.Format)@(export.Version is { } v ? $" · v{v}" : null)</strong>
+                            <small>@UiText.LocalTime(export.ExportedAt)</small>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        @if (Detail.PrintJobs.Count > 0)
+        {
+            <section class="panel-section">
+                <h2 class="panel-title">Lịch sử in (@Detail.PrintJobs.Count)</h2>
+                <ul class="print-history">
+                    @foreach (var job in Detail.PrintJobs.Reverse())
+                    {
+                        <li>
+                            <span class="print-history-main">
+                                <strong>v@(job.OutputVersion) · @job.Copies bản</strong> — @UiText.PrintStatusLabel(job.Status)
+                            </span>
+                            <small>@UiText.LocalTime(job.CreatedAt) · @job.PrinterName</small>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    </aside>
+</div>
+
+@if (_lightboxPhoto is { } enlargedPhoto)
+{
+    <div class="dialog-backdrop" @onclick="CloseLightbox">
+        <div class="dialog client-lightbox" role="dialog" aria-modal="true" aria-label="Xem ảnh gốc phóng to" @onclick:stopPropagation="true">
+            <div class="client-lightbox-header">
+                <div class="client-lightbox-title">
+                    <strong>Ảnh gốc #@enlargedPhoto.Sequence · Vị trí @(enlargedPhoto.Position + 1)</strong>
+                    <small>
+                        @UiText.LocalTime(enlargedPhoto.CapturedAt)
+                        @if (HasSelectedSlots)
+                        {
+                            <span> · @(enlargedPhoto.IsSelectedInCurrentSlots ? "Đang dùng trong thành phẩm" : "Ảnh cũ (đã thay khi chụp lại)")</span>
+                        }
+                    </small>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseLightbox">Đóng</button>
+            </div>
+            <div class="client-lightbox-stage">
+                <ImageView Class="client-lightbox-image"
+                           Key="@($"{Detail.EventKey}-{Detail.SessionKey}-photo-{enlargedPhoto.PhotoId}-full")"
+                           Alt="@($"Ảnh gốc lần chụp {enlargedPhoto.Sequence} phóng to")"
+                           Loader="@(ct => Gallery.GetOriginalPhotoPreviewAsync(Detail.SessionKey, enlargedPhoto.PhotoId, OriginalFullWidth, ct))" />
+            </div>
+        </div>
+    </div>
+}
+else if (_lightboxVersion is { } enlargedVersion)
+{
+    <div class="dialog-backdrop" @onclick="CloseLightbox">
+        <div class="dialog client-lightbox" role="dialog" aria-modal="true" aria-label="Xem ảnh thành phẩm phóng to" @onclick:stopPropagation="true">
+            <div class="client-lightbox-header">
+                <div class="client-lightbox-title">
+                    <strong>Ảnh thành phẩm v@(enlargedVersion.Version)</strong>
+                    <small>@UiText.LocalTime(enlargedVersion.CreatedAt) · @UiText.FilterLabel(enlargedVersion.Filter)</small>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseLightbox">Đóng</button>
+            </div>
+            <div class="client-lightbox-stage">
+                <ImageView Class="client-lightbox-image"
+                           Key="@($"{Detail.EventKey}-{Detail.SessionKey}-v{enlargedVersion.Version}-full")"
+                           Alt="@($"Ảnh thành phẩm phiên bản v{enlargedVersion.Version} phóng to")"
+                           Loader="@(ct => Gallery.GetVersionPreviewAsync(Detail.SessionKey, enlargedVersion.Version, VersionFullWidth, ct))" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const int OriginalThumbWidth = 360;
+    private const int OriginalFullWidth = 1800;
+    private const int VersionFullWidth = 2400;
+
+    private Guid _loadedSessionId;
+    private int? _selectedVersionNumber;
+    private bool _zoomed;
+    private ClientSessionPhoto? _lightboxPhoto;
+    private ClientSessionOutputVersion? _lightboxVersion;
+
+    [Parameter, EditorRequired]
+    public ClientSessionDetail Detail { get; set; } = default!;
+
+    private ClientSessionOutputVersion? LatestVersion =>
+        Detail.Versions.Count == 0 ? null : Detail.Versions[^1];
+
+    private ClientSessionOutputVersion? SelectedVersion =>
+        _selectedVersionNumber is { } v
+            ? Detail.Versions.FirstOrDefault(item => item.Version == v) ?? LatestVersion
+            : LatestVersion;
+
+    private bool HasSelectedSlots => Detail.Photos.Any(p => p.IsSelectedInCurrentSlots);
+
+    private bool HasRetakePhotos => HasSelectedSlots && Detail.Photos.Any(p => !p.IsSelectedInCurrentSlots);
+
+    private string ExportFormatSummary =>
+        string.Join(" · ", Detail.Exports
+            .GroupBy(e => e.Format)
+            .OrderBy(g => g.Key)
+            .Select(g => $"{UiText.FormatLabel(g.Key)}: {g.Count()}"));
+
+    protected override void OnParametersSet()
+    {
+        if (Detail.SessionId != _loadedSessionId)
+        {
+            _loadedSessionId = Detail.SessionId;
+            _selectedVersionNumber = LatestVersion?.Version;
+            _zoomed = false;
+            _lightboxPhoto = null;
+            _lightboxVersion = null;
+        }
+    }
+
+    private void SelectVersion(int version)
+    {
+        _selectedVersionNumber = version;
+        _zoomed = false;
+    }
+
+    private void OpenPhotoLightbox(ClientSessionPhoto photo)
+    {
+        _lightboxVersion = null;
+        _lightboxPhoto = photo;
+    }
+
+    private void OpenVersionLightbox(ClientSessionOutputVersion version)
+    {
+        _lightboxPhoto = null;
+        _lightboxVersion = version;
+    }
+
+    private void CloseLightbox()
+    {
+        _lightboxPhoto = null;
+        _lightboxVersion = null;
+    }
+}

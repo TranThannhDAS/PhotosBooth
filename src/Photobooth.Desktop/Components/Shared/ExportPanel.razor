@@ -76,6 +76,8 @@
     private IReadOnlyList<FormatExportResult>? _results;
     private string? _lastSavedFile;
     private StatusInfo? _message;
+    private bool _lastNotifiedCanExport;
+    private bool _lastNotifiedIsExporting;
 
     /// <summary>Phiên bản cần xuất; null = thành phẩm đang xem (được lưu thành phiên bản trước khi xuất).</summary>
     [Parameter]
@@ -95,14 +97,37 @@
     [Parameter]
     public bool AllowFolderChange { get; set; } = true;
 
-    /// <summary>Báo cho màn hình cha khi trạng thái đang xuất thay đổi (để cập nhật nút ở thanh hành động).</summary>
+    /// <summary>Báo cho màn hình cha khi trạng thái xuất hoặc khả năng xuất thay đổi (để cập nhật nút ở thanh hành động).</summary>
     [Parameter]
     public EventCallback OnStateChanged { get; set; }
 
     public bool IsExporting { get; private set; }
 
-    public bool CanExport => !Disabled && !IsExporting && _formats.Count > 0
+    public bool HasSelectedFormats => _formats.Count > 0;
+
+    public bool CanExport => !Disabled && !IsExporting && HasSelectedFormats
         && (Version is { } v ? Session?.FindVersion(v) is not null : Session?.Composed is not null);
+
+    protected override Task OnAfterRenderAsync(bool firstRender) => NotifyStateIfChangedAsync();
+
+    private Task NotifyStateIfChangedAsync()
+    {
+        if (IsDisposed)
+        {
+            return Task.CompletedTask;
+        }
+
+        var canExport = CanExport;
+        var isExporting = IsExporting;
+        if (canExport == _lastNotifiedCanExport && isExporting == _lastNotifiedIsExporting)
+        {
+            return Task.CompletedTask;
+        }
+
+        _lastNotifiedCanExport = canExport;
+        _lastNotifiedIsExporting = isExporting;
+        return OnStateChanged.HasDelegate ? OnStateChanged.InvokeAsync() : Task.CompletedTask;
+    }
 
     private string FormatDescription(ExportFormat format)
     {
@@ -119,7 +144,7 @@
         };
     }
 
-    private void ToggleFormat(ExportFormat format, bool selected)
+    private Task ToggleFormat(ExportFormat format, bool selected)
     {
         if (selected)
         {
@@ -130,7 +155,7 @@
             _formats.Remove(format);
         }
 
-        _ = OnStateChanged.InvokeAsync();
+        return NotifyStateIfChangedAsync();
     }
 
     private async Task PickFolderAsync()
@@ -153,7 +178,7 @@
         _message = null;
         _results = null;
         _lastSavedFile = null;
-        await OnStateChanged.InvokeAsync();
+        await NotifyStateIfChangedAsync();
         StateHasChanged();
         try
         {
@@ -171,10 +196,12 @@
         finally
         {
             IsExporting = false;
+            await NotifyStateIfChangedAsync();
+            if (!IsDisposed)
+            {
+                StateHasChanged();
+            }
         }
-
-        await OnStateChanged.InvokeAsync();
-        StateHasChanged();
     }
 
     private void RevealSavedFile()

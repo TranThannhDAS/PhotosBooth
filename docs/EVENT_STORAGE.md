@@ -110,7 +110,7 @@ Schema tạo/cập nhật bằng **EF Core Migrations** khi ứng dụng khởi 
    - **Hủy chỉnh sửa** quay về đúng vN: không tạo phiên bản, không đổi dữ liệu đã lưu.
 4. Phiên thiếu ảnh gốc hoặc snapshot template vẫn **xem, xuất và in lại** được file đã lưu. Chỉ chức năng chỉnh sửa bị khóa, kèm lý do.
 
-Chỉ chế độ quản trị mới truy cập được thư viện ảnh. Khách ở Kiosk chỉ thấy phiên của chính mình.
+Thư viện ảnh **quản trị** (lọc nhiều sự kiện, chỉnh sửa lại, xuất/in lại, tạo QR) chỉ dùng được trong chế độ Admin (PIN). Theo quyết định mới của chủ sản phẩm, Client Mode có riêng **Thư viện sự kiện chỉ-xem (read-only)** cho phép khách xem toàn bộ các phiên, ảnh thành phẩm, ảnh gốc và thông tin phiên thuộc **riêng sự kiện hiện tại** (offline, không chỉnh sửa/xóa/in/xuất/đổi sự kiện).
 
 ## 7. Di chuyển hoặc sao chép thư mục sự kiện
 

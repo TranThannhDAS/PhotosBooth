@@ -1,6 +1,7 @@
 @implements IDisposable
 @inject PhotoSessionService Sessions
 @inject AdminAccessService Admin
+@inject EventWorkspaceService Workspaces
 
 @*
     Component gốc. Màn hình hiển thị được SUY RA từ trạng thái phiên (PhotoSessionService),
@@ -22,32 +23,43 @@
         }
         else
         {
-        @switch (CurrentScreen)
+        <div class="client-mode">
+        @if (_showClientGallery && CanOpenClientGallery)
         {
-            case AppScreen.Welcome:
-                <WelcomeScreen OnStart="StartSession" Error="@_startError" OnAdmin="() => _askAdminPin = true" />
-                break;
-            case AppScreen.TemplateSelection:
-                <TemplateSelectionScreen OnCancel="CancelSession" />
-                break;
-            case AppScreen.Capture:
-                <CaptureScreen OnCancel="CancelSession" />
-                break;
-            case AppScreen.Review:
-                <ReviewScreen OnCancel="CancelSession" />
-                break;
-            case AppScreen.Result:
-                <ResultScreen OnCancel="CancelSession" />
-                break;
-            case AppScreen.Done:
-                <DoneScreen OnNewSession="StartSession" OnHome="GoHome" />
-                break;
+            <ClientGalleryScreen @key="_galleryEventKey"
+                                 BackLabel="@(CurrentScreen == AppScreen.Done ? "Quay lại màn hoàn thành" : "Về màn hình chính")"
+                                 OnClose="CloseClientGallery" />
         }
+        else
+        {
+            @switch (CurrentScreen)
+            {
+                case AppScreen.Welcome:
+                    <WelcomeScreen OnStart="StartSession" Error="@_startError" OnAdmin="() => _askAdminPin = true" OnGallery="OpenClientGallery" />
+                    break;
+                case AppScreen.TemplateSelection:
+                    <TemplateSelectionScreen OnCancel="CancelSession" />
+                    break;
+                case AppScreen.Capture:
+                    <CaptureScreen OnCancel="CancelSession" />
+                    break;
+                case AppScreen.Review:
+                    <ReviewScreen OnCancel="CancelSession" />
+                    break;
+                case AppScreen.Result:
+                    <ResultScreen OnCancel="CancelSession" />
+                    break;
+                case AppScreen.Done:
+                    <DoneScreen OnNewSession="StartSession" OnHome="GoHome" OnGallery="OpenClientGallery" />
+                    break;
+            }
 
-        @if (_askAdminPin && CanOpenAdmin)
-        {
-            <PinDialog OnSubmit="TryOpenAdmin" OnCancel="() => _askAdminPin = false" />
+            @if (_askAdminPin && CanOpenAdmin)
+            {
+                <PinDialog OnSubmit="TryOpenAdmin" OnCancel="() => _askAdminPin = false" />
+            }
         }
+        </div>
         }
     </ChildContent>
     <ErrorContent>
@@ -74,9 +86,15 @@
     private bool _atWelcome;
     private string? _startError;
     private bool _askAdminPin;
+    private bool _showClientGallery;
+    private string? _galleryEventKey;
 
     /// <summary>Chỉ vào Admin từ màn hình chào khi không có phiên chụp dang dở (không làm gián đoạn khách đang chụp).</summary>
     private bool CanOpenAdmin => CurrentScreen == AppScreen.Welcome && Sessions.Current is null or { IsEnded: true } or { IsArchived: true };
+
+    /// <summary>Chỉ mở thư viện sự kiện từ màn Chào mừng hoặc Hoàn thành; không mở giữa các bước chụp/ghép/xuất.</summary>
+    private bool CanOpenClientGallery => CurrentScreen is AppScreen.Welcome or AppScreen.Done
+        && Sessions.Current is null or { IsEnded: true } or { IsArchived: true };
 
     private bool TryOpenAdmin(string pin)
     {
@@ -86,8 +104,23 @@
         }
 
         _askAdminPin = false;
+        _showClientGallery = false;
         return true;
     }
+
+    private void OpenClientGallery()
+    {
+        if (!CanOpenClientGallery)
+        {
+            return;
+        }
+
+        _askAdminPin = false;
+        _galleryEventKey = Workspaces.Current?.Info.EventId.ToString("N");
+        _showClientGallery = true;
+    }
+
+    private void CloseClientGallery() => _showClientGallery = false;
 
     private AppScreen CurrentScreen
     {
@@ -115,12 +148,16 @@
     {
         // Giao diện có thể được tải lại sau sự cố WebView2: phiên còn dang dở thì quay lại đúng bước.
         _atWelcome = Sessions.Current is null or { IsEnded: true };
+        _galleryEventKey = Workspaces.Current?.Info.EventId.ToString("N");
         Sessions.SessionChanged += OnSessionChanged;
-        Admin.Changed += OnSessionChanged;
+        Admin.Changed += OnAdminChanged;
+        Workspaces.Changed += OnWorkspaceChanged;
     }
 
     private void StartSession()
     {
+        _showClientGallery = false;
+
         // Không có thư mục sự kiện hợp lệ → không tạo phiên (không lưu ảnh sang chỗ khác).
         if (Sessions.StartNewSession() is null)
         {
@@ -135,23 +172,60 @@
 
     private void CancelSession()
     {
+        _showClientGallery = false;
         Sessions.EndCurrentSession();
         _atWelcome = true;
     }
 
-    private void GoHome() => _atWelcome = true;
+    private void GoHome()
+    {
+        _showClientGallery = false;
+        _atWelcome = true;
+    }
 
     private void Recover()
     {
+        _showClientGallery = false;
         _atWelcome = true;
         _errorBoundary?.Recover();
     }
 
-    private void OnSessionChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
+    private void OnSessionChanged(object? sender, EventArgs e) =>
+        _ = InvokeAsync(() =>
+        {
+            if (!CanOpenClientGallery)
+            {
+                _showClientGallery = false;
+            }
+
+            StateHasChanged();
+        });
+
+    private void OnAdminChanged(object? sender, EventArgs e) =>
+        _ = InvokeAsync(() =>
+        {
+            if (!Admin.KioskStarted)
+            {
+                _showClientGallery = false;
+                _askAdminPin = false;
+            }
+
+            StateHasChanged();
+        });
+
+    private void OnWorkspaceChanged(object? sender, EventArgs e) =>
+        _ = InvokeAsync(() =>
+        {
+            // Khi đổi sự kiện (Admin/workspace): đóng và reset gallery để bỏ mọi kết quả cũ.
+            _showClientGallery = false;
+            _galleryEventKey = Workspaces.Current?.Info.EventId.ToString("N");
+            StateHasChanged();
+        });
 
     public void Dispose()
     {
         Sessions.SessionChanged -= OnSessionChanged;
-        Admin.Changed -= OnSessionChanged;
+        Admin.Changed -= OnAdminChanged;
+        Workspaces.Changed -= OnWorkspaceChanged;
     }
 }

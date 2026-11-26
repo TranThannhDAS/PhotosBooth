@@ -480,7 +480,15 @@ public sealed class EventSessionArchive : ISessionArchive
             CanEdit = reason is null,
         };
 
-        return new ArchivedSession(SessionKey(row.DirectoryPath), session, reason);
+        return new ArchivedSession(SessionKey(row.DirectoryPath), session, reason)
+        {
+            PersistedState = row.Status switch
+            {
+                "completed" => PhotoSessionState.Completed,
+                "cancelled" => PhotoSessionState.Cancelled,
+                _ => null,
+            },
+        };
     }
 
     // ---------------------------------------------------------------- Nội bộ

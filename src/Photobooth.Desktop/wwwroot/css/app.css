@@ -896,6 +896,28 @@ body {
     -webkit-user-drag: none;
 }
 
+.crop-dialog.is-contain .crop-stage {
+    margin-bottom: var(--space-4);
+}
+
+.crop-viewport.is-contain {
+    cursor: default;
+    touch-action: auto;
+}
+
+.crop-image.is-contain {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.crop-image.is-hidden {
+    visibility: hidden;
+}
+
 .crop-controls {
     display: flex;
     flex-wrap: wrap;
@@ -963,6 +985,10 @@ body {
     min-width: 4ch;
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+.crop-retake {
+    margin-right: auto;
 }
 
 .result-overlay {

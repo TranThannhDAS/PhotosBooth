@@ -32,7 +32,13 @@
     </ChildContent>
     <Footer>
         <button type="button" class="btn btn-secondary" @onclick="OnHome">Về màn hình chính</button>
-        <button type="button" class="btn btn-primary btn-lg" @onclick="OnNewSession">Phiên mới</button>
+        <div class="footer-group">
+            @if (OnGallery.HasDelegate)
+            {
+                <button type="button" class="btn btn-secondary" @onclick="OnGallery">Thư viện sự kiện</button>
+            }
+            <button type="button" class="btn btn-primary btn-lg" @onclick="OnNewSession">Phiên mới</button>
+        </div>
     </Footer>
 </SessionLayout>
 
@@ -42,5 +48,9 @@
 
     [Parameter, EditorRequired]
     public EventCallback OnHome { get; set; }
+
+    /// <summary>Mở thư viện chỉ-xem của sự kiện hiện tại mà không làm mất phiên vừa hoàn thành.</summary>
+    [Parameter]
+    public EventCallback OnGallery { get; set; }
 
 }

@@ -3,7 +3,8 @@
 @*
     Xem trước thành phẩm của phiên hiện tại (Kiosk và chỉnh sửa lại trong Admin):
     khung đúng tỉ lệ canvas, ảnh là bản thu nhỏ của chính thành phẩm Photo Composer; vùng chọn ô đặt theo %
-    tọa độ template; chạm vào ô → trình chỉnh vùng cắt (Manual Crop). Không có engine dựng ảnh thứ hai.
+    tọa độ template; chạm vào ô → mở hộp ảnh (Manual Crop cho ô cover, xem trọn ảnh/chụp lại cho ô contain).
+    Không có engine dựng ảnh thứ hai.
 *@
 <section class="result-preview" aria-label="Ảnh thành phẩm">
     @if (Session?.Template is { } template)
@@ -21,11 +22,13 @@
 
                 var slotIndex = element.DeclarationOrder;
                 var edited = Session.SlotCrops.ElementAtOrDefault(slotIndex) is not null;
+                var slotLabel = UiText.SlotLabel(slotIndex, slot);
+                var slotActionLabel = SlotCrop.IsSupported(slot) ? $"Chỉnh {slotLabel}" : $"Xem {slotLabel}";
                 <button type="button"
                         class="slot-hit @(edited ? "is-edited" : null)"
                         style="@SlotHitStyle(template.Canvas, slot)"
-                        title="@($"Chỉnh {UiText.SlotLabel(slotIndex, slot)}")"
-                        aria-label="@($"Chỉnh {UiText.SlotLabel(slotIndex, slot)}")"
+                        title="@slotActionLabel"
+                        aria-label="@slotActionLabel"
                         disabled="@(!CanEdit)"
                         @onclick="() => OpenEditor(slotIndex)">
                     @if (edited)
@@ -60,13 +63,18 @@
     }
 </section>
 
-@if (_editingSlot is { } editingSlot && Session is { Template: { } editTemplate } editSession
-     && editTemplate.Slots[editingSlot].PhotoIndex is var editPhotoIndex
+@if (_editing is { } editing
+     && Session is { Template: { } editTemplate } editSession
+     && editSession.SessionId == editing.SessionId
+     && editing.SlotIndex >= 0 && editing.SlotIndex < editTemplate.Slots.Count
+     && editTemplate.Slots[editing.SlotIndex].PhotoIndex is var editPhotoIndex
      && editSession.Slots.ElementAtOrDefault(editPhotoIndex) is { } editPhoto)
 {
-    <CropEditor Template="editTemplate" SlotIndex="editingSlot" Photo="editPhoto"
-                Confirmed="@editSession.SlotCrops.ElementAtOrDefault(editingSlot)"
-                OnApply="ApplyCropAsync" OnCancel="() => _editingSlot = null" />
+    <CropEditor Template="editTemplate" SlotIndex="editing.SlotIndex" Photo="editPhoto"
+                Confirmed="@editSession.SlotCrops.ElementAtOrDefault(editing.SlotIndex)"
+                OnApply="ApplyCropAsync" OnCancel="CloseEditor"
+                OnRetake="@(CanShowRetake(editSession, editPhotoIndex) ? EventCallback.Factory.Create(this, RetakeEditingSlotAsync) : default)"
+                RetakeDisabled="@(!CanRetakeNow(editSession, editPhotoIndex))" />
 }
 
 @if (_confirmReset)
@@ -81,7 +89,8 @@
     /// <summary>Độ rộng ảnh xem trước (px); thành phẩm gốc vẫn ở độ phân giải canvas để xuất/in.</summary>
     private const int PreviewMaxWidth = 1200;
 
-    private int? _editingSlot;
+    private (Guid SessionId, int SlotIndex)? _editing;
+    private bool _retaking;
     private bool _confirmReset;
     private string? _lastPreviewKey;
 
@@ -123,26 +132,22 @@
         $"left: {100.0 * slot.X / canvas.WidthPixels}%; top: {100.0 * slot.Y / canvas.HeightPixels}%; " +
         $"width: {100.0 * slot.Width / canvas.WidthPixels}%; height: {100.0 * slot.Height / canvas.HeightPixels}%;");
 
-    /// <summary>Mở trình chỉnh vùng cắt cho ô (chỉ số trong template.Slots).</summary>
+    /// <summary>Mở hộp ảnh của ô (chỉnh vùng cắt với ô cover; xem trọn ảnh/chụp lại với ô contain).</summary>
     public async Task OpenEditor(int slotIndex)
     {
-        if (!CanEdit || Session?.Template is not { } template || slotIndex < 0 || slotIndex >= template.Slots.Count)
+        if (!CanEdit || Session is not { Template: { } template } session || slotIndex < 0 || slotIndex >= template.Slots.Count)
         {
             return;
         }
 
         var slot = template.Slots[slotIndex];
-        if (!SlotCrop.IsSupported(slot))
+        if (slot.PhotoIndex < 0 || slot.PhotoIndex >= session.Slots.Count || session.Slots[slot.PhotoIndex] is null)
         {
-            await OnMessage.InvokeAsync(new StatusInfo(
-                StatusKind.Info,
-                $"{UiText.SlotLabel(slotIndex, slot)} hiển thị trọn ảnh (contain).",
-                "Ô này luôn hiển thị toàn bộ ảnh nên chưa hỗ trợ kéo/phóng to."));
             return;
         }
 
         await OnMessage.InvokeAsync(null);
-        _editingSlot = slotIndex;
+        _editing = (session.SessionId, slotIndex);
         StateHasChanged();
     }
 
@@ -156,15 +161,39 @@
         }
     }
 
+    private void CloseEditor() => _editing = null;
+
+    private static bool CanShowRetake(PhotoSession session, int photoIndex) =>
+        !session.IsArchived
+        && !session.IsEnded
+        && photoIndex >= 0
+        && photoIndex < session.RequiredPhotoCount;
+
+    private bool CanRetakeNow(PhotoSession session, int photoIndex) =>
+        !Disabled
+        && !IsComposing
+        && !_retaking
+        && CanShowRetake(session, photoIndex)
+        && session.State is PhotoSessionState.Reviewing or PhotoSessionState.Ready;
+
     private async Task ApplyCropAsync(SlotCrop? crop)
     {
-        if (_editingSlot is not { } slotIndex)
+        if (_editing is not { } editing)
         {
             return;
         }
 
-        _editingSlot = null;
-        var outcome = await Sessions.ApplySlotCropAsync(slotIndex, crop);
+        _editing = null;
+        if (Session is not { Template: { } template } session
+            || session.SessionId != editing.SessionId
+            || editing.SlotIndex < 0
+            || editing.SlotIndex >= template.Slots.Count
+            || !SlotCrop.IsSupported(template.Slots[editing.SlotIndex]))
+        {
+            return;
+        }
+
+        var outcome = await Sessions.ApplySlotCropAsync(editing.SlotIndex, crop);
         await OnMessage.InvokeAsync(outcome switch
         {
             CompositionOutcome.Failed => UiText.CompositionFailed,
@@ -172,6 +201,72 @@
                 new StatusInfo(StatusKind.Warning, "Chưa áp dụng được chỉnh sửa.", "Vui lòng thử lại sau khi ảnh tạo xong."),
             _ => null,
         });
+    }
+
+    private async Task RetakeEditingSlotAsync()
+    {
+        if (_retaking || _editing is not { } editing)
+        {
+            return;
+        }
+
+        // Đóng hộp chỉnh và bỏ bản nháp crop chưa áp dụng (không gửi ApplySlotCropAsync).
+        _editing = null;
+
+        if (Disabled || IsComposing)
+        {
+            await OnMessage.InvokeAsync(new StatusInfo(
+                StatusKind.Warning,
+                "Chưa thể chụp lại lúc này.",
+                "Vui lòng chờ thao tác hiện tại hoàn tất rồi thử lại."));
+            return;
+        }
+
+        var session = Session;
+        if (session is null
+            || session.SessionId != editing.SessionId
+            || session.IsArchived
+            || session.IsEnded
+            || session.Template is not { } template
+            || editing.SlotIndex < 0
+            || editing.SlotIndex >= template.Slots.Count)
+        {
+            await OnMessage.InvokeAsync(new StatusInfo(
+                StatusKind.Warning,
+                "Không thể chụp lại ảnh của ô này.",
+                "Phiên chụp hoặc vị trí ô ảnh không còn hợp lệ."));
+            return;
+        }
+
+        // SlotIndex là vị trí ô trong template, còn BeginRetake nhận photoIndex của ảnh nguồn.
+        var photoIndex = template.Slots[editing.SlotIndex].PhotoIndex;
+        if (photoIndex < 0 || photoIndex >= session.RequiredPhotoCount)
+        {
+            await OnMessage.InvokeAsync(new StatusInfo(
+                StatusKind.Warning,
+                "Không thể chụp lại ảnh của ô này.",
+                "Vị trí ảnh nguồn của khung ảnh không hợp lệ."));
+            return;
+        }
+
+        _retaking = true;
+        try
+        {
+            if (Sessions.BeginRetake(photoIndex))
+            {
+                await OnMessage.InvokeAsync(null);
+                return;
+            }
+
+            await OnMessage.InvokeAsync(new StatusInfo(
+                StatusKind.Warning,
+                "Chưa thể chụp lại ảnh này lúc này.",
+                "Vui lòng thử lại khi phiên chụp đã sẵn sàng."));
+        }
+        finally
+        {
+            _retaking = false;
+        }
     }
 
     private async Task ResetCropsAsync()

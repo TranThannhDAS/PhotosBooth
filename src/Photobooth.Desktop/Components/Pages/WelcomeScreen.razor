@@ -10,19 +10,34 @@
             <BrandLogo Size="104" />
         </div>
         <h1 class="welcome-title">Photobooth Mini</h1>
-        <p class="welcome-lead">Tự chụp ảnh lưu niệm chỉ với một lần chạm.</p>
+        <p class="welcome-headline">Một lần chạm.<br />Một bộ ảnh thật bạn.</p>
+        <p class="welcome-lead">Chọn khung yêu thích, tạo dáng và lưu lại khoảnh khắc.</p>
 
-        <button type="button" class="btn btn-primary btn-lg welcome-start"
-                disabled="@_starting" @onclick="StartAsync">
-            Bắt đầu chụp
-        </button>
+        <div class="welcome-actions">
+            <button type="button" class="btn btn-primary btn-lg welcome-start"
+                    disabled="@_starting" @onclick="StartAsync">
+                Bắt đầu chụp
+            </button>
+            @if (OnGallery.HasDelegate)
+            {
+                <button type="button" class="btn btn-secondary welcome-gallery"
+                        disabled="@_starting" @onclick="OnGallery">
+                    Thư viện sự kiện
+                </button>
+            }
+        </div>
 
         @if (Error is not null)
         {
             <StatusMessage Status="@(new StatusInfo(StatusKind.Error, Error))" />
         }
 
-        <p class="welcome-note">Máy ảnh chỉ được bật khi bạn bắt đầu chụp.</p>
+        <div class="welcome-journey" aria-label="Quy trình chụp ảnh">
+            <span>01 · Chọn khung</span>
+            <span>02 · Tạo dáng</span>
+            <span>03 · Nhận ảnh</span>
+        </div>
+        <p class="welcome-note">Máy ảnh chỉ được bật khi bạn đến bước chụp.</p>
     </div>
 </div>
 
@@ -39,6 +54,10 @@
     /// <summary>Nhân viên bấm "Quản trị" (giao diện cha hiển thị hộp thoại PIN).</summary>
     [Parameter]
     public EventCallback OnAdmin { get; set; }
+
+    /// <summary>Khách mở thư viện chỉ-xem của sự kiện hiện tại.</summary>
+    [Parameter]
+    public EventCallback OnGallery { get; set; }
 
     private async Task StartAsync()
     {

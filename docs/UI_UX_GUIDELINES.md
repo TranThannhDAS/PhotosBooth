@@ -58,7 +58,7 @@ Hoàn thành → Phiên mới
 ### 4.1 Màn hình chào (`Welcome`)
 
 - Hiển thị tên/logo ứng dụng, một câu hướng dẫn ngắn, nút **Bắt đầu chụp** dễ nhìn.
-- Không có nhiều nút phụ gây phân tán chú ý.
+- Có nút phụ **Thư viện sự kiện** (quyết định mới của chủ sản phẩm: chỉ-xem các phiên trong sự kiện hiện tại, offline, không chỉnh sửa/xóa/in/xuất/đổi sự kiện); không làm lu mờ nút **Bắt đầu chụp**.
 - Nếu camera chưa cấu hình, có thể cho bắt đầu rồi xử lý ở bước camera; không báo lỗi giả khi chưa kiểm tra thiết bị.
 - Khi có tiến trình khởi tạo đang chạy, phản hồi rõ để tránh bấm liên tục.
 
@@ -68,6 +68,7 @@ Hoàn thành → Phiên mới
 - Mẫu đang chọn cần có viền/trạng thái rõ; không chỉ dùng màu để biểu thị lựa chọn.
 - Mỗi template hiển thị số ảnh cần chụp. Template vượt giới hạn an toàn số ảnh được đánh dấu không thể chọn và giải thích lý do.
 - Có nút **Tiếp tục** và **Quay lại**.
+- Có thể nhấp đúp vào thẻ khung hợp lệ để chọn mẫu đó và tiếp tục ngay; chạm một lần chỉ chọn mẫu, nút **Tiếp tục** vẫn dùng được trên cảm ứng và bàn phím.
 - Không tự tải template hoặc phông chữ từ Internet.
 
 ### 4.3 Camera preview (`Camera`)
@@ -75,6 +76,8 @@ Hoàn thành → Phiên mới
 - Khung preview chiếm diện tích đủ lớn; tỉ lệ video tự nhiên, không kéo méo hình người; hiển thị **toàn bộ** khung hình camera (`object-fit: contain`, không dùng `cover`).
 - **Khung hướng dẫn vùng ảnh thành phẩm:** viền nét đứt + nhãn ngắn, phần ngoài làm tối bán trong suốt (vẫn thấy hình); nằm đúng trên vùng nội dung video (không tính dải trống), cập nhật theo ảnh đang chụp, không chặn thao tác (`pointer-events: none`), nằm dưới số đếm ngược/thông báo.
 - Hiển thị thông tin **Ảnh X/Y**, trạng thái camera, nút **Bắt đầu chụp** và **Quay lại/Hủy** khi phù hợp.
+- Nút **× — Thoát phiên chụp** ở góc trên phải dùng được cả khi đang đếm ngược/chụp. Bấm để kết thúc phiên và về màn chào, không cần xác nhận vì ảnh đã lưu không bị xóa. Hủy lượt chụp, chờ ghi xong khung hình đã lấy và metadata rồi dừng camera; không tự ghép ảnh khi đang thoát.
+- **Toàn vùng cửa sổ khi đang chụp:** khi nhấn nút chụp, khung camera mở rộng phủ toàn bộ vùng nội dung cửa sổ ứng dụng (ẩn thanh tiêu đề, cột điều khiển và thanh chân trang) trong suốt lượt chụp (đếm ngược, chụp, lưu giữa các ảnh) mà không đổi chế độ fullscreen của cửa sổ WPF/hệ điều hành; giữ nguyên phần tử video (`object-fit: contain`), khung hướng dẫn khớp vùng video, tiến trình **Ảnh X/Y**, số đếm ngược và lớp phủ điều khiển **× — Thoát phiên chụp**, **Dừng chụp** dùng được bằng chuột/bàn phím. Khi dừng, lỗi hoặc kết thúc lượt chụp thì quay lại bố cục thường hoặc điều hướng hiện hữu.
 - Khi đếm ngược, con số lớn, độ tương phản cao; không che toàn bộ khuôn hình nếu không cần.
 - Sau một ảnh thành công, có phản hồi ngắn (ví dụ thumbnail hoặc thông báo đã chụp), không chuyển bước âm thầm.
 - Khi camera chưa sẵn sàng: dùng trạng thái loading hoặc lỗi cụ thể, không hiển thị khung đen như thể đang chụp bình thường.
@@ -96,6 +99,7 @@ Hoàn thành → Phiên mới
 - Khi xuất thành công, hiển thị thông báo **“Đã lưu ảnh”** và vị trí/tùy chọn mở thư mục khi có thể.
 - Không khẳng định PDF/in thành công chỉ vì đã tạo preview trên giao diện.
 - Có nút **Phiên mới** sau khi hoàn tất theo chính sách kết thúc phiên.
+- Màn Hoàn thành có nút **Thư viện sự kiện** để khách xem lại toàn bộ phiên trong sự kiện hiện tại (chỉ-xem, offline); quay lại vẫn giữ đúng phiên vừa hoàn thành. Thư viện không mở được giữa các bước chụp, ghép hoặc xuất ảnh.
 
 ### 4.5.1 Màn Hoàn thành — mã QR (Phase Cloud 2.1)
 
@@ -143,7 +147,7 @@ Hoàn thành → Phiên mới
 Chế độ khách được thiết kế cho **màn cảm ứng 100%**; chuột/bàn phím chỉ là phương án phụ.
 
 - WebView2 tắt **chụm hai ngón phóng to cả trang** (`IsPinchZoomEnabled = false`) và **vuốt ngang để quay lại trang** (`IsSwipeNavigationEnabled = false`). Cử chỉ chụm chỉ có tác dụng trong vùng tự xử lý (`touch-action: none`), như trình chỉnh vùng cắt.
-- **Manual Crop:** một ngón kéo ảnh; **hai ngón chụm/mở để thu nhỏ/phóng to**, điểm ảnh dưới hai ngón tay đứng yên; nhấc một ngón thì tiếp tục kéo bằng ngón còn lại mà ảnh không nhảy. Có thêm nút **−/+** (56 px, bước 10%) và thanh trượt có nút kéo 36 px (vùng chạm 48 px). Con lăn chuột vẫn dùng được trên laptop. Ngón "kẹt" (mất sự kiện nhấc tay) được tự bỏ khi chạm lại.
+- **Manual Crop:** một ngón kéo ảnh; **hai ngón chụm/mở để thu nhỏ/phóng to**, điểm ảnh dưới hai ngón tay đứng yên; nhấc một ngón thì tiếp tục kéo bằng ngón còn lại mà ảnh không nhảy. Có thêm nút **−/+** (56 px, bước 10%) và thanh trượt có nút kéo 36 px (vùng chạm 48 px). Con lăn chuột vẫn dùng được trên laptop. Ngón "kẹt" (mất sự kiện nhấc tay) được tự bỏ khi chạm lại. Trong phiên khách có thể chụp lại, hộp chỉnh ảnh có nút **Chụp lại ảnh X** tách biệt cạnh nhóm **Hủy / Áp dụng** để bỏ bản nháp chưa áp dụng, đóng hộp và mở camera preview chụp lại đúng ảnh nguồn của ô đang chỉnh; nút này không hiển thị khi quản trị viên chỉnh sửa lại phiên đã lưu. Với ô `fit = contain` (hiển thị trọn ảnh), chạm vào ô hoặc chip vẫn mở hộp xem trọn ảnh đúng tỉ lệ (kèm giải thích ngắn, nút **Đóng** và nút **Chụp lại ảnh X** trong phiên khách), nhưng ẩn điều khiển kéo/phóng to/khôi phục/Áp dụng vì không hỗ trợ chỉnh vùng cắt.
 - **Ô ảnh chạm được:** trên thiết bị không có rê chuột (`@media (hover: none)`), mỗi ô ảnh trong khung thành phẩm luôn có viền nét đứt mảnh và sáng lên khi chạm. Viền hover chỉ áp dụng cho chuột, tránh viền "dính" sau khi chạm. Danh sách chip "Các ô ảnh" vẫn là cách thay thế cho ô nhỏ.
 - **Không mở hộp thoại Windows trong Kiosk:** màn thành phẩm của khách không có nút "Đổi thư mục" lưu ảnh, vì hộp thoại chọn thư mục cho phép duyệt/đổi tên/xóa file ở mọi nơi, kể cả ảnh của khách khác. Thư mục xuất do quản trị viên đổi trong Admin.
 - Kiosk không có ô nhập chữ (không cần bàn phím ảo).

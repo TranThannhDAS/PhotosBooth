@@ -5,7 +5,8 @@ namespace Photobooth.Application.Sessions;
 
 /// <summary>
 /// Thư viện ảnh thành phẩm, lọc theo sự kiện (mặc định sự kiện hiện tại). CHỈ dành cho chế độ quản trị:
-/// khách (Kiosk) không được liệt kê hay mở phiên của người khác. Lọc chỉ để xem — không đổi sự kiện Kiosk đang lưu ảnh.
+/// Client Mode dùng <see cref="ClientEventGalleryService"/> riêng để chỉ xem sự kiện hiện tại.
+/// Bộ lọc quản trị chỉ để xem — không đổi sự kiện Kiosk đang lưu ảnh.
 /// </summary>
 public sealed class EventGalleryService
 {

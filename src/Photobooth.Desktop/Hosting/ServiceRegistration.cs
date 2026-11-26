@@ -75,6 +75,7 @@ public static class ServiceRegistration
         services.AddSingleton<ISessionArchive, EventSessionArchive>();
         services.AddSingleton<AdminAccessService>();
         services.AddSingleton<EventGalleryService>();
+        services.AddSingleton<ClientEventGalleryService>();
 
         // In: máy in giả lập hoặc máy in Windows (chọn trong Admin).
         services.AddSingleton<MockPrinter>();

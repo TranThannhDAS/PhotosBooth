@@ -4,7 +4,13 @@
 <SessionLayout Step="3" OnCancel="OnCancel" ConfirmCancel="@(Session?.Exports.Count == 0)" CancelDisabled="@Busy">
     <ChildContent>
         <div class="result-layout">
-            <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
+            <div class="result-workspace">
+                <div class="page-heading">
+                    <h1>Ảnh của bạn</h1>
+                    <p>Chạm vào ảnh để chỉnh vùng cắt. Chọn “Hoàn tất” khi đã ưng ý.</p>
+                </div>
+                <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
+            </div>
 
             <aside class="side-panel" aria-label="Tùy chọn thành phẩm">
                 @if (_message is not null)
@@ -50,7 +56,7 @@
     <Footer>
         <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => Sessions.ReturnToReview()">Quay lại xem ảnh</button>
         <div class="footer-group">
-            <button type="button" class="btn btn-lg btn-secondary" disabled="@(Busy || _export?.CanExport != true)" @onclick="ExportAsync">
+            <button type="button" class="btn btn-lg btn-secondary" disabled="@(!CanExport)" @onclick="ExportAsync">
                 @if (_export?.IsExporting == true)
                 {
                     <span class="spinner spinner-sm" aria-hidden="true"></span>
@@ -91,6 +97,8 @@
     private bool Busy => IsComposing || _completing || _export?.IsExporting == true;
 
     private bool HasExports => Session?.Exports.Count > 0;
+
+    private bool CanExport => !Busy && Session?.Composed is not null && _export?.HasSelectedFormats == true;
 
     protected override void OnAfterRender(bool firstRender)
     {

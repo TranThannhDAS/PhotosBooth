@@ -60,7 +60,14 @@ public sealed record ArchivedSessionSummary(
 }
 
 /// <summary>Phiên đã lưu được mở lại. <see cref="PhotoSession.CanEdit"/> cho biết còn đủ dữ liệu nguồn để chỉnh sửa.</summary>
-public sealed record ArchivedSession(string SessionKey, PhotoSession Session, string? EditUnavailableReason);
+public sealed record ArchivedSession(string SessionKey, PhotoSession Session, string? EditUnavailableReason)
+{
+    /// <summary>
+    /// Trạng thái kết thúc đã lưu (hoàn thành/hủy), độc lập với trạng thái sẵn sàng chỉnh sửa của <see cref="Session"/>.
+    /// Null khi phiên còn dang dở hoặc dữ liệu cũ chưa xác định được trạng thái kết thúc.
+    /// </summary>
+    public PhotoSessionState? PersistedState { get; init; }
+}
 
 /// <summary>
 /// Lưu trữ phiên chụp lâu dài: file trong Event Workspace hiện tại (snapshot template,
