@@ -2506,3 +2506,209 @@ body {
         text-align: center;
     }
 }
+
+/* ---------- Thành phẩm ưu tiên ảnh lớn (Kiosk 15.6 inch) ---------- */
+.screen-result .screen-header {
+    padding-block: var(--space-2);
+}
+
+.screen-result .screen-footer {
+    padding-block: var(--space-2);
+}
+
+.screen-result .screen-body {
+    padding: var(--space-2) var(--space-4);
+    overflow: hidden;
+}
+
+.screen-result .screen-footer .btn-lg {
+    min-height: 56px;
+    padding: var(--space-2) var(--space-6);
+    font-size: 1.125rem;
+}
+
+.result-photo-first {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    gap: var(--space-2);
+}
+
+.result-photo-heading {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.result-photo-heading h1 {
+    margin: 0;
+    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+}
+
+.result-photo-heading p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+}
+
+.result-photo-actions {
+    display: flex;
+    flex: none;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.result-photo-stage {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+}
+
+.result-photo-stage .result-preview {
+    width: 100%;
+    height: 100%;
+    padding: var(--space-2);
+    background: var(--color-stage);
+}
+
+.result-photo-stage .canvas-frame {
+    max-height: 100%;
+}
+
+.result-modal-backdrop {
+    z-index: 950;
+}
+
+.result-modal-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(850px, 100%);
+    max-height: min(90dvh, 850px);
+    padding: var(--space-4);
+    overflow: hidden;
+}
+
+.result-modal-header {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.result-modal-header .dialog-title {
+    margin: 0;
+}
+
+.result-modal-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-height: 0;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+.result-save-dialog {
+    width: min(600px, 100%);
+}
+
+.result-viewer-backdrop {
+    z-index: 960;
+    padding: var(--space-2);
+}
+
+.result-viewer {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    background: var(--color-stage);
+    color: var(--color-stage-text);
+}
+
+.result-viewer-toolbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.result-viewer-buttons {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.result-viewer-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
+}
+
+.result-viewer-image {
+    flex: 0 0 auto;
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    aspect-ratio: var(--viewer-aspect, 2 / 3);
+    background: transparent;
+}
+
+.result-viewer-image .image-view-img {
+    object-fit: contain;
+}
+
+.result-viewer-scroll.is-zoomed {
+    display: block;
+}
+
+.result-viewer-scroll.is-zoomed .result-viewer-image {
+    width: auto;
+    max-width: none;
+    height: 200%;
+    margin-inline: auto;
+}
+
+@media (max-width: 900px) {
+    .result-photo-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .result-photo-actions {
+        width: 100%;
+    }
+
+    .result-photo-actions .btn {
+        flex: 1 1 auto;
+    }
+}
+
+@media (max-height: 680px) {
+    .result-photo-heading p {
+        display: none;
+    }
+
+    .screen-result .screen-footer {
+        gap: var(--space-2);
+    }
+}
