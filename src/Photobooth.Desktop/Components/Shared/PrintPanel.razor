@@ -82,6 +82,12 @@
     [Parameter]
     public bool Disabled { get; set; }
 
+    /// <summary>Thông báo màn cha khi bắt đầu/kết thúc gửi lệnh in.</summary>
+    [Parameter]
+    public EventCallback OnStateChanged { get; set; }
+
+    public bool IsPrinting => _printing;
+
     private int MaxCopies => Sessions.PrintOptions.MaxCopies;
 
     private bool Busy => Disabled || _printing || Session?.State == PhotoSessionState.Composing;
@@ -101,6 +107,7 @@
 
         _printing = true;
         _message = null;
+        await OnStateChanged.InvokeAsync();
         StateHasChanged();
         try
         {
@@ -136,6 +143,7 @@
         finally
         {
             _printing = false;
+            await OnStateChanged.InvokeAsync();
         }
     }
 }
