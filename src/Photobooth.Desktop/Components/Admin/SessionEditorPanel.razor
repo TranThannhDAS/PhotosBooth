@@ -22,6 +22,8 @@
         }
 
         <EditToolsPanel Preview="_preview" Disabled="@_saving" OnMessage="ShowMessage" />
+        @* Cùng thư viện ảnh gốc như Kiosk; phiên đã lưu chỉ được xem hoặc chỉnh crop, không chụp lại. *@
+        <CapturedPhotosPanel Preview="_preview" Disabled="@_saving" ShowRetake="false" />
     </aside>
 </div>
 
