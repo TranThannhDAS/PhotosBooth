@@ -1,18 +1,34 @@
 @inherits SessionScreenBase
+@implements IDisposable
+@inject WindowFullscreenService Fullscreen
 
-@* Xem ảnh thành phẩm lớn, không gọi lại Photo Composer hoặc thay đổi dữ liệu phiên. *@
-<div class="dialog-backdrop result-viewer-backdrop" @onclick="Close">
-    <section class="result-viewer" role="dialog" aria-modal="true" aria-label="Xem lớn ảnh thành phẩm"
-             @onclick:stopPropagation="true">
-        <div class="result-viewer-toolbar">
-            <strong>Xem ảnh thành phẩm</strong>
-            <div class="result-viewer-buttons">
-                <button type="button" class="btn btn-secondary btn-sm" @onclick="ToggleZoom">
-                    @(_zoomed ? "Vừa màn hình" : "Phóng to 200%")
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" @onclick="Close">Đóng</button>
+@* Xem lớn thành phẩm. Toàn màn hình là chế độ cửa sổ WPF, không phải phóng to ảnh bằng CSS. *@
+<div class="dialog-backdrop result-viewer-backdrop @(_fullscreen ? "is-immersive" : null)" @onclick="CloseAsync">
+    <section @ref="_viewer" tabindex="-1"
+             class="result-viewer" role="dialog" aria-modal="true" aria-label="Xem lớn ảnh thành phẩm"
+             @onclick:stopPropagation="true" @onkeydown="HandleKeyDown">
+        @if (_fullscreen)
+        {
+            <button type="button" class="btn btn-secondary btn-sm result-viewer-exit-fullscreen"
+                    @onclick="ToggleFullscreen" aria-label="Thoát toàn màn hình">
+                Thoát toàn màn hình
+            </button>
+        }
+        else
+        {
+            <div class="result-viewer-toolbar">
+                <strong>Xem ảnh thành phẩm</strong>
+                <div class="result-viewer-buttons">
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="ToggleZoom">
+                        @(_zoomed ? "Vừa màn hình" : "Phóng to 200%")
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="ToggleFullscreen">
+                        Toàn màn hình
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseAsync">Đóng</button>
+                </div>
             </div>
-        </div>
+        }
         <div class="result-viewer-scroll @(_zoomed ? "is-zoomed" : null)" style="@ViewerStyle">
             @if (Session?.Composed is { } composed)
             {
@@ -24,7 +40,9 @@
 </div>
 
 @code {
+    private ElementReference _viewer;
     private bool _zoomed;
+    private bool _fullscreen;
 
     private string ViewerStyle => Session?.Template?.Canvas is { } canvas
         ? $"--viewer-aspect: {canvas.WidthPixels} / {canvas.HeightPixels};"
@@ -33,7 +51,66 @@
     [Parameter, EditorRequired]
     public EventCallback OnClose { get; set; }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _viewer.FocusAsync();
+        }
+    }
+
     private void ToggleZoom() => _zoomed = !_zoomed;
 
-    private Task Close() => OnClose.InvokeAsync();
+    private void ToggleFullscreen()
+    {
+        if (_fullscreen)
+        {
+            Fullscreen.Exit();
+            _fullscreen = false;
+        }
+        else
+        {
+            _zoomed = false;
+            _fullscreen = Fullscreen.Enter();
+        }
+    }
+
+    private async Task HandleKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "F11")
+        {
+            ToggleFullscreen();
+        }
+        else if (e.Key == "Escape")
+        {
+            if (_fullscreen)
+            {
+                ToggleFullscreen();
+            }
+            else
+            {
+                await CloseAsync();
+            }
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_fullscreen)
+        {
+            Fullscreen.Exit();
+            _fullscreen = false;
+        }
+
+        await OnClose.InvokeAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_fullscreen)
+        {
+            Fullscreen.Exit();
+            _fullscreen = false;
+        }
+    }
 }
