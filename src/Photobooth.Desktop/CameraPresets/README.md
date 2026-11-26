@@ -1,5 +1,7 @@
 # Bộ thông số máy ảnh Canon đi kèm ứng dụng
 
+> Tra cứu đầy đủ tên tham số, mã giá trị, nhãn và ràng buộc khi tự dựng bộ mới: [`docs/CANON_CAMERA_SETTINGS.md`](../../../docs/CANON_CAMERA_SETTINGS.md).
+
 Cùng mô hình với thư mục `Templates`:
 
 - Các file `*.json` ở đây được chép cạnh `Photobooth.exe` (thư mục `CameraPresets`) khi build/publish.
