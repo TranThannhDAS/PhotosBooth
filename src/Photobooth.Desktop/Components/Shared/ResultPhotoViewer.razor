@@ -1,0 +1,35 @@
+@inherits SessionScreenBase
+
+@* Xem ảnh thành phẩm lớn, không gọi lại Photo Composer hoặc thay đổi dữ liệu phiên. *@
+<div class="dialog-backdrop result-viewer-backdrop" @onclick="Close">
+    <section class="result-viewer" role="dialog" aria-modal="true" aria-label="Xem lớn ảnh thành phẩm"
+             @onclick:stopPropagation="true">
+        <div class="result-viewer-toolbar">
+            <strong>Xem ảnh thành phẩm</strong>
+            <div class="result-viewer-buttons">
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="ToggleZoom">
+                    @(_zoomed ? "Vừa màn hình" : "Phóng to 200%")
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="Close">Đóng</button>
+            </div>
+        </div>
+        <div class="result-viewer-scroll @(_zoomed ? "is-zoomed" : null)">
+            @if (Session?.Composed is { } composed)
+            {
+                <ImageView Class="result-viewer-image" Key="@composed.FilePath" Alt="Ảnh thành phẩm phóng lớn"
+                           Loader="@(ct => Sessions.GetComposedPreviewAsync(2400, ct))" />
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private bool _zoomed;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnClose { get; set; }
+
+    private void ToggleZoom() => _zoomed = !_zoomed;
+
+    private Task Close() => OnClose.InvokeAsync();
+}
