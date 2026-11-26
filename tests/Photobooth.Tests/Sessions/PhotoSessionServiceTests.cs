@@ -432,6 +432,28 @@ public sealed class PhotoSessionServiceTests : IDisposable
         Assert.Null(await service.GetSlotPreviewAsync(9, 320));
     }
 
+    [Fact]
+    public async Task CapturedPhotoPreview_ShowsOldAndCurrentImagesAfterRetake()
+    {
+        var service = await CreateReviewingServiceAsync();
+        var original = service.Current!.Slots[0]!;
+
+        Assert.True(service.BeginRetake(0));
+        Assert.Equal(1, (await service.CaptureSequenceAsync(_camera, null)).CapturedCount);
+
+        var replacement = service.Current!.Slots[0]!;
+        Assert.NotEqual(original.PhotoId, replacement.PhotoId);
+        Assert.Contains(service.Current.Photos, p => p.PhotoId == original.PhotoId);
+
+        // Ảnh đã bị thay vẫn đọc được bằng PhotoId thay vì Slots[0] (giờ trỏ ảnh mới).
+        var oldPreview = await service.GetCapturedPhotoPreviewAsync(original.PhotoId, 320);
+        var newPreview = await service.GetCapturedPhotoPreviewAsync(replacement.PhotoId, 320);
+        Assert.NotNull(oldPreview);
+        Assert.NotNull(newPreview);
+        Assert.True(TestImages.IsClose(TestImages.PixelAt(oldPreview!, 40, 120), TestImages.Right));
+        Assert.Null(await service.GetCapturedPhotoPreviewAsync(Guid.NewGuid(), 320));
+    }
+
     // ------------------------------------------------------------ Chụp lại
 
     [Fact]
