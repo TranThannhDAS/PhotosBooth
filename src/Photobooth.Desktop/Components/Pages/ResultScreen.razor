@@ -22,12 +22,14 @@
 
             <div class="result-photo-main">
                 <div class="result-photo-stage">
-                    <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
+                    <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage"
+                                     OnBackgroundClick="OpenViewer" />
                 </div>
 
-                <aside class="result-photo-sidebar" aria-label="Chỉnh sửa và in ảnh thành phẩm">
-                    <EditToolsPanel Preview="_preview" Disabled="@Busy" OnMessage="ShowMessage"
-                                    ShowFilters="false" />
+                <aside class="result-photo-sidebar" aria-label="Chỉnh sửa, bộ lọc và in ảnh thành phẩm">
+                    <div class="result-photo-tools" aria-label="Công cụ chỉnh ảnh có thể cuộn">
+                        <EditToolsPanel Preview="_preview" Disabled="@Busy" OnMessage="ShowMessage"
+                                        ShowFilters="false" />
 
                     <section class="panel-section">
                         <h2 class="panel-title">Ảnh đã chụp</h2>
@@ -56,11 +58,15 @@
                         </div>
                     </section>
 
-                    <PrintPanel @ref="_print" Disabled="@Busy" OnStateChanged="StateHasChanged" />
+                        @* Bộ lọc màu là công cụ cuối trong vùng cuộn. *@
+                        <ColorFilterPanel Disabled="@(_completing || _export?.IsExporting == true || _print?.IsPrinting == true)"
+                                          OnMessage="ShowMessage" />
+                    </div>
 
-                    @* Bộ lọc màu luôn nằm cuối danh sách thao tác trong sidebar. *@
-                    <ColorFilterPanel Disabled="@(_completing || _export?.IsExporting == true || _print?.IsPrinting == true)"
-                                      OnMessage="ShowMessage" />
+                    @* In ảnh đặt ngoài vùng cuộn, luôn dễ nhìn ở đáy cột phải. *@
+                    <div class="result-photo-print" aria-label="In ảnh nhanh">
+                        <PrintPanel @ref="_print" Disabled="@Busy" OnStateChanged="StateHasChanged" />
+                    </div>
                 </aside>
             </div>
         </div>
@@ -148,6 +154,14 @@
     private void ShowMessage(StatusInfo? message) => _message = message;
 
     private void CloseViewer() => _showViewer = false;
+
+    private void OpenViewer()
+    {
+        if (!Busy && HasComposed)
+        {
+            _showViewer = true;
+        }
+    }
 
     private void CloseSaveDialog()
     {
