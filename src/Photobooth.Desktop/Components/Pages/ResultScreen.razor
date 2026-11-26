@@ -1,74 +1,107 @@
 @inherits SessionScreenBase
 @inject ILogger<ResultScreen> Logger
 
-<SessionLayout Step="3" OnCancel="OnCancel" ConfirmCancel="@(Session?.Exports.Count == 0)" CancelDisabled="@Busy">
+<SessionLayout Step="3" Class="screen-result" OnCancel="OnCancel" ConfirmCancel="@(Session?.Exports.Count == 0)" CancelDisabled="@Busy">
     <ChildContent>
-        <div class="result-layout">
-            <div class="result-workspace">
-                <div class="page-heading">
+        <div class="result-photo-first">
+            <div class="result-photo-heading">
+                <div>
                     <h1>Ảnh của bạn</h1>
-                    <p>Chạm vào ảnh để chỉnh vùng cắt. Chọn “Hoàn tất” khi đã ưng ý.</p>
+                    <p>Chạm vào từng ô ảnh để chỉnh vùng cắt, hoặc phóng to để kiểm tra thành phẩm.</p>
                 </div>
-                <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
+                <div class="result-photo-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(!HasComposed || Busy)"
+                            @onclick="() => _showViewer = true">Phóng to</button>
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(Busy || !HasComposed)"
+                            @onclick="() => _showOptions = true">Chỉnh sửa / In ảnh</button>
+                </div>
             </div>
 
-            <aside class="side-panel" aria-label="Tùy chọn thành phẩm">
-                @if (_message is not null)
-                {
-                    <StatusMessage Status="@_message" />
-                }
+            @if (_message is not null)
+            {
+                <StatusMessage Status="@_message" />
+            }
 
-                <EditToolsPanel Preview="_preview" Disabled="@(_completing || _export?.IsExporting == true)" OnMessage="ShowMessage" />
+            <div class="result-photo-stage">
+                <ComposedPreview @ref="_preview" Disabled="@Busy" OnMessage="ShowMessage" />
+            </div>
+        </div>
 
-                <section class="panel-section">
-                    <h2 class="panel-title">Ảnh đã chụp</h2>
-                    <div class="slot-strip" aria-label="Ảnh nguồn của phiên">
-                        @if (Session is not null)
-                        {
-                            @for (var i = 0; i < Session.RequiredPhotoCount; i++)
-                            {
-                                var position = i;
-                                var photo = Session.Slots[position];
-                                <div class="source-thumb">
-                                    <div class="slot-thumb">
-                                        @if (photo is not null)
-                                        {
-                                            <ImageView Class="slot-thumb-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
-                                                       Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 240, ct))" />
-                                        }
-                                        <span class="slot-thumb-number">@(position + 1)</span>
-                                    </div>
-                                    <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => Sessions.BeginRetake(position)">
-                                        Chụp lại
-                                    </button>
-                                </div>
-                            }
-                        }
+        @if (_showViewer && HasComposed)
+        {
+            <ResultPhotoViewer OnClose="CloseViewer" />
+        }
+
+        @if (_showOptions)
+        {
+            <div class="dialog-backdrop result-modal-backdrop" @onclick="CloseOptions">
+                <section class="dialog result-modal-dialog" role="dialog" aria-modal="true"
+                         aria-labelledby="result-options-title" @onclick:stopPropagation="true">
+                    <div class="result-modal-header">
+                        <h2 id="result-options-title" class="dialog-title">Chỉnh sửa và in ảnh</h2>
+                        <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="CloseOptions">Đóng</button>
+                    </div>
+                    <div class="result-modal-content">
+                        <EditToolsPanel Preview="_preview" Disabled="@Busy" OnMessage="ShowMessage"
+                                        OnEditOpened="CloseOptions" />
+
+                        <section class="panel-section">
+                            <h2 class="panel-title">Ảnh đã chụp</h2>
+                            <div class="slot-strip" aria-label="Ảnh nguồn của phiên">
+                                @if (Session is not null)
+                                {
+                                    @for (var i = 0; i < Session.RequiredPhotoCount; i++)
+                                    {
+                                        var position = i;
+                                        var photo = Session.Slots[position];
+                                        <div class="source-thumb">
+                                            <div class="slot-thumb">
+                                                @if (photo is not null)
+                                                {
+                                                    <ImageView Class="slot-thumb-image" Key="@photo.PhotoId" Alt="@($"Ảnh {position + 1}")"
+                                                               Loader="@(ct => Sessions.GetSlotPreviewAsync(position, 240, ct))" />
+                                                }
+                                                <span class="slot-thumb-number">@(position + 1)</span>
+                                            </div>
+                                            <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => Retake(position)">
+                                                Chụp lại
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        </section>
+
+                        <PrintPanel @ref="_print" Disabled="@Busy" OnStateChanged="StateHasChanged" />
                     </div>
                 </section>
+            </div>
+        }
 
-                <PrintPanel Disabled="@Busy" />
-
-                <ExportPanel @ref="_export" ShowSaveButton="false" AllowFolderChange="false" Disabled="@(IsComposing || _completing)" OnStateChanged="StateHasChanged" />
-            </aside>
-        </div>
+        @if (_showSaveDialog)
+        {
+            <div class="dialog-backdrop result-modal-backdrop" @onclick="CloseSaveDialog">
+                <section class="dialog result-modal-dialog result-save-dialog" role="dialog" aria-modal="true"
+                         aria-labelledby="result-save-title" @onclick:stopPropagation="true">
+                    <div class="result-modal-header">
+                        <h2 id="result-save-title" class="dialog-title">Lưu ảnh thành phẩm</h2>
+                        <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="CloseSaveDialog">Đóng</button>
+                    </div>
+                    <div class="result-modal-content">
+                        <ExportPanel @ref="_export" ShowSaveButton="true" AllowFolderChange="false"
+                                     Disabled="@(IsComposing || _completing)" OnStateChanged="StateHasChanged" />
+                    </div>
+                </section>
+            </div>
+        }
     </ChildContent>
     <Footer>
         <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => Sessions.ReturnToReview()">Quay lại xem ảnh</button>
         <div class="footer-group">
-            <button type="button" class="btn btn-lg btn-secondary" disabled="@(!CanExport)" @onclick="ExportAsync">
-                @if (_export?.IsExporting == true)
-                {
-                    <span class="spinner spinner-sm" aria-hidden="true"></span>
-                    <span>Đang lưu…</span>
-                }
-                else
-                {
-                    <span>@(HasExports ? "Lưu thêm" : "Lưu ảnh")</span>
-                }
-            </button>
-            @* "Hoàn tất" lưu thành phẩm vào thư mục sự kiện (không bắt buộc xuất file ra ngoài). *@
-            <button type="button" class="btn btn-lg btn-primary" disabled="@(Busy || Session?.Composed is null)" @onclick="CompleteAsync">
+            <button type="button" class="btn btn-lg btn-secondary" disabled="@(!HasComposed || Busy)"
+                    @onclick="() => _showSaveDialog = true">@(HasExports ? "Lưu thêm" : "Lưu ảnh")</button>
+            @* Hoàn tất lưu thành phẩm trong thư mục sự kiện, không bắt buộc xuất file ra ngoài. *@
+            <button type="button" class="btn btn-lg btn-primary" disabled="@(Busy || !HasComposed)" @onclick="CompleteAsync">
                 @if (_completing)
                 {
                     <span class="spinner spinner-sm" aria-hidden="true"></span>
@@ -85,24 +118,28 @@
 
 @code {
     private ComposedPreview? _preview;
+    private PrintPanel? _print;
     private ExportPanel? _export;
     private StatusInfo? _message;
     private bool _completing;
+    private bool _showViewer;
+    private bool _showOptions;
+    private bool _showSaveDialog;
 
     [Parameter, EditorRequired]
     public EventCallback OnCancel { get; set; }
 
     private bool IsComposing => Session?.State == PhotoSessionState.Composing;
 
-    private bool Busy => IsComposing || _completing || _export?.IsExporting == true;
+    private bool Busy => IsComposing || _completing || _export?.IsExporting == true || _print?.IsPrinting == true;
+
+    private bool HasComposed => Session?.Composed is not null;
 
     private bool HasExports => Session?.Exports.Count > 0;
 
-    private bool CanExport => !Busy && Session?.Composed is not null && _export?.HasSelectedFormats == true;
-
     protected override void OnAfterRender(bool firstRender)
     {
-        // Tham chiếu @ref chỉ có sau lần render đầu: render lại để các panel nhận được khung xem trước.
+        // Tham chiếu @ref chỉ có sau render đầu, cần render lại để các panel nhận được preview.
         if (firstRender)
         {
             StateHasChanged();
@@ -111,7 +148,34 @@
 
     private void ShowMessage(StatusInfo? message) => _message = message;
 
-    private Task ExportAsync() => _export?.ExportAsync() ?? Task.CompletedTask;
+    private void CloseViewer() => _showViewer = false;
+
+    private void CloseOptions()
+    {
+        if (!Busy)
+        {
+            _showOptions = false;
+        }
+    }
+
+    private void CloseSaveDialog()
+    {
+        if (!Busy)
+        {
+            _showSaveDialog = false;
+        }
+    }
+
+    private void Retake(int position)
+    {
+        if (Busy)
+        {
+            return;
+        }
+
+        _showOptions = false;
+        Sessions.BeginRetake(position);
+    }
 
     private async Task CompleteAsync()
     {
