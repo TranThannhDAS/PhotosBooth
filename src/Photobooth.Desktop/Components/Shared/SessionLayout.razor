@@ -1,5 +1,5 @@
 @* Khung chung cho các màn hình trong phiên: thương hiệu, chỉ báo bước, nút hủy phiên, nội dung và thanh hành động. *@
-<div class="screen @(FullscreenContent ? "is-fullscreen-content" : null)">
+<div class="screen @Class @(FullscreenContent ? "is-fullscreen-content" : null)">
     <header class="screen-header">
         <span class="brand-name">
             <BrandLogo Size="34" />
@@ -58,6 +58,10 @@
 
 @code {
     private bool _confirming;
+
+    /// <summary>Lớp giao diện bổ sung cho từng màn, không ảnh hưởng các màn khác.</summary>
+    [Parameter]
+    public string? Class { get; set; }
 
     /// <summary>Chỉ số bước hiện tại (0-based) trong <see cref="UiText.StepLabels"/>.</summary>
     [Parameter]
