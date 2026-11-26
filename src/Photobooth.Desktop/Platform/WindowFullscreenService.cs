@@ -3,7 +3,7 @@ using System.Windows;
 namespace Photobooth.Desktop.Platform;
 
 /// <summary>
-/// Đưa cửa sổ WPF lên toàn màn hình vật lý cho trình xem ảnh thành phẩm.
+/// Quản lý chế độ toàn màn hình của cửa sổ WPF cho toàn bộ ứng dụng.
 /// Lưu và khôi phục trạng thái cửa sổ, không đổi chế độ toàn màn hình của Windows.
 /// </summary>
 public sealed class WindowFullscreenService
@@ -14,6 +14,8 @@ public sealed class WindowFullscreenService
     private WindowStyle _restoreStyle;
     private ResizeMode _restoreResizeMode;
     private bool _restoreTopmost;
+
+    public event EventHandler? Changed;
 
     public bool IsFullscreen { get; private set; }
 
@@ -59,6 +61,7 @@ public sealed class WindowFullscreenService
         window.WindowState = WindowState.Maximized;
 
         IsFullscreen = true;
+        Changed?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
@@ -90,6 +93,7 @@ public sealed class WindowFullscreenService
 
         window.WindowState = _restoreState;
         IsFullscreen = false;
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     public void Detach(Window window)
