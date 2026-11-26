@@ -1,0 +1,182 @@
+@inherits SessionScreenBase
+
+@* Thư viện toàn bộ ảnh gốc của phiên, tương tự ClientSessionDetailView:
+   bao gồm ảnh đang dùng và lịch sử ảnh đã thay khi chụp lại.
+   Mở ảnh gốc để xem lớn; chỉ ảnh đang dùng mới có thao tác chỉnh crop qua ComposedPreview. *@
+<section class="panel-section captured-photos-section" aria-label="Toàn bộ ảnh gốc">
+    <div class="panel-header-row">
+        <h2 class="panel-title">Toàn bộ ảnh gốc (@(Session?.Photos.Count ?? 0))</h2>
+        @if (Session is { } session && session.Photos.Count > session.RequiredPhotoCount)
+        {
+            <span class="client-badge client-badge-muted">Có ảnh chụp lại</span>
+        }
+    </div>
+
+    @if (Session?.Photos is not { Count: > 0 } photos)
+    {
+        <p class="panel-hint">Phiên này chưa có ảnh gốc.</p>
+    }
+    else
+    {
+        <div class="captured-photos-grid">
+            @foreach (var photo in photos.OrderBy(p => p.Sequence))
+            {
+                var item = photo;
+                var selected = IsCurrentPhoto(item);
+                <div class="captured-photo-item" @key="item.PhotoId">
+                    <button type="button"
+                            class="client-original-card captured-photo-card @(selected ? "is-selected-slot" : "is-replaced")"
+                            disabled="@Disabled"
+                            aria-label="@($"Xem lớn ảnh gốc lần chụp {item.Sequence}, vị trí {item.Position + 1}")"
+                            @onclick="() => OpenPhoto(item)">
+                        <ImageView Class="client-original-thumb captured-photo-thumb"
+                                   Key="@item.PhotoId"
+                                   Alt="@($"Ảnh gốc lần chụp {item.Sequence}")"
+                                   Loader="@(ct => Sessions.GetCapturedPhotoPreviewAsync(item.PhotoId, OriginalThumbWidth, ct))" />
+                        <div class="client-original-meta">
+                            <span class="client-original-title">#@item.Sequence · Vị trí @(item.Position + 1)</span>
+                            <span class="client-badge @(selected ? "client-badge-accent" : "client-badge-muted")">
+                                @(selected ? "Đang dùng" : "Đã thay")
+                            </span>
+                        </div>
+                        <span class="client-original-sub">
+                            @item.CapturedAt.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
+                            · @(item.WidthPixels)×@(item.HeightPixels)
+                        </span>
+                    </button>
+                    @if (CanRetake(item))
+                    {
+                        <button type="button" class="btn btn-ghost btn-sm captured-photo-retake"
+                                @onclick="() => RetakeAsync(item.Position)">Chụp lại</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@if (_openedPhoto is { } enlargedPhoto)
+{
+    <div class="dialog-backdrop" @onclick="ClosePhoto">
+        <div class="dialog captured-photo-lightbox" role="dialog" aria-modal="true"
+             aria-label="Xem ảnh gốc phóng to" @onclick:stopPropagation="true">
+            <div class="captured-photo-lightbox-header">
+                <div class="client-lightbox-title">
+                    <strong>Ảnh gốc #@enlargedPhoto.Sequence · Vị trí @(enlargedPhoto.Position + 1)</strong>
+                    <small>
+                        @UiText.LocalTime(enlargedPhoto.CapturedAt) ·
+                        @(IsCurrentPhoto(enlargedPhoto) ? "Đang dùng trong thành phẩm" : "Ảnh cũ (đã chụp lại)")
+                    </small>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="ClosePhoto">Đóng</button>
+            </div>
+
+            <div class="captured-photo-lightbox-stage">
+                <ImageView Class="captured-photo-lightbox-image"
+                           Key="@enlargedPhoto.PhotoId"
+                           Alt="@($"Ảnh gốc lần chụp {enlargedPhoto.Sequence} phóng to")"
+                           Loader="@(ct => Sessions.GetCapturedPhotoPreviewAsync(enlargedPhoto.PhotoId, OriginalFullWidth, ct))" />
+            </div>
+
+            @if (CanEditPhoto(enlargedPhoto) && Session?.Template is { } template)
+            {
+                <div class="captured-photo-lightbox-actions">
+                    @for (var i = 0; i < template.Slots.Count; i++)
+                    {
+                        if (template.Slots[i].PhotoIndex != enlargedPhoto.Position)
+                        {
+                            continue;
+                        }
+
+                        var slotIndex = i;
+                        <button type="button" class="btn btn-secondary btn-sm"
+                                @onclick="() => EditSlotAsync(enlargedPhoto, slotIndex)">
+                            Chỉnh @UiText.SlotLabel(slotIndex, template.Slots[slotIndex])
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private const int OriginalThumbWidth = 360;
+    private const int OriginalFullWidth = 1800;
+
+    private Guid _sessionId;
+    private CapturedPhoto? _openedPhoto;
+
+    [Parameter]
+    public ComposedPreview? Preview { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public bool ShowRetake { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnRetake { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Session?.SessionId != _sessionId)
+        {
+            _sessionId = Session?.SessionId ?? Guid.Empty;
+            _openedPhoto = null;
+        }
+    }
+
+    private bool IsCurrentPhoto(CapturedPhoto photo) =>
+        Session is { } session
+        && photo.Position >= 0
+        && photo.Position < session.Slots.Count
+        && session.Slots[photo.Position]?.PhotoId == photo.PhotoId;
+
+    private bool CanRetake(CapturedPhoto photo) =>
+        ShowRetake && OnRetake.HasDelegate && !Disabled && IsCurrentPhoto(photo)
+        && Session is { IsArchived: false, IsEnded: false, State: PhotoSessionState.Ready };
+
+    private bool CanEditPhoto(CapturedPhoto photo) =>
+        !Disabled && IsCurrentPhoto(photo) && Preview?.CanEdit == true;
+
+    private void OpenPhoto(CapturedPhoto photo)
+    {
+        if (!Disabled)
+        {
+            _openedPhoto = photo;
+        }
+    }
+
+    private void ClosePhoto() => _openedPhoto = null;
+
+    private async Task EditSlotAsync(CapturedPhoto photo, int slotIndex)
+    {
+        if (!CanEditPhoto(photo)
+            || Session?.Template is not { } template
+            || slotIndex < 0
+            || slotIndex >= template.Slots.Count
+            || template.Slots[slotIndex].PhotoIndex != photo.Position)
+        {
+            return;
+        }
+
+        _openedPhoto = null;
+        if (Preview is not null)
+        {
+            await Preview.OpenEditor(slotIndex);
+        }
+    }
+
+    private async Task RetakeAsync(int position)
+    {
+        if (Session?.Slots.ElementAtOrDefault(position) is not { } photo || !CanRetake(photo))
+        {
+            return;
+        }
+
+        _openedPhoto = null;
+        await OnRetake.InvokeAsync(position);
+    }
+}
