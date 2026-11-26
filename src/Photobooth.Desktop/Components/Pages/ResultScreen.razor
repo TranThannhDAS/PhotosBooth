@@ -75,7 +75,7 @@
                         <PrintPanel @ref="_print" Disabled="@Busy" OnStateChanged="StateHasChanged" />
 
                         @* Bộ lọc màu ở cuối danh sách thao tác để ưu tiên chỉnh ảnh và in. *@
-                        <ColorFilterPanel Disabled="@Busy" OnMessage="ShowMessage" />
+                        <ColorFilterPanel Disabled="@(_completing || _export?.IsExporting == true || _print?.IsPrinting == true)" OnMessage="ShowMessage" />
                     </div>
                 </section>
             </div>
