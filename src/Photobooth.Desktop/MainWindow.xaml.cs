@@ -38,6 +38,14 @@ public partial class MainWindow : Window
         BlazorHost.UrlLoading += OnUrlLoading;
     }
 
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        // Mặc định mở Photobooth toàn màn hình ngay khi WPF tạo cửa sổ.
+        // Dùng service chung để nút ở header có thể khôi phục kích thước ban đầu.
+        _services.GetRequiredService<WindowFullscreenService>().Enter();
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         _services.GetRequiredService<WindowFullscreenService>().Detach(this);

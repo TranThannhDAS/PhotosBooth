@@ -1,0 +1,38 @@
+@implements IDisposable
+@inject WindowFullscreenService Fullscreen
+
+@* Điều khiển toàn màn hình của cửa sổ WPF, độc lập với phóng to ảnh. *@
+<button type="button" class="btn btn-ghost btn-sm fullscreen-toggle @Class"
+        title="@(Fullscreen.IsFullscreen ? "Thoát chế độ toàn màn hình" : "Hiển thị toàn màn hình")"
+        aria-label="@(Fullscreen.IsFullscreen ? "Thoát chế độ toàn màn hình" : "Hiển thị toàn màn hình")"
+        @onclick="ToggleFullscreen">
+    <span aria-hidden="true">@(Fullscreen.IsFullscreen ? "▣" : "⛶")</span>
+    <span>@(Fullscreen.IsFullscreen ? "Thu nhỏ cửa sổ" : "Toàn màn hình")</span>
+</button>
+
+@code {
+    [Parameter]
+    public string? Class { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Fullscreen.Changed += OnFullscreenChanged;
+    }
+
+    private void ToggleFullscreen()
+    {
+        if (Fullscreen.IsFullscreen)
+        {
+            Fullscreen.Exit();
+        }
+        else
+        {
+            Fullscreen.Enter();
+        }
+    }
+
+    private void OnFullscreenChanged(object? sender, EventArgs e) =>
+        _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Fullscreen.Changed -= OnFullscreenChanged;
+}

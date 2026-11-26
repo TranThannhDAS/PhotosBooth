@@ -16,6 +16,7 @@
                 </li>
             }
         </ol>
+        <FullscreenToggle />
         @if (OnCancel.HasDelegate)
         {
             <button type="button" class="btn btn-ghost @(CancelAsClose ? "capture-close" : null)"

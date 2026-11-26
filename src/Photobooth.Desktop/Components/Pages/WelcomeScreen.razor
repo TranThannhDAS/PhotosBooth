@@ -1,10 +1,13 @@
 @* Màn hình chào: một hành động chính duy nhất. Camera chưa được bật ở đây.
    Nút "Quản trị" nhỏ ở góc (theo yêu cầu chủ sản phẩm) mở hộp thoại PIN để vào lại Admin. *@
 <div class="welcome">
-    @if (OnAdmin.HasDelegate)
-    {
-        <button type="button" class="btn btn-ghost btn-sm welcome-admin" @onclick="OnAdmin">Quản trị</button>
-    }
+    <div class="welcome-utilities">
+        <FullscreenToggle />
+        @if (OnAdmin.HasDelegate)
+        {
+            <button type="button" class="btn btn-ghost btn-sm welcome-admin" @onclick="OnAdmin">Quản trị</button>
+        }
+    </div>
     <div class="welcome-card">
         <div class="welcome-logo" aria-hidden="true">
             <BrandLogo Size="104" />
