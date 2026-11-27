@@ -3,20 +3,21 @@ using Microsoft.Extensions.Logging;
 using Photobooth.Application.Printing;
 using Photobooth.Infrastructure.Events;
 using Photobooth.Infrastructure.Printing;
+using Photobooth.Infrastructure.Persistence;
 
 namespace Photobooth.Desktop.Platform;
 
 /// <summary>
-/// Máy in đang dùng (chọn trong Admin, ghi nhớ trong app-state.json): chưa cấu hình, máy in giả lập hoặc máy in Windows.
+/// Máy in đang dùng (chọn trong Admin, ghi nhớ trong SQLite): chưa cấu hình, máy in giả lập hoặc máy in Windows.
 /// </summary>
 public sealed class PrinterSelectionService : IPrinterProvider
 {
-    private readonly AppStateStore _state;
+    private readonly DeviceSettingsStore _state;
     private readonly MockPrinter _mock;
     private readonly ILogger<PrinterSelectionService> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
-    public PrinterSelectionService(AppStateStore state, MockPrinter mock, ILoggerFactory loggerFactory)
+    public PrinterSelectionService(DeviceSettingsStore state, MockPrinter mock, ILoggerFactory loggerFactory)
     {
         _state = state;
         _mock = mock;
@@ -49,5 +50,5 @@ public sealed class PrinterSelectionService : IPrinterProvider
         }
     }
 
-    public Task SaveAsync(PrinterSelection selection) => _state.UpdateAsync(s => s with { Printer = selection });
+    public Task SaveAsync(PrinterSelection selection) => _state.SavePrinterAsync(selection);
 }
