@@ -51,7 +51,7 @@
 | Giới hạn an toàn số ảnh | 10 (`capture.maxPhotosPerSession`) | Cấu hình được trong 1..20 để tránh phiên quá dài/tốn tài nguyên; template vượt giới hạn được hiển thị nhưng không chọn được, kèm lý do. Đây là giới hạn tài nguyên, **không** phải số ảnh mặc định |
 | Thời gian đếm ngược | 3 giây | Số nguyên dương, giới hạn min/max cụ thể `CHƯA CHỐT` |
 | Template | Các template mẫu đi kèm | Phải hợp lệ; số ảnh cần chụp lấy từ chính template |
-| Camera | Camera mặc định của Windows | Chọn webcam cho Kiosk trong Admin › Camera (lưu `app-state.json`, đã chốt 26/11/2026). Camera đã chọn không còn → Kiosk báo lỗi, **không** tự chuyển sang camera khác. Máy ảnh Canon (EDSDK) hiện chỉ được liệt kê, chưa chọn được cho Kiosk |
+| Camera | Camera mặc định của Windows | Chọn webcam cho Kiosk trong Admin › Camera (lưu SQLite bảng `DeviceSettings`). Camera đã chọn không còn → Kiosk báo lỗi, **không** tự chuyển sang camera khác. Máy ảnh Canon (EDSDK) hiện chỉ được liệt kê, chưa chọn được cho Kiosk |
 | Khổ xuất ban đầu | 4 × 6 inch | Có thể cấu hình qua template/export preset |
 | Kích thước raster tham khảo | 1200 × 1800 px | Tương ứng 300 DPI cho 4 × 6 inch; không hardcode vào mọi mẫu |
 | Thư mục lưu | Event Workspace do người vận hành chọn | Bắt buộc trước khi phục vụ khách; kiểm tra tồn tại, quyền ghi, dung lượng (≥ 200 MB); không hardcode |
@@ -262,7 +262,7 @@ Các trạng thái sau là **mô hình mục tiêu**, tên enum thực tế có 
 
 ## 7. Quy tắc lưu trữ và phục hồi
 
-File ảnh của phiên nằm trong **Event Workspace**; metadata (sự kiện, phiên, ảnh, phiên bản, xuất/in, chia sẻ, trạng thái upload) nằm trong **SQLite** `%LOCALAPPDATA%/Photobooth/photobooth.db` (chi tiết: `docs/EVENT_STORAGE.md`). `%LOCALAPPDATA%/Photobooth/` còn chứa log, lựa chọn máy in (`app-state.json`) và hồ sơ WebView2. Cấu hình Desktop nằm tại `appsettings.json` cạnh file `.exe`.
+File ảnh của phiên nằm trong **Event Workspace**; metadata (sự kiện, phiên, ảnh, phiên bản, xuất/in, chia sẻ, trạng thái upload) nằm trong **SQLite** `%LOCALAPPDATA%/Photobooth/photobooth.db` (chi tiết: `docs/EVENT_STORAGE.md`). `%LOCALAPPDATA%/Photobooth/` còn chứa log và hồ sơ WebView2. Máy in, webcam và vùng hướng dẫn chụp được lưu trong SQLite (`DeviceSettings`). Cấu hình Desktop nằm tại `appsettings.json` cạnh file `.exe`.
 
 ```text
 {Thư mục sự kiện}/
