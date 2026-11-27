@@ -83,7 +83,7 @@ Hoàn thành → Phiên mới
 - Khi camera chưa sẵn sàng: dùng trạng thái loading hoặc lỗi cụ thể, không hiển thị khung đen như thể đang chụp bình thường.
 - **Chế độ gương (đã chốt 19/11/2026):** mặc định bật; ảnh xem lại và ảnh thành phẩm/file xuất phải **cùng hướng với live preview**. Có nút bật/tắt trên màn hình chụp, áp dụng cho các ảnh chụp tiếp theo. Ảnh gốc trên ổ đĩa vẫn là khung hình thô của camera; việc lật chỉ thực hiện một lần trong C# khi render/ghép, chỉ lật ô ảnh, không lật chữ/logo/trang trí của template.
 - **Bố trí camera Canon tham khảo:** cố định JPEG 3:2 bằng thiết lập trên máy, thử lens kit 15mm và khoảng cách đứng 2m; đây là cấu hình vật lý do nhân viên kiểm tra trước sự kiện, **không** do thiết lập hướng dẫn tự điều khiển. Người thiết kế template có thể sử dụng ô dọc/vuông/ngang; vùng hướng dẫn bắt buộc phản ánh đúng vùng cắt. Kiosk hiện chụp bằng webcam qua WebView2, nên chỉ đảm bảo tỷ lệ 3:2 nếu thiết bị đầu vào thực sự trả ảnh 3:2. Khi tích hợp Canon vào Kiosk cần đối chiếu tọa độ Live View với JPEG 3:2 trước khi chốt hướng dẫn là chính xác.
-- Thiết lập vùng hướng dẫn lưu trong `%LOCALAPPDATA%\\Photobooth\\app-state.json` (mục `captureGuide`) và có hiệu lực khi mở **màn chụp mới**; không thay đổi giữa một lượt chụp.
+- Thiết lập vùng hướng dẫn lưu trong SQLite `%LOCALAPPDATA%\\Photobooth\\photobooth.db` (bảng `DeviceSettings`) và có hiệu lực khi mở **màn chụp mới**; không thay đổi giữa một lượt chụp.
 - Khi rời màn hình: dừng preview, giải phóng camera phù hợp; nếu tiến trình chụp đang diễn ra, không bỏ qua kết quả đang ghi file.
 
 ### 4.4 Xem lại ảnh (`Review`)
