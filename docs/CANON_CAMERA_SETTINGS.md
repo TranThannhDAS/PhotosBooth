@@ -694,3 +694,31 @@ Nên giữ preset máy ảnh **trung tính, đúng màu da**, dùng bộ lọc p
 | Bảng mã/nhãn | Sinh từ `CanonSettingCatalog` (theo sample Canon EDSDK 13.21.10); test tự động kiểm tra các preset đi kèm khớp bảng |
 
 Các preset mẫu có sẵn: `src/Photobooth.Desktop/CameraPresets/` (xem README trong thư mục đó).
+
+
+## Phụ lục: thiết lập Canon EOS R50 cho Photobooth LED sáng / 2 mét (27/11/2026)
+
+Bộ thông số đi kèm dành riêng R50 đặt trong `src/Photobooth.Desktop/CameraPresets`, gồm **6 file JSON có tên `R50 LED 2m - ...`**.
+Các bộ này được thiết kế từ các mã Canon có sẵn trong `CanonSettingCatalog`, chạy ở M, JPEG L Fine, 3:2 và WB 5500K. 
+Chúng chỉ là **giá trị khởi đầu để thử trên EOS R50 thật**; không tự đặt tiêu cự, không điều khiển đèn LED hay khoảng cách đứng.
+
+### Thông số R50 còn thiếu để chốt cấu hình sản xuất
+
+| Thông tin cần xác nhận | Vì sao cần |
+|---|---|
+| **Tên lens đang gắn** (RF-S18–45mm hay loại khác) | Với kit RF-S18–45, góc rộng nhất **18mm**; không đặt được 15mm. Khẩu độ f/4.5 của preset cặp đôi chỉ khả dụng tại một số tiêu cự và lens. |
+| **Tiêu cự thực tế dự định dùng** | Nếu giữ 15mm phải có lens RF/RF-S khác phù hợp; xác định lại chiều rộng nhóm đứng trong vùng cắt template. |
+| **Model LED, số lượng, độ rọi tại mặt khách ở 2m** | Quyết định ISO 200/400/800 và khả năng dùng f/8, 1/160; “đèn sáng” không tương đương độ rọi định lượng. |
+| **Kelvin / CRI của LED và tản sáng** | WB 5500K mới là giả định; ánh sáng hội trường pha đèn vàng cần đo/kiểm tra lại. |
+| **LED có nhấp nháy / PWM hay không** | Thử 1/100 và tùy chọn `Anti-flicker shooting` trong menu R50; không có thuộc tính Anti-flicker trong CanonSettingCatalog hiện tại. |
+| **Kích thước phông, nhóm đông nhất, số hàng đứng** | Với khoảng cách 2m, lens 18mm thu chiều rộng ảnh gốc khoảng 2,48m; template dọc crop hẹp hơn, không đảm bảo nhóm lớn vừa. |
+| **Phiên bản firmware R50 và Canon EDSDK đang tích hợp** | Canon có hỗ trợ EOS R50 qua EDSDK nhưng phải kiểm tra tương thích và giá trị được phép khi kết nối máy thật. |
+| **Luồng capture mục tiêu trong Kiosk** | Hiện `ICameraDevice` của Kiosk vẫn là `WebViewCameraDevice`; preset Canon chỉ có tác dụng trong Admin › Camera đến khi Kiosk tích hợp `CanonCameraDevice`. |
+
+### Lưu ý vận hành
+
+- Nhấn **Thêm bộ mẫu còn thiếu** trong Admin › Camera nếu thư viện preset trên máy đã tồn tại; các preset cũ không bị ghi đè.
+- Một preset có thể bị **bỏ qua từng thuộc tính** khi chế độ máy hoặc lens không hỗ trợ; xem lý do hiển thị trong Admin.
+- Trên EOS R50, `Anti-flicker shooting` có thể làm trễ thời điểm nhả màn trập; cân nhắc khi phần mềm đang đếm ngược tự động.
+- Nên so sánh **ảnh JPEG đã chụp** (không chỉ Live View) và in thử 4×6 khi quyết định mức ISO/khẩu độ cuối cùng.
+

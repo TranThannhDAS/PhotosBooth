@@ -1,0 +1,58 @@
+{
+  "id": "5ed1c0de-0000-4000-8000-000000005602",
+  "name": "R50 LED 2m - Nhóm đông nhiều hàng",
+  "updatedAt": "2026-11-27T13:19:00+07:00",
+  "exposureMode": 3,
+  "values": [
+    {
+      "setting": "shutterSpeed",
+      "code": 112,
+      "label": "1/125"
+    },
+    {
+      "setting": "aperture",
+      "code": 56,
+      "label": "f/8.0"
+    },
+    {
+      "setting": "iso",
+      "code": 96,
+      "label": "800"
+    },
+    {
+      "setting": "whiteBalance",
+      "code": 9,
+      "label": "Nhiệt độ màu (K)"
+    },
+    {
+      "setting": "colorTemperature",
+      "code": 5500,
+      "label": "5500 K"
+    },
+    {
+      "setting": "pictureStyle",
+      "code": 129,
+      "label": "Tiêu chuẩn"
+    },
+    {
+      "setting": "liveViewAfMethod",
+      "code": 2,
+      "label": "Khuôn mặt + bám theo"
+    },
+    {
+      "setting": "imageQuality",
+      "code": 1310479,
+      "label": "JPEG Lớn – Tinh (L Fine)"
+    },
+    {
+      "setting": "aspectRatio",
+      "code": 0,
+      "label": "3:2 (toàn khung)"
+    },
+    {
+      "setting": "autoPowerOff",
+      "code": 0,
+      "label": "Không tự tắt"
+    }
+  ]
+}
