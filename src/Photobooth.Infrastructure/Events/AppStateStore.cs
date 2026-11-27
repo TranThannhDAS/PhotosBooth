@@ -55,6 +55,12 @@ public sealed record AppState
     /// <summary>Webcam dùng cho Kiosk; file cũ không có mục này → camera mặc định.</summary>
     public CameraSelection Camera { get; init; } = new();
 
+    /// <summary>
+    /// Thiết lập hướng dẫn bố cục trên Live View Kiosk.
+    /// app-state.json cũ không có mục này → mặc định làm tối bên ngoài 65%.
+    /// </summary>
+    public CaptureGuideSettings CaptureGuide { get; init; } = new();
+
     /// <summary>KHÔNG CÒN DÙNG (bản JSON cũ). Chỉ giữ lại để đọc/ghi lại nguyên vẹn file cũ, không phải nguồn dữ liệu.</summary>
     public IReadOnlyList<KnownEventEntry> KnownEvents { get; init; } = [];
 }
