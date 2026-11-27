@@ -1,0 +1,294 @@
+{
+  "id": "wedding-blush-peony",
+  "name": "Vườn Mẫu Đơn Hồng",
+  "description": "Mẫu đơn pastel, hồng phấn và đường viền rose-gold cho tiệc cưới ngoài trời.",
+  "canvas": {
+    "widthPixels": 1200,
+    "heightPixels": 1800,
+    "dpi": 300,
+    "backgroundColor": "#FFF4F2"
+  },
+  "slots": [
+    {
+      "id": "photo-1",
+      "photoIndex": 0,
+      "x": 96,
+      "y": 375,
+      "width": 488,
+      "height": 326,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B78082",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-2",
+      "photoIndex": 1,
+      "x": 616,
+      "y": 375,
+      "width": 488,
+      "height": 326,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B78082",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-3",
+      "photoIndex": 2,
+      "x": 96,
+      "y": 790,
+      "width": 488,
+      "height": 326,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B78082",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-4",
+      "photoIndex": 3,
+      "x": 616,
+      "y": 790,
+      "width": 488,
+      "height": 326,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B78082",
+      "zIndex": 0
+    }
+  ],
+  "decorations": [
+    {
+      "id": "luxury-background",
+      "type": "image",
+      "assetPath": "assets/background.png",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 1800,
+      "fit": "contain",
+      "zIndex": -90
+    },
+    {
+      "id": "page-border-outer",
+      "type": "rectangle",
+      "x": 30,
+      "y": 30,
+      "width": 1140,
+      "height": 1740,
+      "zIndex": 10,
+      "strokeColor": "#B78082",
+      "strokeWidth": 3
+    },
+    {
+      "id": "page-border-inner",
+      "type": "rectangle",
+      "x": 46,
+      "y": 46,
+      "width": 1108,
+      "height": 1708,
+      "zIndex": 10,
+      "strokeColor": "#F0C6C1",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-1",
+      "type": "rectangle",
+      "x": 88,
+      "y": 367,
+      "width": 504,
+      "height": 342,
+      "zIndex": 8,
+      "strokeColor": "#B78082",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-1",
+      "type": "rectangle",
+      "x": 102,
+      "y": 381,
+      "width": 476,
+      "height": 314,
+      "zIndex": 9,
+      "strokeColor": "#F0C6C1",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-2",
+      "type": "rectangle",
+      "x": 608,
+      "y": 367,
+      "width": 504,
+      "height": 342,
+      "zIndex": 8,
+      "strokeColor": "#B78082",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-2",
+      "type": "rectangle",
+      "x": 622,
+      "y": 381,
+      "width": 476,
+      "height": 314,
+      "zIndex": 9,
+      "strokeColor": "#F0C6C1",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-3",
+      "type": "rectangle",
+      "x": 88,
+      "y": 782,
+      "width": 504,
+      "height": 342,
+      "zIndex": 8,
+      "strokeColor": "#B78082",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-3",
+      "type": "rectangle",
+      "x": 102,
+      "y": 796,
+      "width": 476,
+      "height": 314,
+      "zIndex": 9,
+      "strokeColor": "#F0C6C1",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-4",
+      "type": "rectangle",
+      "x": 608,
+      "y": 782,
+      "width": 504,
+      "height": 342,
+      "zIndex": 8,
+      "strokeColor": "#B78082",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-4",
+      "type": "rectangle",
+      "x": 622,
+      "y": 796,
+      "width": 476,
+      "height": 314,
+      "zIndex": 9,
+      "strokeColor": "#F0C6C1",
+      "strokeWidth": 2
+    },
+    {
+      "id": "header-caption",
+      "type": "text",
+      "text": "OUR LOVE STORY",
+      "x": 155,
+      "y": 103,
+      "width": 890,
+      "height": 50,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 40,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#9D6979",
+      "zIndex": 30
+    },
+    {
+      "id": "couple-name",
+      "type": "text",
+      "text": "MINH & LINH",
+      "x": 110,
+      "y": 173,
+      "width": 980,
+      "height": 130,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 107,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#6E4455",
+      "zIndex": 30
+    },
+    {
+      "id": "footer-wedding",
+      "type": "text",
+      "text": "TÌNH YÊU NỞ HOA",
+      "x": 105,
+      "y": 1235,
+      "width": 990,
+      "height": 95,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 77,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#6E4455",
+      "zIndex": 30
+    },
+    {
+      "id": "footer-caption",
+      "type": "text",
+      "text": "CÙNG NHAU VIẾT NÊN CHUYỆN TÌNH",
+      "x": 105,
+      "y": 1365,
+      "width": 990,
+      "height": 75,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 39,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#9D6979",
+      "zIndex": 30
+    },
+    {
+      "id": "wedding-date",
+      "type": "text",
+      "text": "{date}",
+      "x": 100,
+      "y": 1490,
+      "width": 1000,
+      "height": 74,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 54,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#6E4455",
+      "zIndex": 30
+    },
+    {
+      "id": "signature",
+      "type": "text",
+      "text": "WITH LOVE & JOY",
+      "x": 150,
+      "y": 1598,
+      "width": 900,
+      "height": 63,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 40,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#B78082",
+      "zIndex": 30
+    }
+  ]
+}

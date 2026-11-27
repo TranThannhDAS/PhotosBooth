@@ -1,0 +1,240 @@
+{
+  "id": "wedding-sage-garden",
+  "name": "Khu Vườn Xanh Ngọc",
+  "description": "Lá olive, xanh sage và vàng mờ; một ảnh lớn, hai ảnh nhỏ.",
+  "canvas": {
+    "widthPixels": 1200,
+    "heightPixels": 1800,
+    "dpi": 300,
+    "backgroundColor": "#F6F8F0"
+  },
+  "slots": [
+    {
+      "id": "photo-1",
+      "photoIndex": 0,
+      "x": 100,
+      "y": 315,
+      "width": 1000,
+      "height": 667,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#A28B57",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-2",
+      "photoIndex": 1,
+      "x": 100,
+      "y": 1030,
+      "width": 485,
+      "height": 323,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#A28B57",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-3",
+      "photoIndex": 2,
+      "x": 615,
+      "y": 1030,
+      "width": 485,
+      "height": 323,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#A28B57",
+      "zIndex": 0
+    }
+  ],
+  "decorations": [
+    {
+      "id": "luxury-background",
+      "type": "image",
+      "assetPath": "assets/background.png",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 1800,
+      "fit": "contain",
+      "zIndex": -90
+    },
+    {
+      "id": "page-border-outer",
+      "type": "rectangle",
+      "x": 30,
+      "y": 30,
+      "width": 1140,
+      "height": 1740,
+      "zIndex": 10,
+      "strokeColor": "#A28B57",
+      "strokeWidth": 3
+    },
+    {
+      "id": "page-border-inner",
+      "type": "rectangle",
+      "x": 46,
+      "y": 46,
+      "width": 1108,
+      "height": 1708,
+      "zIndex": 10,
+      "strokeColor": "#D8CFA9",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-1",
+      "type": "rectangle",
+      "x": 92,
+      "y": 307,
+      "width": 1016,
+      "height": 683,
+      "zIndex": 8,
+      "strokeColor": "#A28B57",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-1",
+      "type": "rectangle",
+      "x": 106,
+      "y": 321,
+      "width": 988,
+      "height": 655,
+      "zIndex": 9,
+      "strokeColor": "#D8CFA9",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-2",
+      "type": "rectangle",
+      "x": 92,
+      "y": 1022,
+      "width": 501,
+      "height": 339,
+      "zIndex": 8,
+      "strokeColor": "#A28B57",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-2",
+      "type": "rectangle",
+      "x": 106,
+      "y": 1036,
+      "width": 473,
+      "height": 311,
+      "zIndex": 9,
+      "strokeColor": "#D8CFA9",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-3",
+      "type": "rectangle",
+      "x": 607,
+      "y": 1022,
+      "width": 501,
+      "height": 339,
+      "zIndex": 8,
+      "strokeColor": "#A28B57",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-3",
+      "type": "rectangle",
+      "x": 621,
+      "y": 1036,
+      "width": 473,
+      "height": 311,
+      "zIndex": 9,
+      "strokeColor": "#D8CFA9",
+      "strokeWidth": 2
+    },
+    {
+      "id": "header-caption",
+      "type": "text",
+      "text": "GARDEN WEDDING",
+      "x": 140,
+      "y": 83,
+      "width": 920,
+      "height": 58,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 39,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#778D71",
+      "zIndex": 30
+    },
+    {
+      "id": "couple-name",
+      "type": "text",
+      "text": "MINH & LINH",
+      "x": 108,
+      "y": 153,
+      "width": 984,
+      "height": 126,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 99,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#46634B",
+      "zIndex": 30
+    },
+    {
+      "id": "footer-main",
+      "type": "text",
+      "text": "TOGETHER FOREVER",
+      "x": 105,
+      "y": 1440,
+      "width": 990,
+      "height": 99,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 73,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#46634B",
+      "zIndex": 30
+    },
+    {
+      "id": "wedding-date",
+      "type": "text",
+      "text": "{date}",
+      "x": 120,
+      "y": 1570,
+      "width": 960,
+      "height": 72,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 51,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#A28B57",
+      "zIndex": 30
+    },
+    {
+      "id": "signature",
+      "type": "text",
+      "text": "LOVE GROWS HERE",
+      "x": 140,
+      "y": 1660,
+      "width": 920,
+      "height": 55,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 36,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#778D71",
+      "zIndex": 30
+    }
+  ]
+}

@@ -1,0 +1,279 @@
+{
+  "id": "wedding-royal-ivory-gold",
+  "name": "Hoàng Gia Ngà Vàng",
+  "description": "Ngà – vàng champagne, hoa lụa và viền hoàng gia; một ảnh lớn, ba ảnh nhỏ.",
+  "canvas": {
+    "widthPixels": 1200,
+    "heightPixels": 1800,
+    "dpi": 300,
+    "backgroundColor": "#FCF7EC"
+  },
+  "slots": [
+    {
+      "id": "photo-1",
+      "photoIndex": 0,
+      "x": 92,
+      "y": 330,
+      "width": 1016,
+      "height": 677,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B18B52",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-2",
+      "photoIndex": 1,
+      "x": 92,
+      "y": 1050,
+      "width": 310,
+      "height": 207,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B18B52",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-3",
+      "photoIndex": 2,
+      "x": 445,
+      "y": 1050,
+      "width": 310,
+      "height": 207,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B18B52",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-4",
+      "photoIndex": 3,
+      "x": 798,
+      "y": 1050,
+      "width": 310,
+      "height": 207,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#B18B52",
+      "zIndex": 0
+    }
+  ],
+  "decorations": [
+    {
+      "id": "luxury-background",
+      "type": "image",
+      "assetPath": "assets/background.png",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 1800,
+      "fit": "contain",
+      "zIndex": -90
+    },
+    {
+      "id": "page-border-outer",
+      "type": "rectangle",
+      "x": 30,
+      "y": 30,
+      "width": 1140,
+      "height": 1740,
+      "zIndex": 10,
+      "strokeColor": "#B18B52",
+      "strokeWidth": 3
+    },
+    {
+      "id": "page-border-inner",
+      "type": "rectangle",
+      "x": 46,
+      "y": 46,
+      "width": 1108,
+      "height": 1708,
+      "zIndex": 10,
+      "strokeColor": "#E9D4A5",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-1",
+      "type": "rectangle",
+      "x": 84,
+      "y": 322,
+      "width": 1032,
+      "height": 693,
+      "zIndex": 8,
+      "strokeColor": "#B18B52",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-1",
+      "type": "rectangle",
+      "x": 98,
+      "y": 336,
+      "width": 1004,
+      "height": 665,
+      "zIndex": 9,
+      "strokeColor": "#E9D4A5",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-2",
+      "type": "rectangle",
+      "x": 84,
+      "y": 1042,
+      "width": 326,
+      "height": 223,
+      "zIndex": 8,
+      "strokeColor": "#B18B52",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-2",
+      "type": "rectangle",
+      "x": 98,
+      "y": 1056,
+      "width": 298,
+      "height": 195,
+      "zIndex": 9,
+      "strokeColor": "#E9D4A5",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-3",
+      "type": "rectangle",
+      "x": 437,
+      "y": 1042,
+      "width": 326,
+      "height": 223,
+      "zIndex": 8,
+      "strokeColor": "#B18B52",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-3",
+      "type": "rectangle",
+      "x": 451,
+      "y": 1056,
+      "width": 298,
+      "height": 195,
+      "zIndex": 9,
+      "strokeColor": "#E9D4A5",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-4",
+      "type": "rectangle",
+      "x": 790,
+      "y": 1042,
+      "width": 326,
+      "height": 223,
+      "zIndex": 8,
+      "strokeColor": "#B18B52",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-4",
+      "type": "rectangle",
+      "x": 804,
+      "y": 1056,
+      "width": 298,
+      "height": 195,
+      "zIndex": 9,
+      "strokeColor": "#E9D4A5",
+      "strokeWidth": 2
+    },
+    {
+      "id": "header-caption",
+      "type": "text",
+      "text": "LỄ THÀNH HÔN",
+      "x": 140,
+      "y": 88,
+      "width": 920,
+      "height": 54,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 37,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#8E7760",
+      "zIndex": 30
+    },
+    {
+      "id": "couple-name",
+      "type": "text",
+      "text": "MINH & LINH",
+      "x": 90,
+      "y": 158,
+      "width": 1020,
+      "height": 114,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 109,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#624D31",
+      "zIndex": 30
+    },
+    {
+      "id": "footer-main",
+      "type": "text",
+      "text": "FOREVER & ALWAYS",
+      "x": 105,
+      "y": 1390,
+      "width": 990,
+      "height": 115,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 76,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#624D31",
+      "zIndex": 30
+    },
+    {
+      "id": "wedding-date",
+      "type": "text",
+      "text": "{date}",
+      "x": 140,
+      "y": 1513,
+      "width": 920,
+      "height": 74,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 53,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#B18B52",
+      "zIndex": 30
+    },
+    {
+      "id": "signature",
+      "type": "text",
+      "text": "HÔM NAY VÀ MÃI MÃI",
+      "x": 125,
+      "y": 1622,
+      "width": 950,
+      "height": 66,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 37,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#8E7760",
+      "zIndex": 30
+    }
+  ]
+}

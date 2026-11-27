@@ -1,0 +1,490 @@
+{
+  "id": "wedding-champagne-double-strip",
+  "name": "Champagne Hai Dải 2×6",
+  "description": "Hai dải 2×6 trên một tờ 4×6; bốn ảnh được in lặp ở cả hai dải.",
+  "canvas": {
+    "widthPixels": 1200,
+    "heightPixels": 1800,
+    "dpi": 300,
+    "backgroundColor": "#F9EDDC"
+  },
+  "slots": [
+    {
+      "id": "photo-1",
+      "photoIndex": 0,
+      "x": 65,
+      "y": 225,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-2",
+      "photoIndex": 1,
+      "x": 65,
+      "y": 560,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-3",
+      "photoIndex": 2,
+      "x": 65,
+      "y": 895,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-4",
+      "photoIndex": 3,
+      "x": 65,
+      "y": 1230,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-5",
+      "photoIndex": 0,
+      "x": 665,
+      "y": 225,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-6",
+      "photoIndex": 1,
+      "x": 665,
+      "y": 560,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-7",
+      "photoIndex": 2,
+      "x": 665,
+      "y": 895,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    },
+    {
+      "id": "photo-8",
+      "photoIndex": 3,
+      "x": 665,
+      "y": 1230,
+      "width": 470,
+      "height": 313,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#BC9060",
+      "zIndex": 0
+    }
+  ],
+  "decorations": [
+    {
+      "id": "luxury-background",
+      "type": "image",
+      "assetPath": "assets/background.png",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 1800,
+      "fit": "contain",
+      "zIndex": -90
+    },
+    {
+      "id": "page-border-outer",
+      "type": "rectangle",
+      "x": 30,
+      "y": 30,
+      "width": 1140,
+      "height": 1740,
+      "zIndex": 10,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "page-border-inner",
+      "type": "rectangle",
+      "x": 46,
+      "y": 46,
+      "width": 1108,
+      "height": 1708,
+      "zIndex": 10,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-1",
+      "type": "rectangle",
+      "x": 57,
+      "y": 217,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-1",
+      "type": "rectangle",
+      "x": 71,
+      "y": 231,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-2",
+      "type": "rectangle",
+      "x": 57,
+      "y": 552,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-2",
+      "type": "rectangle",
+      "x": 71,
+      "y": 566,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-3",
+      "type": "rectangle",
+      "x": 57,
+      "y": 887,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-3",
+      "type": "rectangle",
+      "x": 71,
+      "y": 901,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-4",
+      "type": "rectangle",
+      "x": 57,
+      "y": 1222,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-4",
+      "type": "rectangle",
+      "x": 71,
+      "y": 1236,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-5",
+      "type": "rectangle",
+      "x": 657,
+      "y": 217,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-5",
+      "type": "rectangle",
+      "x": 671,
+      "y": 231,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-6",
+      "type": "rectangle",
+      "x": 657,
+      "y": 552,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-6",
+      "type": "rectangle",
+      "x": 671,
+      "y": 566,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-7",
+      "type": "rectangle",
+      "x": 657,
+      "y": 887,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-7",
+      "type": "rectangle",
+      "x": 671,
+      "y": 901,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-8",
+      "type": "rectangle",
+      "x": 657,
+      "y": 1222,
+      "width": 486,
+      "height": 329,
+      "zIndex": 8,
+      "strokeColor": "#BC9060",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-8",
+      "type": "rectangle",
+      "x": 671,
+      "y": 1236,
+      "width": 458,
+      "height": 301,
+      "zIndex": 9,
+      "strokeColor": "#E7CFAB",
+      "strokeWidth": 2
+    },
+    {
+      "id": "divider-strip",
+      "type": "rectangle",
+      "x": 597,
+      "y": 80,
+      "width": 6,
+      "height": 1640,
+      "zIndex": 15,
+      "color": "#BC9060"
+    },
+    {
+      "id": "micro-label-0",
+      "type": "text",
+      "text": "THE WEDDING OF",
+      "x": 60,
+      "y": 75,
+      "width": 480,
+      "height": 48,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 30,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#705139",
+      "zIndex": 30
+    },
+    {
+      "id": "couple-0",
+      "type": "text",
+      "text": "MINH & LINH",
+      "x": 55,
+      "y": 123,
+      "width": 490,
+      "height": 72,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 63,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#705139",
+      "zIndex": 30
+    },
+    {
+      "id": "date-0",
+      "type": "text",
+      "text": "{date}",
+      "x": 60,
+      "y": 1582,
+      "width": 480,
+      "height": 62,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 40,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#705139",
+      "zIndex": 30
+    },
+    {
+      "id": "tagline-0",
+      "type": "text",
+      "text": "LOVE • JOY • FOREVER",
+      "x": 55,
+      "y": 1650,
+      "width": 490,
+      "height": 54,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 27,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#947555",
+      "zIndex": 30
+    },
+    {
+      "id": "micro-label-1",
+      "type": "text",
+      "text": "THE WEDDING OF",
+      "x": 660,
+      "y": 75,
+      "width": 480,
+      "height": 48,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 30,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#705139",
+      "zIndex": 30
+    },
+    {
+      "id": "couple-1",
+      "type": "text",
+      "text": "MINH & LINH",
+      "x": 655,
+      "y": 123,
+      "width": 490,
+      "height": 72,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 63,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#705139",
+      "zIndex": 30
+    },
+    {
+      "id": "date-1",
+      "type": "text",
+      "text": "{date}",
+      "x": 660,
+      "y": 1582,
+      "width": 480,
+      "height": 62,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 40,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#705139",
+      "zIndex": 30
+    },
+    {
+      "id": "tagline-1",
+      "type": "text",
+      "text": "LOVE • JOY • FOREVER",
+      "x": 655,
+      "y": 1650,
+      "width": 490,
+      "height": 54,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 27,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#947555",
+      "zIndex": 30
+    }
+  ]
+}

@@ -1,0 +1,192 @@
+{
+  "id": "wedding-burgundy-velvet",
+  "name": "Nhung Đỏ Vương Giả",
+  "description": "Đỏ rượu vang, hoa hồng nhung, khung đồng mạ vàng; một ảnh lớn cho gia đình/nhóm đông.",
+  "canvas": {
+    "widthPixels": 1200,
+    "heightPixels": 1800,
+    "dpi": 300,
+    "backgroundColor": "#34101D"
+  },
+  "slots": [
+    {
+      "id": "photo-1",
+      "photoIndex": 0,
+      "x": 102,
+      "y": 465,
+      "width": 996,
+      "height": 664,
+      "cornerRadius": 5,
+      "fit": "cover",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.48
+      },
+      "borderWidth": 3,
+      "borderColor": "#CCA77B",
+      "zIndex": 0
+    }
+  ],
+  "decorations": [
+    {
+      "id": "luxury-background",
+      "type": "image",
+      "assetPath": "assets/background.png",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 1800,
+      "fit": "contain",
+      "zIndex": -90
+    },
+    {
+      "id": "page-border-outer",
+      "type": "rectangle",
+      "x": 30,
+      "y": 30,
+      "width": 1140,
+      "height": 1740,
+      "zIndex": 10,
+      "strokeColor": "#CCA77B",
+      "strokeWidth": 3
+    },
+    {
+      "id": "page-border-inner",
+      "type": "rectangle",
+      "x": 46,
+      "y": 46,
+      "width": 1108,
+      "height": 1708,
+      "zIndex": 10,
+      "strokeColor": "#F2D8AE",
+      "strokeWidth": 2
+    },
+    {
+      "id": "photo-frame-outer-1",
+      "type": "rectangle",
+      "x": 94,
+      "y": 457,
+      "width": 1012,
+      "height": 680,
+      "zIndex": 8,
+      "strokeColor": "#CCA77B",
+      "strokeWidth": 3
+    },
+    {
+      "id": "photo-frame-inner-1",
+      "type": "rectangle",
+      "x": 108,
+      "y": 471,
+      "width": 984,
+      "height": 652,
+      "zIndex": 9,
+      "strokeColor": "#F2D8AE",
+      "strokeWidth": 2
+    },
+    {
+      "id": "header-caption",
+      "type": "text",
+      "text": "THE CELEBRATION OF LOVE",
+      "x": 140,
+      "y": 98,
+      "width": 920,
+      "height": 55,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 40,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#F2D8AE",
+      "zIndex": 30
+    },
+    {
+      "id": "couple-name",
+      "type": "text",
+      "text": "MINH & LINH",
+      "x": 120,
+      "y": 175,
+      "width": 960,
+      "height": 150,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 113,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#FFF1D9",
+      "zIndex": 30
+    },
+    {
+      "id": "wedding-vow",
+      "type": "text",
+      "text": "TỪ HÔM NAY, CHÚNG TA LÀ MỘT",
+      "x": 130,
+      "y": 345,
+      "width": 940,
+      "height": 57,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 37,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#E5C7A4",
+      "zIndex": 30
+    },
+    {
+      "id": "footer-main",
+      "type": "text",
+      "text": "WE SAID YES",
+      "x": 110,
+      "y": 1250,
+      "width": 980,
+      "height": 110,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 82,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#FFF1D9",
+      "zIndex": 30
+    },
+    {
+      "id": "footer-love",
+      "type": "text",
+      "text": "TO FOREVER",
+      "x": 110,
+      "y": 1355,
+      "width": 980,
+      "height": 80,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 70,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#F2D8AE",
+      "zIndex": 30
+    },
+    {
+      "id": "wedding-date",
+      "type": "text",
+      "text": "{date}",
+      "x": 150,
+      "y": 1535,
+      "width": 900,
+      "height": 75,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 55,
+      "bold": true,
+      "textAlign": "center",
+      "color": "#FFF1D9",
+      "zIndex": 30
+    },
+    {
+      "id": "signature",
+      "type": "text",
+      "text": "LOVE   •   LAUGHTER   •   HAPPILY EVER AFTER",
+      "x": 140,
+      "y": 1640,
+      "width": 920,
+      "height": 55,
+      "fontFamily": "Georgia",
+      "fontSizePixels": 33,
+      "bold": false,
+      "textAlign": "center",
+      "color": "#E5C7A4",
+      "zIndex": 30
+    }
+  ]
+}
