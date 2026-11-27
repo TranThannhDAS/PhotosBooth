@@ -1,0 +1,119 @@
+@inject CaptureGuideSettingsService GuideSettings
+@inject ILogger<CaptureGuideSettingsPanel> Logger
+
+<section class="panel-section capture-guide-admin">
+    <h2 class="panel-title">Thiết lập vùng hướng dẫn chụp ảnh</h2>
+    <p class="panel-hint">
+        Hướng dẫn khách đứng đúng khu vực sẽ xuất hiện trong thành phẩm. Máy ảnh và ống kính được bố trí trước sự kiện:
+        tỷ lệ JPEG Canon dự kiến 3:2, khoảng cách đứng tham khảo 2m, tiêu cự tham khảo 15mm.
+        Các thông số này <strong>không được phần mềm tự đổi</strong>.
+    </p>
+
+    <div class="format-group" role="radiogroup" aria-label="Kiểu vùng hướng dẫn">
+        <label class="format-option">
+            <input type="radio" name="capture-guide-mode" checked="@(_mode == CaptureGuideMode.Outline)"
+                   @onchange="() => _mode = CaptureGuideMode.Outline" />
+            <span>
+                <strong>Chỉ hiển thị đường viền</strong>
+                <small>Giữ nguyên Live View, hiển thị ranh giới vùng sẽ được giữ lại.</small>
+            </span>
+        </label>
+        <label class="format-option">
+            <input type="radio" name="capture-guide-mode" checked="@(_mode == CaptureGuideMode.DimOutside)"
+                   @onchange="() => _mode = CaptureGuideMode.DimOutside" />
+            <span>
+                <strong>Làm tối phần bên ngoài (khuyên dùng)</strong>
+                <small>Khách vẫn nhìn thấy vùng ngoài để tự điều chỉnh vị trí đứng.</small>
+            </span>
+        </label>
+        <label class="format-option">
+            <input type="radio" name="capture-guide-mode" checked="@(_mode == CaptureGuideMode.CropPreview)"
+                   @onchange="() => _mode = CaptureGuideMode.CropPreview" />
+            <span>
+                <strong>Chỉ hiển thị vùng ảnh thành phẩm</strong>
+                <small>Che hoàn toàn phần ngoài vùng cắt ở Live View, không làm thay đổi ảnh gốc.</small>
+            </span>
+        </label>
+    </div>
+
+    @if (_mode == CaptureGuideMode.DimOutside)
+    {
+        <label class="capture-guide-range-label" for="capture-guide-opacity">
+            <span>Độ tối bên ngoài</span>
+            <strong>@_opacityPercent%</strong>
+        </label>
+        <input id="capture-guide-opacity" type="range" min="20" max="90" step="5"
+               class="capture-guide-opacity" @bind="_opacityPercent" @bind:event="oninput" />
+    }
+
+    <label class="capture-guide-checkbox">
+        <input type="checkbox" @bind="_showGuideLabel" />
+        <span>Hiển thị nhãn “Vùng ảnh thành phẩm”</span>
+    </label>
+
+    <p class="panel-hint">
+        Vùng cắt vẫn được tính tự động theo template đã chọn và kích thước camera thực tế.
+        Một template có ô ảnh dọc hoặc vuông có thể cắt hai bên dù camera chụp 3:2.
+        Đây chỉ là lớp phủ hướng dẫn, không xử lý zoom quang học.
+    </p>
+
+    <div class="camera-actions">
+        <button type="button" class="btn btn-primary" disabled="@_saving" @onclick="SaveAsync">
+            @(_saving ? "Đang lưu…" : "Lưu hướng dẫn chụp")
+        </button>
+    </div>
+
+    @if (_message is not null)
+    {
+        <StatusMessage Status="@_message" />
+    }
+</section>
+
+@code {
+    private CaptureGuideMode _mode;
+    private int _opacityPercent;
+    private bool _showGuideLabel;
+    private bool _saving;
+    private StatusInfo? _message;
+
+    protected override void OnInitialized()
+    {
+        var settings = GuideSettings.Current;
+        _mode = settings.Mode;
+        _opacityPercent = (int)Math.Round(settings.OutsideOpacity * 100);
+        _showGuideLabel = settings.ShowGuideLabel;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+        try
+        {
+            var settings = new CaptureGuideSettings
+            {
+                Mode = _mode,
+                OutsideOpacity = _opacityPercent / 100.0,
+                ShowGuideLabel = _showGuideLabel,
+            };
+            await GuideSettings.SaveAsync(settings);
+            _message = new StatusInfo(StatusKind.Success,
+                "Đã lưu thiết lập vùng hướng dẫn.", "Áp dụng khi khách mở màn chụp tiếp theo.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentOutOfRangeException)
+        {
+            Logger.LogWarning(ex, "Không lưu được cấu hình vùng hướng dẫn chụp");
+            _message = new StatusInfo(StatusKind.Error, "Không lưu được vùng hướng dẫn.",
+                "Kiểm tra quyền ghi thư mục cấu hình rồi thử lại.");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}
