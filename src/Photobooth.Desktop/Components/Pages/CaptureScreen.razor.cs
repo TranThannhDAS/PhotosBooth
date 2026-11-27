@@ -8,6 +8,7 @@ using Photobooth.Application.Sessions;
 using Photobooth.Application.Templates;
 using Photobooth.Desktop.Camera;
 using Photobooth.Desktop.Platform;
+using Photobooth.Infrastructure.Events;
 
 namespace Photobooth.Desktop.Components.Pages;
 
@@ -40,6 +41,18 @@ public sealed partial class CaptureScreen : SessionScreenBase
 
     [Inject]
     private WindowsShellService Shell { get; set; } = default!;
+
+    [Inject]
+    private CaptureGuideSettingsService GuideSettings { get; set; } = default!;
+
+    private CaptureGuideSettings _guideSettings = new();
+
+    private string GuideModeClass => _guideSettings.Mode switch
+    {
+        CaptureGuideMode.Outline => "guide-outline",
+        CaptureGuideMode.CropPreview => "guide-crop-preview",
+        _ => "guide-dim-outside",
+    };
 
     [Inject]
     private ILogger<CaptureScreen> Logger { get; set; } = default!;
@@ -130,7 +143,9 @@ public sealed partial class CaptureScreen : SessionScreenBase
     }
 
     private string FramingStyle => Camera.FrameSize is { } frame
-        ? string.Create(CultureInfo.InvariantCulture, $"--frame-aspect: {frame.Width} / {frame.Height}; --frame-ratio: {(double)frame.Width / frame.Height};")
+        ? string.Create(CultureInfo.InvariantCulture,
+            $"--frame-aspect: {frame.Width} / {frame.Height}; --frame-ratio: {(double)frame.Width / frame.Height}; " +
+            $"--guide-outside-opacity: {_guideSettings.OutsideOpacity};")
         : string.Empty;
 
     private static string GuideWindowStyle(FramingGuide guide) => string.Create(
@@ -140,6 +155,8 @@ public sealed partial class CaptureScreen : SessionScreenBase
     protected override void OnInitialized()
     {
         base.OnInitialized();
+        // Chốt thiết lập hiển thị khi vào màn chụp, không thay đổi giữa một lượt chụp.
+        _guideSettings = GuideSettings.Current;
         Camera.Faulted += OnCameraFaulted;
         Camera.FrameSizeChanged += OnFrameSizeChanged;
     }
