@@ -240,6 +240,34 @@ public sealed class TemplateRenderingTests : IDisposable
     }
 
     [Fact]
+    public async Task VietnameseText_FromWeddingTemplate_ComposesWithoutMissingGlyphs()
+    {
+        // Mô phỏng dòng chữ cưới có dấu mà khách gặp lỗi: Georgia không đủ glyph trên một số máy.
+        // Resolver phải dùng font có đầy đủ ký tự trước cả khi đo chiều rộng và xuất PNG.
+        var decoration = new TemplateDecoration
+        {
+            Type = DecorationKind.Text,
+            Text = "CÙNG NHAU VIẾT NÊN CHUYỆN TÌNH",
+            FontFamily = "Georgia",
+            X = 10,
+            Y = 118,
+            Width = 480,
+            Height = 95,
+            FontSizePixels = 52,
+            TextAlign = TextAlignment.Center,
+            Color = "#000000",
+            Bold = false,
+        };
+
+        var rendered = await ComposeAsync(
+            Template([Slot()], [decoration], width: 500, height: 240),
+            TestImages.CreateSplitJpeg());
+
+        Assert.True(CountDark(rendered, 10, 118, 480, 95) > 150,
+            "Ảnh thành phẩm phải có chữ tiếng Việt được render.");
+    }
+
+    [Fact]
     public async Task Placeholders_UseTheTimestampFromRequest_NotTheSystemClock()
     {
         var text = new TemplateDecoration { Type = DecorationKind.Text, Text = "{time}", X = 0, Y = 120, Width = 200, Height = 60, FontSizePixels = 40, Color = "#000000" };

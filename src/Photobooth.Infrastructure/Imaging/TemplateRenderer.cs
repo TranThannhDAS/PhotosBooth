@@ -266,9 +266,9 @@ internal static class TemplateRenderer
     {
         var text = TemplateText.Resolve(decoration.Text ?? string.Empty, localTimestamp).Normalize(NormalizationForm.FormC);
         var style = decoration.Bold ? SKFontStyle.Bold : SKFontStyle.Normal;
-        using var typeface = SKTypeface.FromFamilyName(decoration.FontFamily ?? DefaultFontFamily, style)
-            ?? SKTypeface.FromFamilyName(DefaultFontFamily, style)
-            ?? SKTypeface.Default;
+        // Cả Preview và ảnh thành phẩm cùng dùng renderer này.
+        // Tự chọn font có đủ glyph (đặc biệt chữ Việt dấu) trước khi đo rộng và vẽ.
+        using var typeface = TemplateTextFontResolver.Resolve(text, decoration.FontFamily, style);
         using var font = new SKFont(typeface, decoration.FontSizePixels) { Subpixel = true };
         using var paint = new SKPaint { Color = ToColor(decoration.Color ?? "#000000"), IsAntialias = true };
 

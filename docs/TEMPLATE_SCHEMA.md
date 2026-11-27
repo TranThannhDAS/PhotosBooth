@@ -150,13 +150,15 @@ Thuộc tính chung cho mọi trang trí:
 | Thuộc tính | Bắt buộc | Mặc định | Ghi chú |
 |---|---|---|---|
 | `text` | Có | — | Không được rỗng; hỗ trợ placeholder |
-| `fontFamily` | Không | `Segoe UI` | Font cài trên Windows. Máy không có font → cảnh báo, dùng font thay thế |
+| `fontFamily` | Không | `Segoe UI` | Font cài trên Windows. Nếu font không có hoặc thiếu glyph (ví dụ chữ Việt có dấu), Photo Composer tự chọn font Unicode thay thế cho toàn dòng, ưu tiên font serif gần phong cách gốc. Không cần sửa `template.json`. |
 | `fontSizePixels` | Không | `48` | > 0. Lớn hơn `height` → cảnh báo |
 | `bold` | Không | `false` | |
 | `textAlign` | Không | `center` | `left`, `center`, `right` trong khung `x..x+width` |
 | `color` | Không | `#000000` | |
 
 Cách vẽ: chữ một dòng, căn giữa theo chiều dọc của khung. Chữ dài hơn `width` được **tự thu nhỏ** để vừa khung.
+
+Khi hiển thị **Preview**, **ảnh thành phẩm** và **bản in**, chương trình dùng cùng `TemplateRenderer`. Bộ chọn font kiểm tra trước glyph của chuỗi Unicode đã chuẩn hóa NFC để tránh ô vuông cho chữ tiếng Việt như “NỞ”, “VIẾT”, “CHUYỆN”. Nếu trên máy không có font nào hỗ trợ toàn dòng, Photo Composer báo lỗi rõ nguyên nhân thay vì xuất thành phẩm lỗi chữ.
 
 Placeholder (thay bằng **một thời điểm thống nhất** của phiên chụp, giờ địa phương):
 
