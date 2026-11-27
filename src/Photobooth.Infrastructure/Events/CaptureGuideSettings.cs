@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace Photobooth.Infrastructure.Events;
 
 /// <summary>Kiểu hiển thị khung hướng dẫn trong Live View Kiosk.</summary>
