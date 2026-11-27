@@ -300,3 +300,10 @@ Chỉ xây dựng các component khi có từ **hai nơi trở lên** cần hàn
 - `docs/ARCHITECTURE.md`: Blazor Hybrid, lifecycle và ranh giới UI/Service.
 - `docs/BUSINESS_RULES.md`: trạng thái phiên, chụp/ghép/xuất và lỗi.
 - `docs/CODING_STANDARDS.md`: cách viết Razor/CSS/JS, DI, test và bảo mật.
+
+
+### Template chung và template theo sự kiện (27/11/2026)
+- Admin › Template Manager: lọc **sự kiện hiện tại + template chung**, **chỉ template chung**, **tất cả**; mỗi template có checkbox **Template chung**, tên sự kiện sở hữu và thao tác gán lại vào sự kiện hiện tại.
+- Tạo/nhập template khi đã mở sự kiện: mặc định riêng cho sự kiện đó; có thể tick **Template chung**. Khi chưa mở sự kiện: chỉ tạo/nhập template chung.
+- Kiosk › Chọn khung ảnh: hiển thị template hợp lệ + đang bật + (chung hoặc đúng EventId hiện tại); template của sự kiện khác không xuất hiện.
+- Template cũ mặc định chung. Đổi phạm vi không ảnh hưởng đến template snapshot trong phiên đã chụp.

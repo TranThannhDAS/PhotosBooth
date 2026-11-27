@@ -1,5 +1,6 @@
 @inherits SessionScreenBase
 @inject ITemplateCatalog Catalog
+@inject EventWorkspaceService Workspaces
 @inject IPhotoComposer Composer
 @inject ILogger<TemplateSelectionScreen> Logger
 
@@ -80,7 +81,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _templates = await Catalog.GetTemplatesAsync();
+        _templates = Workspaces.Current is { } workspace
+            ? await Catalog.GetTemplatesForEventAsync(workspace.Info.EventId)
+            : [];
         _selected = _templates.FirstOrDefault(Sessions.IsTemplateSupported);
     }
 

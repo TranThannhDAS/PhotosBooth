@@ -11,6 +11,13 @@ public interface ITemplateCatalog
     /// <summary>Các template hợp lệ (không có lỗi; có thể có cảnh báo).</summary>
     Task<IReadOnlyList<PhotoTemplate>> GetTemplatesAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Kiosk: chỉ template chung và template thuộc sự kiện hiện tại.
+    /// Catalog tĩnh cũ giữ hành vi mặc định để tương thích interface.
+    /// </summary>
+    Task<IReadOnlyList<PhotoTemplate>> GetTemplatesForEventAsync(Guid eventId, CancellationToken cancellationToken = default)
+        => GetTemplatesAsync(cancellationToken);
+
     /// <summary>Kết quả kiểm tra của từng file template, kể cả file bị bỏ qua.</summary>
     Task<IReadOnlyList<TemplateFileDiagnostics>> GetDiagnosticsAsync(CancellationToken cancellationToken = default);
 }

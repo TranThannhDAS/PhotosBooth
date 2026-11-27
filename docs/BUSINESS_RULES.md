@@ -259,12 +259,15 @@ Các trạng thái sau là **mô hình mục tiêu**, tên enum thực tế có 
 
 ### 6.2 Template Library, Template Manager và Editor (Phase 3, đã chốt 19/11/2026)
 
-- **BR-TL01 — Thư viện dùng chung:** template nằm trong Template Library của máy (`%LOCALAPPDATA%\Photobooth\Templates`), dùng cho mọi sự kiện; **không** lưu trong Event Workspace. Phiên chụp lưu snapshot template riêng, nên sửa/xóa template trong thư viện không đổi kết quả của phiên cũ (BR-T04).
+- **BR-TL01 — Thư viện template có phạm vi sự kiện:** template vẫn nằm trong Template Library của máy (`%LOCALAPPDATA%\Photobooth\Templates`), không chuyển vào Event Workspace. Template có thể là **template chung** (mọi sự kiện) hoặc **template riêng** (gắn một EventId). Kiosk chỉ thấy template hợp lệ, bật và (chung hoặc thuộc sự kiện đang dùng). Phiên đã chụp dùng snapshot riêng nên thay đổi phạm vi không ảnh hưởng ảnh cũ.
 - **BR-TL02 — Bật/tắt:** chỉ template hợp lệ và **đang bật** hiện trên Kiosk. Template mới tạo, sao chép hoặc nhập **mặc định tắt** để không lộ template dở dang cho khách. Tắt template không ảnh hưởng phiên đã dùng nó.
 - **BR-TL03 — Không lưu bản hỏng:** lưu/nhập chỉ thành công khi template hợp lệ hoàn toàn (nội dung + asset). Thất bại → không ghi gì, bản đang có giữ nguyên, lỗi hiển thị theo vị trí thuộc tính.
 - **BR-TL04 — Không ghi đè ngoài ý muốn:** nhập template có id trùng → đặt id mới; sao chép tạo id mới và bản riêng của asset; đổi tên không đổi id.
 - **BR-TL05 — Xóa có xác nhận:** xóa hẳn một template (không có thùng rác) sau khi xác nhận; không xóa asset của template khác hay dữ liệu Event Workspace. Không cho xóa/lưu đè template đang được một phiên chụp chưa kết thúc sử dụng.
 - **BR-TL06 — Editor dùng Engine hiện có:** Editor chỉ tạo đúng cấu trúc `template.json` của Engine; số ảnh vẫn theo BR-T03; `focalPoint` là mặc định của template, Manual Crop của phiên không ghi vào template; "Xem thử" render bằng Photo Composer.
+- **BR-TL07 — Template chung và template riêng:** trong Admin có checkbox **Template chung**. Bỏ chọn → gắn template với sự kiện hiện tại; chưa mở sự kiện thì không cho chuyển thành riêng. Admin lọc tất cả/chung/sự kiện hiện tại, có thể gán template riêng sang sự kiện hiện tại. Tạo/nhập mặc định thuộc sự kiện đang mở; có thể chọn thành chung. Sao chép kế thừa phạm vi và vẫn mặc định tắt trên Kiosk.
+- **BR-TL08 — Template cũ là chung:** template đã tồn tại trước khi bổ sung tính năng mặc định dùng ở mọi sự kiện, không sửa template.json hay file ảnh. Metadata phạm vi lưu tại `Templates/library.json` dưới khóa `eventTemplates` theo tên thư mục; thiếu khóa → chung. Xóa template phải xóa cả metadata; metadata lỗi không được âm thầm xem template riêng là chung.
+- **BR-TL09 — Giới hạn hiển thị Kiosk:** chỉ lọc theo EventId của Event Workspace đang hoạt động; không cho giao diện khách cung cấp EventId tùy ý. Không có sự kiện hợp lệ thì không cho chọn template. Toggle bật/tắt áp dụng cho template đó ở mọi sự kiện được phép thấy.
 
 ## 7. Quy tắc lưu trữ và phục hồi
 

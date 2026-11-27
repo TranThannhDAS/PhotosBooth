@@ -304,6 +304,90 @@ public sealed class TemplateLibraryTests : IDisposable
         Assert.Empty(Directory.GetFiles(_temp.Path, "escaped.txt", SearchOption.AllDirectories));
     }
 
+    // ------------------------------------------------------------ Phạm vi sự kiện / template chung
+
+    [Fact]
+    public async Task ExistingTemplates_DefaultToShared_WhenMetadataHasNoEventIds()
+    {
+        var library = CreateLibrary();
+        var entries = await library.ListAsync();
+
+        Assert.All(entries, e => Assert.True(e.IsShared));
+        Assert.Contains(await library.GetTemplatesForEventAsync(Guid.NewGuid()), t => t.Id == "alpha");
+        Assert.Contains(await library.GetTemplatesForEventAsync(Guid.NewGuid()), t => t.Id == "beta");
+    }
+
+    [Fact]
+    public async Task EventScopedTemplate_IsVisibleOnlyInItsEvent_AndSurvivesRestart()
+    {
+        var eventA = Guid.NewGuid();
+        var eventB = Guid.NewGuid();
+        var library = CreateLibrary();
+        var created = await library.CreateAsync(NewRequest("Mẫu riêng A") with { EventId = eventA });
+
+        Assert.Equal(eventA, created.EventId);
+        Assert.False(created.IsShared);
+        Assert.False(created.Enabled);
+        await library.SetEnabledAsync(created.Key, true);
+
+        Assert.Contains(await library.GetTemplatesForEventAsync(eventA), t => t.Id == created.Key);
+        Assert.DoesNotContain(await library.GetTemplatesForEventAsync(eventB), t => t.Id == created.Key);
+        Assert.DoesNotContain(await library.GetTemplatesAsync(), t => t.Id == created.Key);
+        Assert.Contains(await library.GetTemplatesForEventAsync(eventB), t => t.Id == "alpha");
+        Assert.Empty(await library.GetTemplatesForEventAsync(Guid.Empty));
+
+        var restarted = CreateLibrary();
+        Assert.Equal(eventA, (await restarted.FindAsync(created.Key))!.EventId);
+
+        await restarted.SetScopeAsync(created.Key, null);
+        Assert.True((await restarted.FindAsync(created.Key))!.IsShared);
+        Assert.Contains(await restarted.GetTemplatesForEventAsync(eventB), t => t.Id == created.Key);
+
+        await restarted.SetScopeAsync(created.Key, eventB);
+        Assert.DoesNotContain(await restarted.GetTemplatesForEventAsync(eventA), t => t.Id == created.Key);
+        Assert.Contains(await restarted.GetTemplatesForEventAsync(eventB), t => t.Id == created.Key);
+    }
+
+    [Fact]
+    public async Task DuplicateAndImport_KeepOrAssignEventScope()
+    {
+        var eventA = Guid.NewGuid();
+        var eventB = Guid.NewGuid();
+        var library = CreateLibrary();
+        var original = await library.CreateAsync(NewRequest("Mẫu riêng") with { EventId = eventA });
+        var copy = await library.DuplicateAsync(original.Key);
+        Assert.Equal(eventA, copy.EventId);
+        Assert.False(copy.Enabled);
+
+        var incoming = Path.Combine(_temp.Path, "IncomingEvent");
+        TestTemplateFiles.Write(incoming, "gamma", TestTemplateFiles.ValidJson("gamma"));
+        var imported = await library.ImportAsync(Path.Combine(incoming, "gamma"), eventId: eventB);
+        Assert.True(imported.Succeeded);
+        Assert.Equal(eventB, imported.Entry!.EventId);
+
+        await library.DeleteAsync(copy.Key);
+        Assert.DoesNotContain(copy.Key, await File.ReadAllTextAsync(Path.Combine(LibraryRoot, TemplateLibrary.StateFileName)));
+        await Assert.ThrowsAsync<TemplateLibraryException>(() => library.SetScopeAsync(original.Key, Guid.Empty));
+
+        var reloaded = CreateLibrary();
+        Assert.Equal(eventB, (await reloaded.FindAsync("gamma"))!.EventId);
+        Assert.Equal(eventA, (await reloaded.FindAsync(original.Key))!.EventId);
+    }
+
+    [Fact]
+    public async Task CorruptScopeMetadata_DoesNotExposePrivateTemplateAsShared()
+    {
+        var library = CreateLibrary();
+        var created = await library.CreateAsync(NewRequest("Mẫu riêng") with { EventId = Guid.NewGuid() });
+        await library.SetEnabledAsync(created.Key, true);
+        var stateFile = Path.Combine(LibraryRoot, TemplateLibrary.StateFileName);
+        await File.WriteAllTextAsync(stateFile, "{broken");
+
+        var reopened = CreateLibrary();
+        await Assert.ThrowsAsync<TemplateLibraryException>(() => reopened.GetTemplatesAsync());
+        await Assert.ThrowsAsync<TemplateLibraryException>(() => reopened.GetTemplatesForEventAsync(Guid.NewGuid()));
+    }
+
     // ------------------------------------------------------------ 11. Bật/tắt
 
     [Fact]

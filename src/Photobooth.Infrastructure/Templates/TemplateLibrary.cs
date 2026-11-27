@@ -12,7 +12,7 @@ using SkiaSharp;
 namespace Photobooth.Infrastructure.Templates;
 
 /// <summary>
-/// Template Library: thư viện template DÙNG CHUNG cho mọi sự kiện, mặc định %LOCALAPPDATA%\Photobooth\Templates.
+/// Template Library: template chung và template riêng theo EventId, cùng nằm trong thư viện của máy, mặc định %LOCALAPPDATA%\Photobooth\Templates.
 /// <code>
 /// Templates/
 ///   library.json            trạng thái bật/tắt trên Kiosk (không thuộc cấu trúc template)
@@ -93,12 +93,26 @@ public sealed class TemplateLibrary : ITemplateCatalog
         }
     }
 
-    /// <summary>Kiosk: chỉ template hợp lệ VÀ đang bật.</summary>
+    /// <summary>Catalog không biết sự kiện: chỉ template chung, hợp lệ và đang bật.</summary>
     public async Task<IReadOnlyList<PhotoTemplate>> GetTemplatesAsync(CancellationToken cancellationToken = default) =>
         (await ListAsync(cancellationToken).ConfigureAwait(false))
-            .Where(e => e.Enabled && e.Template is not null)
+            .Where(e => e.Enabled && e.Template is not null && e.IsShared)
             .Select(e => e.Template!)
             .ToArray();
+
+    /// <summary>Kiosk: template chung + template thuộc đúng EventId; không lộ template sự kiện khác.</summary>
+    public async Task<IReadOnlyList<PhotoTemplate>> GetTemplatesForEventAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        if (eventId == Guid.Empty)
+        {
+            return [];
+        }
+
+        return (await ListAsync(cancellationToken).ConfigureAwait(false))
+            .Where(e => e.Enabled && e.Template is not null && (e.IsShared || e.EventId == eventId))
+            .Select(e => e.Template!)
+            .ToArray();
+    }
 
     public async Task<IReadOnlyList<TemplateFileDiagnostics>> GetDiagnosticsAsync(CancellationToken cancellationToken = default) =>
         (await ListAsync(cancellationToken).ConfigureAwait(false))
@@ -128,6 +142,7 @@ public sealed class TemplateLibrary : ITemplateCatalog
     public async Task<TemplateLibraryEntry> CreateAsync(NewTemplateRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateEventId(request.EventId);
         if (string.IsNullOrWhiteSpace(request.Name))
         {
             throw new TemplateLibraryException("Vui lòng nhập tên template.");
@@ -175,7 +190,7 @@ public sealed class TemplateLibrary : ITemplateCatalog
                 Directory.CreateDirectory(folder);
                 await WriteTemplateFileAsync(folder, template, cancellationToken).ConfigureAwait(false);
                 await TryWriteThumbnailAsync(template with { AssetDirectory = folder }, cancellationToken).ConfigureAwait(false);
-                await UpdateStateAsync(s => s.With(key, enabled: false), cancellationToken).ConfigureAwait(false);
+                await UpdateStateAsync(s => s.With(key, enabled: false).WithScope(key, request.EventId), cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation("Đã tạo template {TemplateId}", key);
             },
             cancellationToken).ConfigureAwait(false);
@@ -195,7 +210,7 @@ public sealed class TemplateLibrary : ITemplateCatalog
                 newKey = TemplateIds.MakeUnique(template.Id + "-ban-sao", IsTaken);
                 var copy = template with { Id = newKey, Name = $"{template.Name} (bản sao)" };
                 await CopyTemplateAsync(copy, ResolveFolder(key), Path.Combine(RootDirectory, newKey), cancellationToken).ConfigureAwait(false);
-                await UpdateStateAsync(s => s.With(newKey, enabled: false), cancellationToken).ConfigureAwait(false);
+                await UpdateStateAsync(s => s.With(newKey, enabled: false).WithScope(newKey, source.EventId), cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation("Đã sao chép template {TemplateId} thành {NewTemplateId}", key, newKey);
             },
             cancellationToken).ConfigureAwait(false);
@@ -260,6 +275,29 @@ public sealed class TemplateLibrary : ITemplateCatalog
                 await UpdateStateAsync(s => s.With(key, enabled), cancellationToken).ConfigureAwait(false);
             },
             cancellationToken);
+
+    /// <summary>Đặt template chung (null) hoặc thuộc một sự kiện, không sửa template.json/ảnh phiên cũ.</summary>
+    public Task SetScopeAsync(string key, Guid? eventId, CancellationToken cancellationToken = default)
+    {
+        ValidateEventId(eventId);
+        return MutateAsync(async () =>
+        {
+            if (!Directory.Exists(ResolveFolder(key)))
+            {
+                throw new TemplateLibraryException("Không tìm thấy template.");
+            }
+
+            await UpdateStateAsync(s => s.WithScope(key, eventId), cancellationToken).ConfigureAwait(false);
+        }, cancellationToken);
+    }
+
+    private static void ValidateEventId(Guid? eventId)
+    {
+        if (eventId == Guid.Empty)
+        {
+            throw new TemplateLibraryException("Mã sự kiện không hợp lệ.");
+        }
+    }
 
     // ================================================================ Editor
 
@@ -408,8 +446,9 @@ public sealed class TemplateLibrary : ITemplateCatalog
     /// Nhập từ thư mục (chứa template.json) hoặc gói .zip. Kiểm tra JSON, ô ảnh, asset; lỗi → không ghi gì vào thư viện.
     /// Id trùng → tự đặt id mới (không ghi đè template đang có). Template nhập mặc định TẮT trên Kiosk.
     /// </summary>
-    public async Task<TemplateOperationResult> ImportAsync(string sourcePath, CancellationToken cancellationToken = default)
+    public async Task<TemplateOperationResult> ImportAsync(string sourcePath, CancellationToken cancellationToken = default, Guid? eventId = null)
     {
+        ValidateEventId(eventId);
         if (string.IsNullOrWhiteSpace(sourcePath) || !Path.IsPathFullyQualified(sourcePath))
         {
             return TemplateOperationResult.Fail("Đường dẫn nhập không hợp lệ.");
@@ -459,7 +498,7 @@ public sealed class TemplateLibrary : ITemplateCatalog
                         ? $"Đã nhập template “{template.Name}”."
                         : $"Đã nhập template “{template.Name}” với mã mới “{key}” vì mã “{template.Id}” đã tồn tại.";
                     await CopyTemplateAsync(template with { Id = key }, template.AssetDirectory!, Path.Combine(RootDirectory, key), cancellationToken).ConfigureAwait(false);
-                    await UpdateStateAsync(s => s.With(key, enabled: false), cancellationToken).ConfigureAwait(false);
+                    await UpdateStateAsync(s => s.With(key, enabled: false).WithScope(key, eventId), cancellationToken).ConfigureAwait(false);
                     _logger.LogInformation("Đã nhập template {TemplateId}", key);
                     importedKey = key;
                     result = new TemplateOperationResult(true, null, validation.Issues, message);
@@ -621,7 +660,7 @@ public sealed class TemplateLibrary : ITemplateCatalog
             if (!File.Exists(file))
             {
                 entries.Add(new TemplateLibraryEntry(key, null, false,
-                    [new(ValidationSeverity.Error, "$", $"Thư mục không có {JsonTemplateCatalog.TemplateFileName}.")]));
+                    [new(ValidationSeverity.Error, "$", $"Thư mục không có {JsonTemplateCatalog.TemplateFileName}.")], state.GetEventId(key)));
                 continue;
             }
 
@@ -637,7 +676,7 @@ public sealed class TemplateLibrary : ITemplateCatalog
                 issues.Add(new(ValidationSeverity.Warning, "id", $"Id '{template.Id}' khác tên thư mục '{key}'."));
             }
 
-            entries.Add(new TemplateLibraryEntry(key, template, !state.IsDisabled(key), issues));
+            entries.Add(new TemplateLibraryEntry(key, template, !state.IsDisabled(key), issues, state.GetEventId(key)));
         }
 
         foreach (var entry in entries.Where(e => !e.IsValid))
@@ -791,14 +830,21 @@ public sealed class TemplateLibrary : ITemplateCatalog
         var file = Path.Combine(RootDirectory, StateFileName);
         try
         {
-            return File.Exists(file)
+            var state = File.Exists(file)
                 ? JsonSerializer.Deserialize<LibraryState>(File.ReadAllText(file), StateOptions) ?? new LibraryState()
                 : new LibraryState();
+            if (state.EventTemplates is null || state.EventTemplates.Values.Any(id => id == Guid.Empty))
+            {
+                throw new TemplateLibraryException("Phạm vi sự kiện trong library.json không hợp lệ.");
+            }
+
+            return state;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            _logger.LogWarning(ex, "Không đọc được {StateFile}, coi mọi template là đang bật", StateFileName);
-            return new LibraryState();
+            _logger.LogError(ex, "Không đọc được phạm vi template trong {StateFile}", StateFileName);
+            // Fail-closed: metadata hỏng không được mặc nhiên cho template riêng thành chung.
+            throw new TemplateLibraryException("Không đọc được phạm vi sự kiện của template. Hãy kiểm tra library.json.", ex);
         }
     }
 
@@ -856,10 +902,14 @@ public sealed class TemplateLibrary : ITemplateCatalog
         }
     }
 
-    /// <summary>Nội dung library.json: danh sách template bị tắt trên Kiosk (mặc định: bật).</summary>
+    /// <summary>library.json: template cũ thiếu eventTemplates đều được xem là chung.</summary>
     private sealed record LibraryState
     {
         public IReadOnlyList<string> DisabledTemplates { get; init; } = [];
+
+        public Dictionary<string, Guid> EventTemplates { get; init; } = new(StringComparer.Ordinal);
+
+        public Guid? GetEventId(string key) => EventTemplates.TryGetValue(key, out var id) ? id : null;
 
         public bool IsDisabled(string key) => DisabledTemplates.Contains(key, StringComparer.Ordinal);
 
@@ -870,6 +920,21 @@ public sealed class TemplateLibrary : ITemplateCatalog
                 : DisabledTemplates.Append(key).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
         };
 
-        public LibraryState Without(string key) => With(key, enabled: true);
+        public LibraryState WithScope(string key, Guid? eventId)
+        {
+            var scopes = new Dictionary<string, Guid>(EventTemplates, StringComparer.Ordinal);
+            if (eventId is { } id)
+            {
+                scopes[key] = id;
+            }
+            else
+            {
+                scopes.Remove(key);
+            }
+
+            return this with { EventTemplates = scopes };
+        }
+
+        public LibraryState Without(string key) => With(key, enabled: true).WithScope(key, null);
     }
 }

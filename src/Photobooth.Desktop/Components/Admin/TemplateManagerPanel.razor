@@ -2,11 +2,12 @@
 @inject TemplateLibrary Library
 @inject IPhotoComposer Composer
 @inject PhotoSessionService Sessions
+@inject EventWorkspaceService Workspaces
 @inject WindowsShellService Shell
 @inject ILogger<TemplateManagerPanel> Logger
 
 @*
-    Template Manager (Admin): thư viện template dùng chung cho mọi sự kiện.
+    Template Manager (Admin): template chung hoặc gắn sự kiện.
     Tạo, sao chép, đổi tên, xóa, nhập/xuất, bật/tắt trên Kiosk và mở Visual Template Editor.
 *@
 <div class="tpl-manager">
@@ -14,10 +15,23 @@
         <p class="panel-hint">
             @if (_entries is not null)
             {
-                <span>@_entries.Count template · @_entries.Count(e => e.Enabled && e.IsValid) đang hiện trên Kiosk</span>
+                <span>@VisibleEntries.Count template đang xem / @_entries.Count tổng · @VisibleEntries.Count(e => e.Enabled && e.IsValid) đang bật</span>
             }
         </p>
+        <div class="tpl-scope-toolbar">
+            <label for="tpl-event-filter">Lọc thư viện</label>
+            <select id="tpl-event-filter" class="text-input" @bind="_scopeFilter">
+                <option value="current">Sự kiện hiện tại + template chung</option>
+                <option value="shared">Chỉ template chung</option>
+                <option value="all">Tất cả template</option>
+            </select>
+            @if (Workspaces.Current is { } workspace)
+            {
+                <span class="panel-hint">Sự kiện hiện tại: @workspace.Info.Name</span>
+            }
+        </div>
         <div class="event-actions">
+            <label class="tpl-import-shared"><input type="checkbox" @bind="_importShared" disabled="@(CurrentEventId is null)" /> Nhập dưới dạng template chung</label>
             <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => { _dialog = Dialog.Create; _dialogError = null; }">+ Tạo template</button>
             <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="ImportFolderAsync">Nhập từ thư mục</button>
             <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="ImportZipAsync">Nhập file .zip</button>
@@ -56,10 +70,14 @@
     {
         <div class="center-state"><p>Thư viện chưa có template nào. Nhấn “Tạo template” hoặc nhập một template có sẵn.</p></div>
     }
+    else if (_entries is not null && VisibleEntries.Count == 0)
+    {
+        <div class="center-state"><p>Không có template trong phạm vi lọc này.</p></div>
+    }
     else if (_entries is not null)
     {
         <div class="tpl-grid">
-            @foreach (var entry in _entries)
+            @foreach (var entry in VisibleEntries)
             {
                 var item = entry;
                 <article class="tpl-card @(item.IsValid ? null : "is-invalid")">
@@ -72,6 +90,20 @@
                             @template.Canvas.WidthPixels × @template.Canvas.HeightPixels px · @template.Canvas.Dpi DPI<br />
                             <strong>@template.RequiredPhotoCount ảnh</strong> · @template.Slots.Count ô · @template.Decorations.Count trang trí
                         </p>
+                        <div class="tpl-scope-control">
+                            <label class="tpl-shared-check">
+                                <input type="checkbox" checked="@item.IsShared"
+                                       disabled="@(_busy || (item.IsShared && CurrentEventId is null))"
+                                       @onchange="e => ChangeSharedAsync(item, e.Value is true)" />
+                                <span>Template chung</span>
+                            </label>
+                            <small>@(item.IsShared ? "Dùng cho mọi sự kiện" : $"Sự kiện: {OwnerName(item)}")</small>
+                            @if (!item.IsShared && CurrentEventId.HasValue && item.EventId != CurrentEventId)
+                            {
+                                <button type="button" class="btn btn-ghost btn-sm" disabled="@_busy"
+                                        @onclick="() => AssignCurrentEventAsync(item)">Gán sang sự kiện hiện tại</button>
+                            }
+                        </div>
                         @if (item.Issues.Any(i => i.Severity == ValidationSeverity.Warning))
                         {
                             <p class="tpl-warning" title="@string.Join("\n", item.Issues)">@item.Issues.Count cảnh báo</p>
@@ -93,6 +125,7 @@
                     {
                         <div class="tpl-thumb tpl-thumb-error" aria-hidden="true">!</div>
                         <h3 class="tpl-name">@item.Key</h3>
+                        <p class="tpl-meta">@(item.IsShared ? "Template chung" : $"Sự kiện: {OwnerName(item)}")</p>
                         <p class="tpl-warning">Template lỗi, không hiện trên Kiosk:</p>
                         <ul class="issue-list">
                             @foreach (var issue in item.Issues.Where(i => i.Severity == ValidationSeverity.Error).Take(3))
@@ -112,7 +145,8 @@
 
 @if (_dialog == Dialog.Create)
 {
-    <TemplateCreateDialog OnCreate="CreateAsync" OnCancel="CloseDialog" Busy="_busy" Error="@_dialogError" />
+    <TemplateCreateDialog OnCreate="CreateAsync" OnCancel="CloseDialog" Busy="_busy" Error="@_dialogError"
+                          CurrentEventId="@CurrentEventId" />
 }
 else if (_dialog == Dialog.Rename && _target is { Template: { } renaming })
 {
@@ -155,6 +189,24 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
     }
 
     private IReadOnlyList<TemplateLibraryEntry>? _entries;
+    private string _scopeFilter = "all";
+    private bool _importShared;
+    private IReadOnlyDictionary<Guid, string> _eventNames = new Dictionary<Guid, string>();
+
+    private Guid? CurrentEventId => Workspaces.Current?.Info.EventId;
+
+    private IReadOnlyList<TemplateLibraryEntry> VisibleEntries => _entries is null ? [] :
+        _entries.Where(e => _scopeFilter switch
+        {
+            "shared" => e.IsShared,
+            "current" => e.IsShared || (CurrentEventId is { } id && e.EventId == id),
+            _ => true,
+        }).ToArray();
+
+    private string OwnerName(TemplateLibraryEntry entry) =>
+        entry.EventId is { } eventId && _eventNames.TryGetValue(eventId, out var name)
+            ? name
+            : entry.EventId?.ToString("D") ?? "Không xác định";
     private StatusInfo? _loadError;
     private StatusInfo? _message;
     private IReadOnlyList<TemplateValidationIssue> _messageIssues = [];
@@ -173,6 +225,9 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
     protected override async Task OnInitializedAsync()
     {
         Library.Changed += OnLibraryChanged;
+        Workspaces.Changed += OnWorkspaceChanged;
+        _scopeFilter = CurrentEventId.HasValue ? "current" : "all";
+        _importShared = CurrentEventId is null;
         await LoadAsync();
     }
 
@@ -181,6 +236,7 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
         try
         {
             _entries = await Library.ListAsync();
+            _eventNames = Workspaces.KnownEvents.ToDictionary(e => e.EventId, e => e.Name);
             _loadError = null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TemplateLibraryException)
@@ -287,6 +343,22 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
 
     private Task ToggleAsync(TemplateLibraryEntry entry) => RunAsync(() => Library.SetEnabledAsync(entry.Key, !entry.Enabled));
 
+    private Task ChangeSharedAsync(TemplateLibraryEntry entry, bool shared)
+    {
+        if (!shared && CurrentEventId is null)
+        {
+            ShowMessage(new StatusInfo(StatusKind.Warning, "Chưa chọn sự kiện.", "Hãy mở một sự kiện trước khi chuyển template thành riêng."));
+            return Task.CompletedTask;
+        }
+
+        return RunAsync(() => Library.SetScopeAsync(entry.Key, shared ? null : CurrentEventId));
+    }
+
+    private Task AssignCurrentEventAsync(TemplateLibraryEntry entry) =>
+        CurrentEventId is { } id
+            ? RunAsync(() => Library.SetScopeAsync(entry.Key, id))
+            : Task.CompletedTask;
+
     private async Task ImportFolderAsync()
     {
         var folder = await FolderPicker.PickAsync("Chọn thư mục template (chứa template.json)", null);
@@ -307,7 +379,7 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
 
     private Task ImportAsync(string path) => RunAsync(async () =>
     {
-        var result = await Library.ImportAsync(path);
+        var result = await Library.ImportAsync(path, eventId: _importShared ? null : CurrentEventId);
         if (result.Succeeded)
         {
             ShowMessage(new StatusInfo(StatusKind.Success, result.Message ?? "Đã nhập template.", "Template vừa nhập đang tắt trên Kiosk."),
@@ -387,5 +459,15 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
         StateHasChanged();
     });
 
-    public void Dispose() => Library.Changed -= OnLibraryChanged;
+    private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = InvokeAsync(() =>
+    {
+        _eventNames = Workspaces.KnownEvents.ToDictionary(e => e.EventId, e => e.Name);
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Library.Changed -= OnLibraryChanged;
+        Workspaces.Changed -= OnWorkspaceChanged;
+    }
 }

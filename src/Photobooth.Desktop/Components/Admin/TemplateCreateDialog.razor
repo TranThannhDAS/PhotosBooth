@@ -38,6 +38,15 @@
             </div>
         </div>
 
+        <label class="tpl-shared-check">
+            <input type="checkbox" @bind="_isShared" disabled="@(CurrentEventId is null)" />
+            <span>Template chung (hiển thị ở mọi sự kiện)</span>
+        </label>
+        @if (!_isShared && CurrentEventId.HasValue)
+        {
+            <p class="panel-hint">Template này chỉ xuất hiện trong sự kiện hiện tại khi được bật trên Kiosk.</p>
+        }
+
         <p class="panel-hint">
             Canvas @_width × @_height px ≈ @Inches(_width) × @Inches(_height) inch ở @_dpi DPI.
             Template mới có sẵn một ô ảnh và <strong>đang tắt trên Kiosk</strong> cho đến khi bạn bật.
@@ -63,6 +72,12 @@
     private int _width = 1200;
     private int _height = 1800;
     private string _background = "#FFFFFF";
+    private bool _isShared;
+
+    [Parameter]
+    public Guid? CurrentEventId { get; set; }
+
+    protected override void OnInitialized() => _isShared = CurrentEventId is null;
 
     [Parameter, EditorRequired]
     public EventCallback<NewTemplateRequest> OnCreate { get; set; }
@@ -102,5 +117,6 @@
         int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : fallback;
 
     private Task SubmitAsync() =>
-        OnCreate.InvokeAsync(new NewTemplateRequest(_name, _description, _width, _height, _dpi, _background));
+        OnCreate.InvokeAsync(new NewTemplateRequest(_name, _description, _width, _height, _dpi, _background,
+            _isShared ? null : CurrentEventId));
 }

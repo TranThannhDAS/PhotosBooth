@@ -419,3 +419,11 @@ Khách quét QR → Cloud /s/{token}: chưa có ảnh → trang chờ (tự làm
 - Máy chưa có bản ghi → áp dụng mặc định: không dùng máy in, webcam Windows mặc định, làm tối ngoài vùng ảnh 65% và có nhãn. Bản ghi được tạo ở lần lưu đầu tiên.
 - Không đọc, ghi, chuyển đổi hoặc fallback từ `app-state.json` cũ. Người vận hành chọn lại thiết bị khi nâng cấp từ bản chỉ lưu JSON; file cũ được để nguyên, không tự xóa.
 - Chạy EF Core migration `AddDeviceSettings` khi khởi động; không thay đổi thư mục ảnh gốc, template JSON hay CameraPresets JSON.
+
+
+### Phạm vi template theo sự kiện (27/11/2026)
+- Template và asset vẫn nằm trong thư viện máy `%LOCALAPPDATA%\Photobooth\Templates/{id}`; không di chuyển file khi chuyển phạm vi.
+- `Templates/library.json` có metadata `eventTemplates`: map tên thư mục template → `EventId`. Thiếu key = **template chung**, tương thích template cũ. `disabledTemplates` giữ quy tắc bật/tắt Kiosk.
+- `TemplateLibrary.GetTemplatesForEventAsync(eventId)` trả template chung và template của đúng sự kiện, đồng thời bảo đảm hợp lệ + enabled. `TemplateSelectionScreen` lấy eventId từ `EventWorkspaceService.Current`.
+- Admin Template Manager có bộ lọc, checkbox chung và gán sự kiện hiện tại. Tạo/nhập có tùy chọn chung hay riêng, sao chép kế thừa phạm vi.
+- Metadata phạm vi hỏng thì không tải thư viện thay vì đưa mọi template thành chung. Snapshot phiên chụp cũ không đổi.

@@ -3078,3 +3078,34 @@ body {
     font-weight: 600;
     white-space: nowrap;
 }
+
+/* ---------- Template thuộc sự kiện / Template chung ---------- */
+.tpl-scope-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 12px;
+}
+.tpl-scope-toolbar label { font-weight: 600; }
+.tpl-scope-toolbar select { width: auto; max-width: 100%; min-width: 220px; }
+.tpl-import-shared, .tpl-shared-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.tpl-import-shared input, .tpl-shared-check input {
+    accent-color: var(--color-primary);
+    width: 18px;
+    height: 18px;
+    flex: none;
+}
+.tpl-scope-control {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 8px 0;
+}
+.tpl-scope-control small { opacity: 0.8; }
