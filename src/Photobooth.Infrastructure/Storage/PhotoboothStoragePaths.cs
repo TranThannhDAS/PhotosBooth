@@ -74,7 +74,7 @@ public sealed class PhotoboothStoragePaths
     public string GetOutputsDirectory(Guid sessionId) =>
         Path.Combine(GetSessionDirectory(sessionId), "Outputs");
 
-    /// <summary>SQLite chứa metadata nghiệp vụ (sự kiện, phiên, ảnh, phiên bản, in, chia sẻ, trạng thái upload).</summary>
+    /// <summary>SQLite chứa metadata nghiệp vụ và cấu hình thiết bị (máy in, webcam, vùng hướng dẫn).</summary>
     public string DatabaseFilePath => Path.Combine(RootDirectory, "photobooth.db");
 
     /// <summary>File cấu hình Desktop cạnh file thực thi, không nằm trong AppData.</summary>
