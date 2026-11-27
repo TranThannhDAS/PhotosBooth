@@ -45,4 +45,8 @@
     <ProjectReference Include="..\Photobooth.Camera.Canon\Photobooth.Camera.Canon.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Templates\" />
+  </ItemGroup>
+
 </Project>
