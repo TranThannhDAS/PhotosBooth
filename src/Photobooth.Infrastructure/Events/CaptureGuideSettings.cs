@@ -14,7 +14,7 @@ public enum CaptureGuideMode
 }
 
 /// <summary>
-/// Cấu hình hiển thị vùng chụp trên Kiosk, lưu trong app-state.json theo máy.
+/// Cấu hình hiển thị vùng chụp trên Kiosk, lưu trong bảng DeviceSettings của SQLite theo máy.
 /// Không tác động đến ảnh gốc, tiêu cự, tỷ lệ JPEG hay thuật toán Auto Crop.
 /// </summary>
 public sealed record CaptureGuideSettings
