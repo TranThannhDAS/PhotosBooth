@@ -2978,3 +2978,78 @@ body {
     flex: none;
     accent-color: var(--color-primary);
 }
+
+
+/* Minh họa trong Admin: nguồn 3:2 và ô dọc 3:4 ở giữa, chỉ dùng để chỉnh UI. */
+.capture-guide-demo {
+    position: relative;
+    width: min(100%, 450px);
+    aspect-ratio: 3 / 2;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: #657b85;
+}
+
+.capture-guide-demo-scene {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(to bottom, transparent 68%, #536158 68%),
+        linear-gradient(120deg, #657b85, #b0b7a7);
+}
+
+.capture-guide-demo-person {
+    position: absolute;
+    bottom: -24%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 34%;
+    height: 65%;
+    border-radius: 45% 45% 0 0;
+    background: #ddd5c7;
+}
+
+.capture-guide-demo-person::before {
+    content: "";
+    position: absolute;
+    top: -45%;
+    left: 25%;
+    width: 50%;
+    height: 61%;
+    border-radius: 48%;
+    background: #cea789;
+}
+
+.capture-guide-demo-window {
+    position: absolute;
+    top: 0;
+    left: 25%;
+    width: 50%;
+    height: 100%;
+    border: 2px dashed #edc992;
+    box-shadow: 0 0 0 100vmax rgba(11, 18, 32, var(--guide-outside-opacity, 0.65));
+}
+
+.capture-guide-demo.guide-outline .capture-guide-demo-window {
+    box-shadow: none;
+}
+
+.capture-guide-demo.guide-crop-preview .capture-guide-demo-window {
+    box-shadow: 0 0 0 100vmax #0b121f;
+}
+
+.capture-guide-demo-window span {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 95%;
+    padding: 4px 7px;
+    border-radius: 6px;
+    background: rgba(11, 18, 32, 0.85);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
