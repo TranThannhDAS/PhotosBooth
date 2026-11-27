@@ -52,7 +52,7 @@
     </label>
 
     <div class="capture-guide-demo @DemoModeClass"
-         style="@($"--guide-outside-opacity: {(_opacityPercent / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture)};")"
+         style="@DemoStyle"
          role="img" aria-label="Mô phỏng vùng hướng dẫn chụp trên khung nguồn 3:2 với ô ảnh dọc 3:4">
         <div class="capture-guide-demo-scene" aria-hidden="true"></div>
         <div class="capture-guide-demo-person" aria-hidden="true"></div>
@@ -87,6 +87,8 @@
     private CaptureGuideMode _mode;
     private int _opacityPercent;
     private bool _showGuideLabel;
+    private string DemoStyle => "--guide-outside-opacity: " +
+        (_opacityPercent / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture) + ";";
     private string DemoModeClass => _mode switch
     {
         CaptureGuideMode.Outline => "guide-outline",
