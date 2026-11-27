@@ -47,6 +47,44 @@ namespace Photobooth.Infrastructure.Persistence.Migrations
                     b.ToTable("CloudUploads", (string)null);
                 });
 
+            modelBuilder.Entity("Photobooth.Infrastructure.Persistence.DeviceSettingsRecord", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PrinterKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WindowsPrinterName")
+                        .HasMaxLength(260)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WebcamDeviceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WebcamLabel")
+                        .HasMaxLength(260)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GuideMode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("GuideOutsideOpacity")
+                        .HasColumnType("REAL");
+
+                    b.Property<bool>("GuideShowLabel")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DeviceSettings", (string)null);
+                });
+
             modelBuilder.Entity("Photobooth.Infrastructure.Persistence.EventRecord", b =>
                 {
                     b.Property<Guid>("Id")
