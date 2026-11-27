@@ -399,7 +399,7 @@ public sealed class EventWorkspaceService
         try
         {
             await using var stream = File.OpenRead(file);
-            var marker = await JsonSerializer.DeserializeAsync<EventMarker>(stream, AppStateStore.SerializerOptions, cancellationToken).ConfigureAwait(false);
+            var marker = await JsonSerializer.DeserializeAsync<EventMarker>(stream, PhotoboothJsonOptions.Options, cancellationToken).ConfigureAwait(false);
             return marker is { EventId: var id } && id != Guid.Empty
                 ? (marker, null)
                 : (null, "File event.json không hợp lệ. Ứng dụng không tự sửa file này; vui lòng chọn thư mục khác.");
@@ -418,7 +418,7 @@ public sealed class EventWorkspaceService
             overwrite: false,
             cancellationToken);
 
-    private static readonly JsonSerializerOptions MarkerOptions = new(AppStateStore.SerializerOptions)
+    private static readonly JsonSerializerOptions MarkerOptions = new(PhotoboothJsonOptions.Options)
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
