@@ -54,8 +54,8 @@ namespace Photobooth.Infrastructure.Persistence.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("PrinterKind")
-                        .IsRequired()
+                    b.Property<Photobooth.Infrastructure.Events.PrinterKind>("PrinterKind")
+                        .HasConversion<string>()
                         .HasMaxLength(16)
                         .HasColumnType("TEXT");
 
@@ -71,8 +71,8 @@ namespace Photobooth.Infrastructure.Persistence.Migrations
                         .HasMaxLength(260)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("GuideMode")
-                        .IsRequired()
+                    b.Property<Photobooth.Infrastructure.Events.CaptureGuideMode>("GuideMode")
+                        .HasConversion<string>()
                         .HasMaxLength(24)
                         .HasColumnType("TEXT");
 
