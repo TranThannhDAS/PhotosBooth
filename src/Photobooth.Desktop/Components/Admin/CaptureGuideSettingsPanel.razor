@@ -1,3 +1,5 @@
+@using Microsoft.Data.Sqlite
+@using Microsoft.EntityFrameworkCore
 @inject CaptureGuideSettingsService GuideSettings
 @inject ILogger<CaptureGuideSettingsPanel> Logger
 
@@ -127,7 +129,7 @@
             _message = new StatusInfo(StatusKind.Success,
                 "Đã lưu thiết lập vùng hướng dẫn.", "Áp dụng khi khách mở màn chụp tiếp theo.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentOutOfRangeException)
+        catch (Exception ex) when (ex is SqliteException or DbUpdateException or InvalidOperationException or ArgumentOutOfRangeException)
         {
             Logger.LogWarning(ex, "Không lưu được cấu hình vùng hướng dẫn chụp");
             _message = new StatusInfo(StatusKind.Error, "Không lưu được vùng hướng dẫn.",
