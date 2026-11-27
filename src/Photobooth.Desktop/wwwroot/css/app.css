@@ -3110,17 +3110,24 @@ body {
 }
 .tpl-scope-control small { opacity: 0.8; }
 
-/* Chọn sự kiện sở hữu template trực tiếp trong từng thẻ, không làm đổi sự kiện Kiosk. */
-.tpl-scope-control .tpl-owner-select {
+/* Dropdown thẻ template ở trong flex-direction:column.
+   .text-input mặc định flex:1 1 240px dành cho hàng ngang -> kéo select cao ~240px.
+   Ghi đè flex và chiều cao cố định cho cả danh sách sự kiện trong thẻ và dialog Tạo template. */
+.tpl-scope-control .tpl-owner-select,
+.template-dialog #tpl-create-event {
+    flex: 0 0 auto;
+    align-self: stretch;
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
     max-width: 100%;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .tpl-scope-control > label:not(.tpl-shared-check) {
     font-size: 0.82rem;
     font-weight: 600;
-}
-.template-dialog #tpl-create-event {
-    width: 100%;
-    min-width: 0;
 }
