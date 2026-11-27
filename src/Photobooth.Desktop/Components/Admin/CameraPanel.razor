@@ -1,3 +1,5 @@
+@using Microsoft.Data.Sqlite
+@using Microsoft.EntityFrameworkCore
 @using Photobooth.Desktop.Hosting
 @implements IAsyncDisposable
 @inject WebViewCameraDevice Camera
@@ -282,7 +284,7 @@
             await CameraSelection.SaveAsync(new CameraSelection { WebcamDeviceId = _choiceId, WebcamLabel = label });
             _webcamMessage = new StatusInfo(StatusKind.Success, "Đã lưu webcam dùng cho Kiosk.", "Áp dụng từ lượt chụp tiếp theo.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is SqliteException or DbUpdateException or InvalidOperationException)
         {
             Logger.LogError(ex, "Không lưu được lựa chọn webcam");
             _webcamMessage = new StatusInfo(StatusKind.Error, "Không lưu được lựa chọn webcam.");
