@@ -33,7 +33,7 @@ public sealed class CameraSelectionService
 
     /// <summary>
     /// Camera đã chọn được tìm lại theo tên vì mã thiết bị đổi (ví dụ cắm sang cổng USB khác): ghi nhớ mã mới.
-    /// Lỗi ghi file chỉ được ghi log, không làm hỏng việc mở camera.
+    /// Lỗi cập nhật SQLite chỉ được ghi log, không làm hỏng việc mở camera.
     /// </summary>
     public async Task RememberResolvedDeviceAsync(string expectedDeviceId, string resolvedDeviceId)
     {
