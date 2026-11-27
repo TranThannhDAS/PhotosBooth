@@ -40,11 +40,11 @@ public sealed class TemplateLibrary : ITemplateCatalog
     internal static readonly JsonSerializerOptions TemplateWriteOptions = new(JsonTemplateCatalog.SerializerOptions)
     {
         WriteIndented = true,
-        Encoder = AppStateStore.SerializerOptions.Encoder,
+        Encoder = PhotoboothJsonOptions.Options.Encoder,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private static readonly JsonSerializerOptions StateOptions = new(AppStateStore.SerializerOptions);
+    private static readonly JsonSerializerOptions StateOptions = new(PhotoboothJsonOptions.Options);
 
     private readonly string? _bundledDirectory;
     private readonly IPhotoComposer _composer;
