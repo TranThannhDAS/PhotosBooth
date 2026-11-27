@@ -38,6 +38,23 @@ public sealed class CaptureFramingTests : IDisposable
     }
 
     [Fact]
+    public void Camera3x2_Slot3x2_KeepsWholeImage()
+    {
+        // Canon JPEG 3:2 khớp đúng tỷ lệ ô 3:2 → không cắt phần nào.
+        AssertGuide(CaptureFraming.Compute(Template(Slot(1200, 800)), 0, 6000, 4000, false),
+            0, 0, 1, 1);
+    }
+
+    [Fact]
+    public void Camera3x2_PortraitSlot3x4_KeepsCenteredHalfWidth()
+    {
+        // Nguồn 6000x4000, ô dọc 3:4 → chỉ giữ vùng 3000x4000 ở giữa.
+        // Không được đánh dấu 6000px chiều ngang là ảnh thành phẩm.
+        AssertGuide(CaptureFraming.Compute(Template(Slot(900, 1200)), 0, 6000, 4000, false),
+            0.25, 0, 0.5, 1);
+    }
+
+    [Fact]
     public void Camera16x9_Slot4x3_KeepsCentered1440x1080() =>
         // Vùng cơ sở 1440×1080 giữa ảnh 1920×1080.
         AssertGuide(CaptureFraming.Compute(Template(Slot(1080, 810)), 0, 1920, 1080, mirrored: false), 240.0 / 1920, 0, 1440.0 / 1920, 1);
