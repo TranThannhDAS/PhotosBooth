@@ -119,6 +119,7 @@ public static class ServiceRegistration
 
         // Webcam dùng cho Kiosk (chọn trong Admin › Camera, lưu app-state.json).
         services.AddSingleton<CameraSelectionService>();
+        services.AddSingleton<CaptureGuideSettingsService>();
 
         // Máy ảnh Canon (EDSDK): luồng SDK chỉ được tạo khi cần lần đầu (mở Admin › Camera).
         // Hiện dùng trong Admin để liệt kê và xem Live View; Kiosk chưa chụp bằng Canon.
