@@ -425,5 +425,5 @@ Khách quét QR → Cloud /s/{token}: chưa có ảnh → trang chờ (tự làm
 - Template và asset vẫn nằm trong thư viện máy `%LOCALAPPDATA%\Photobooth\Templates/{id}`; không di chuyển file khi chuyển phạm vi.
 - `Templates/library.json` có metadata `eventTemplates`: map tên thư mục template → `EventId`. Thiếu key = **template chung**, tương thích template cũ. `disabledTemplates` giữ quy tắc bật/tắt Kiosk.
 - `TemplateLibrary.GetTemplatesForEventAsync(eventId)` trả template chung và template của đúng sự kiện, đồng thời bảo đảm hợp lệ + enabled. `TemplateSelectionScreen` lấy eventId từ `EventWorkspaceService.Current`.
-- Admin Template Manager có bộ lọc, checkbox chung và gán sự kiện hiện tại. Tạo/nhập có tùy chọn chung hay riêng, sao chép kế thừa phạm vi.
+- Admin Template Manager lấy danh sách tất cả sự kiện đã đăng ký trên máy từ `EventWorkspaceService.KnownEvents` (SQLite). Bộ lọc cho phép tất cả/chung/hiện tại/từng EventId mà không đổi Event Workspace; checkbox và dropdown trên thẻ template cho phép chuyển sang chung hoặc gán một sự kiện bất kỳ. Hộp thoại Tạo template có checkbox chung và dropdown chọn EventId bất kỳ; thao tác nhập vẫn dùng chung/sự kiện hiện tại. Sao chép kế thừa phạm vi.
 - Metadata phạm vi hỏng thì không tải thư viện thay vì đưa mọi template thành chung. Snapshot phiên chụp cũ không đổi.

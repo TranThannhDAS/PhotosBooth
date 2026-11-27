@@ -3109,3 +3109,18 @@ body {
     margin: 8px 0;
 }
 .tpl-scope-control small { opacity: 0.8; }
+
+/* Chọn sự kiện sở hữu template trực tiếp trong từng thẻ, không làm đổi sự kiện Kiosk. */
+.tpl-scope-control .tpl-owner-select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+.tpl-scope-control > label:not(.tpl-shared-check) {
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+.template-dialog #tpl-create-event {
+    width: 100%;
+    min-width: 0;
+}

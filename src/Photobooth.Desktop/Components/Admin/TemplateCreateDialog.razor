@@ -39,12 +39,23 @@
         </div>
 
         <label class="tpl-shared-check">
-            <input type="checkbox" @bind="_isShared" disabled="@(CurrentEventId is null)" />
+            <input type="checkbox" @bind="_isShared" disabled="@(Events.Count == 0)" />
             <span>Template chung (hiển thị ở mọi sự kiện)</span>
         </label>
-        @if (!_isShared && CurrentEventId.HasValue)
+        @if (!_isShared)
         {
-            <p class="panel-hint">Template này chỉ xuất hiện trong sự kiện hiện tại khi được bật trên Kiosk.</p>
+            <label for="tpl-create-event">Sự kiện sử dụng template</label>
+            <select id="tpl-create-event" class="text-input" @bind="_selectedEventId">
+                @foreach (var evt in Events)
+                {
+                    <option value="@(evt.EventId.ToString("D"))">@evt.Name @(evt.EventId == CurrentEventId ? "(đang mở)" : "")</option>
+                }
+            </select>
+            <p class="panel-hint">Template này chỉ xuất hiện ở sự kiện đã chọn khi được bật trên Kiosk.</p>
+        }
+        else if (Events.Count == 0)
+        {
+            <p class="panel-hint">Chưa có sự kiện nào được quản lý, template mới sẽ là template chung.</p>
         }
 
         <p class="panel-hint">
@@ -59,7 +70,7 @@
 
         <div class="dialog-actions">
             <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="OnCancel">Hủy</button>
-            <button type="button" class="btn btn-primary" disabled="@(Busy || string.IsNullOrWhiteSpace(_name))" @onclick="SubmitAsync">Tạo và mở Editor</button>
+            <button type="button" class="btn btn-primary" disabled="@(Busy || string.IsNullOrWhiteSpace(_name) || (!_isShared && SelectedEventId is null))" @onclick="SubmitAsync">Tạo và mở Editor</button>
         </div>
     </div>
 </div>
@@ -73,11 +84,26 @@
     private int _height = 1800;
     private string _background = "#FFFFFF";
     private bool _isShared;
+    private string _selectedEventId = string.Empty;
 
     [Parameter]
     public Guid? CurrentEventId { get; set; }
 
-    protected override void OnInitialized() => _isShared = CurrentEventId is null;
+    [Parameter]
+    public IReadOnlyList<KnownEventEntry> Events { get; set; } = [];
+
+    private Guid? SelectedEventId =>
+        Guid.TryParse(_selectedEventId, out var id) && Events.Any(e => e.EventId == id)
+            ? id
+            : null;
+
+    protected override void OnInitialized()
+    {
+        // Ưu tiên sự kiện đang mở, nhưng cho phép tạo riêng cho bất kỳ sự kiện đã biết nào.
+        var current = Events.FirstOrDefault(e => e.EventId == CurrentEventId);
+        _selectedEventId = (current ?? Events.FirstOrDefault())?.EventId.ToString("D") ?? string.Empty;
+        _isShared = current is null;
+    }
 
     [Parameter, EditorRequired]
     public EventCallback<NewTemplateRequest> OnCreate { get; set; }
@@ -116,7 +142,14 @@
     private static int ParseInt(ChangeEventArgs e, int fallback) =>
         int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : fallback;
 
-    private Task SubmitAsync() =>
-        OnCreate.InvokeAsync(new NewTemplateRequest(_name, _description, _width, _height, _dpi, _background,
-            _isShared ? null : CurrentEventId));
+    private Task SubmitAsync()
+    {
+        if (Busy || string.IsNullOrWhiteSpace(_name) || (!_isShared && SelectedEventId is null))
+        {
+            return Task.CompletedTask;
+        }
+
+        return OnCreate.InvokeAsync(new NewTemplateRequest(_name, _description, _width, _height, _dpi, _background,
+            _isShared ? null : SelectedEventId));
+    }
 }

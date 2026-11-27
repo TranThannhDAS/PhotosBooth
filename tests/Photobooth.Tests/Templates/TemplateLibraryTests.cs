@@ -375,6 +375,37 @@ public sealed class TemplateLibraryTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_CanTargetDifferentEventsWithoutSwitchingCurrentWorkspace()
+    {
+        // Admin có thể chọn trực tiếp từng EventId, thay vì chỉ dùng sự kiện đang mở.
+        var eventA = Guid.NewGuid();
+        var eventB = Guid.NewGuid();
+        var library = CreateLibrary();
+
+        var first = await library.CreateAsync(NewRequest("Mẫu sự kiện A") with { EventId = eventA });
+        var second = await library.CreateAsync(NewRequest("Mẫu sự kiện B") with { EventId = eventB });
+        var shared = await library.CreateAsync(NewRequest("Mẫu dùng chung"));
+
+        Assert.Equal(eventA, first.EventId);
+        Assert.Equal(eventB, second.EventId);
+        Assert.True(shared.IsShared);
+
+        await library.SetEnabledAsync(first.Key, true);
+        await library.SetEnabledAsync(second.Key, true);
+        await library.SetEnabledAsync(shared.Key, true);
+
+        var visibleInA = (await library.GetTemplatesForEventAsync(eventA)).Select(t => t.Id).ToArray();
+        var visibleInB = (await library.GetTemplatesForEventAsync(eventB)).Select(t => t.Id).ToArray();
+
+        Assert.Contains(first.Key, visibleInA);
+        Assert.DoesNotContain(second.Key, visibleInA);
+        Assert.Contains(second.Key, visibleInB);
+        Assert.DoesNotContain(first.Key, visibleInB);
+        Assert.Contains(shared.Key, visibleInA);
+        Assert.Contains(shared.Key, visibleInB);
+    }
+
+    [Fact]
     public async Task CorruptScopeMetadata_DoesNotExposePrivateTemplateAsShared()
     {
         var library = CreateLibrary();

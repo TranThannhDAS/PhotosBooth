@@ -21,9 +21,13 @@
         <div class="tpl-scope-toolbar">
             <label for="tpl-event-filter">Lọc thư viện</label>
             <select id="tpl-event-filter" class="text-input" @bind="_scopeFilter">
-                <option value="current">Sự kiện hiện tại + template chung</option>
+                <option value="all">Tất cả template (mọi sự kiện)</option>
                 <option value="shared">Chỉ template chung</option>
-                <option value="all">Tất cả template</option>
+                <option value="current" disabled="@(CurrentEventId is null)">Sự kiện hiện tại + template chung</option>
+                @foreach (var evt in _knownEvents)
+                {
+                    <option value="@EventFilterValue(evt.EventId)">Sự kiện: @evt.Name (+ template chung)</option>
+                }
             </select>
             @if (Workspaces.Current is { } workspace)
             {
@@ -93,15 +97,27 @@
                         <div class="tpl-scope-control">
                             <label class="tpl-shared-check">
                                 <input type="checkbox" checked="@item.IsShared"
-                                       disabled="@(_busy || (item.IsShared && CurrentEventId is null))"
+                                       disabled="@(_busy || (item.IsShared && _knownEvents.Count == 0))"
                                        @onchange="e => ChangeSharedAsync(item, e.Value is true)" />
                                 <span>Template chung</span>
                             </label>
                             <small>@(item.IsShared ? "Dùng cho mọi sự kiện" : $"Sự kiện: {OwnerName(item)}")</small>
-                            @if (!item.IsShared && CurrentEventId.HasValue && item.EventId != CurrentEventId)
+                            @if (!item.IsShared)
                             {
-                                <button type="button" class="btn btn-ghost btn-sm" disabled="@_busy"
-                                        @onclick="() => AssignCurrentEventAsync(item)">Gán sang sự kiện hiện tại</button>
+                                <label for="@($"tpl-owner-{item.Key}")">Sự kiện sở hữu</label>
+                                <select id="@($"tpl-owner-{item.Key}")" class="text-input tpl-owner-select"
+                                        value="@(item.EventId?.ToString("D"))"
+                                        disabled="@(_busy || _knownEvents.Count == 0)"
+                                        @onchange="e => ChangeOwnerAsync(item, e.Value?.ToString())">
+                                    @if (item.EventId is { } ownerId && !_knownEvents.Any(e => e.EventId == ownerId))
+                                    {
+                                        <option value="@(ownerId.ToString("D"))">Sự kiện không còn trong danh sách (@ownerId)</option>
+                                    }
+                                    @foreach (var evt in _knownEvents)
+                                    {
+                                        <option value="@(evt.EventId.ToString("D"))">@evt.Name @(evt.EventId == CurrentEventId ? "(đang mở)" : "")</option>
+                                    }
+                                </select>
                             }
                         </div>
                         @if (item.Issues.Any(i => i.Severity == ValidationSeverity.Warning))
@@ -146,7 +162,7 @@
 @if (_dialog == Dialog.Create)
 {
     <TemplateCreateDialog OnCreate="CreateAsync" OnCancel="CloseDialog" Busy="_busy" Error="@_dialogError"
-                          CurrentEventId="@CurrentEventId" />
+                          CurrentEventId="@CurrentEventId" Events="@_knownEvents" />
 }
 else if (_dialog == Dialog.Rename && _target is { Template: { } renaming })
 {
@@ -191,17 +207,35 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
     private IReadOnlyList<TemplateLibraryEntry>? _entries;
     private string _scopeFilter = "all";
     private bool _importShared;
+    private IReadOnlyList<KnownEventEntry> _knownEvents = [];
     private IReadOnlyDictionary<Guid, string> _eventNames = new Dictionary<Guid, string>();
 
     private Guid? CurrentEventId => Workspaces.Current?.Info.EventId;
 
+    private static string EventFilterValue(Guid eventId) => $"event:{eventId:D}";
+
+    private Guid? FilterEventId =>
+        _scopeFilter.StartsWith("event:", StringComparison.Ordinal)
+            && Guid.TryParse(_scopeFilter["event:".Length..], out var id)
+            && _knownEvents.Any(e => e.EventId == id)
+                ? id
+                : null;
+
+    /// <summary>Phạm vi chọn sự kiện hiển thị chính xác những gì Kiosk của sự kiện đó thấy.</summary>
     private IReadOnlyList<TemplateLibraryEntry> VisibleEntries => _entries is null ? [] :
         _entries.Where(e => _scopeFilter switch
         {
+            "all" => true,
             "shared" => e.IsShared,
-            "current" => e.IsShared || (CurrentEventId is { } id && e.EventId == id),
-            _ => true,
+            "current" => e.IsShared || (CurrentEventId is { } currentId && e.EventId == currentId),
+            _ => FilterEventId is { } selectedId && (e.IsShared || e.EventId == selectedId),
         }).ToArray();
+
+    /// <summary>Ưu tiên sự kiện đang lọc, sau đó sự kiện đang mở, sau cùng là sự kiện đã biết gần nhất.</summary>
+    private Guid? PreferredEventId =>
+        _knownEvents.FirstOrDefault(e => e.EventId == FilterEventId)?.EventId
+        ?? _knownEvents.FirstOrDefault(e => e.EventId == CurrentEventId)?.EventId
+        ?? _knownEvents.FirstOrDefault()?.EventId;
 
     private string OwnerName(TemplateLibraryEntry entry) =>
         entry.EventId is { } eventId && _eventNames.TryGetValue(eventId, out var name)
@@ -226,7 +260,7 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
     {
         Library.Changed += OnLibraryChanged;
         Workspaces.Changed += OnWorkspaceChanged;
-        _scopeFilter = CurrentEventId.HasValue ? "current" : "all";
+        _scopeFilter = "all"; // Admin mở thư viện xem toàn bộ sự kiện theo yêu cầu.
         _importShared = CurrentEventId is null;
         await LoadAsync();
     }
@@ -236,13 +270,24 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
         try
         {
             _entries = await Library.ListAsync();
-            _eventNames = Workspaces.KnownEvents.ToDictionary(e => e.EventId, e => e.Name);
+            RefreshKnownEvents();
             _loadError = null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TemplateLibraryException)
         {
             Logger.LogWarning(ex, "Không đọc được Template Library");
             _loadError = new StatusInfo(StatusKind.Error, "Không đọc được thư viện template.", "Kiểm tra quyền truy cập thư mục rồi thử lại.");
+        }
+    }
+
+    private void RefreshKnownEvents()
+    {
+        _knownEvents = Workspaces.KnownEvents;
+        _eventNames = _knownEvents.ToDictionary(e => e.EventId, e => e.Name);
+        // Danh sách sự kiện có thể thay đổi khi khôi phục/mở sự kiện hoặc tải lại.
+        if (FilterEventId is null && _scopeFilter.StartsWith("event:", StringComparison.Ordinal))
+        {
+            _scopeFilter = "all";
         }
     }
 
@@ -258,6 +303,12 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
     private async Task CreateAsync(NewTemplateRequest request)
     {
         _dialogError = null;
+        if (request.EventId is { } selectedId && !_knownEvents.Any(e => e.EventId == selectedId))
+        {
+            _dialogError = "Sự kiện đã chọn không còn trong danh sách. Hãy chọn lại sự kiện rồi thử lại.";
+            return;
+        }
+
         _busy = true;
         try
         {
@@ -345,19 +396,28 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
 
     private Task ChangeSharedAsync(TemplateLibraryEntry entry, bool shared)
     {
-        if (!shared && CurrentEventId is null)
+        var eventId = PreferredEventId;
+        if (!shared && eventId is null)
         {
-            ShowMessage(new StatusInfo(StatusKind.Warning, "Chưa chọn sự kiện.", "Hãy mở một sự kiện trước khi chuyển template thành riêng."));
+            ShowMessage(new StatusInfo(StatusKind.Warning, "Chưa có sự kiện để gán template.",
+                "Hãy tạo hoặc mở một sự kiện trong phần quản lý sự kiện trước."));
             return Task.CompletedTask;
         }
 
-        return RunAsync(() => Library.SetScopeAsync(entry.Key, shared ? null : CurrentEventId));
+        return RunAsync(() => Library.SetScopeAsync(entry.Key, shared ? null : eventId));
     }
 
-    private Task AssignCurrentEventAsync(TemplateLibraryEntry entry) =>
-        CurrentEventId is { } id
-            ? RunAsync(() => Library.SetScopeAsync(entry.Key, id))
-            : Task.CompletedTask;
+    private Task ChangeOwnerAsync(TemplateLibraryEntry entry, string? selectedEventId)
+    {
+        if (!Guid.TryParse(selectedEventId, out var id) || !_knownEvents.Any(e => e.EventId == id))
+        {
+            ShowMessage(new StatusInfo(StatusKind.Warning, "Sự kiện được chọn không hợp lệ.",
+                "Hãy tải lại danh sách sự kiện và thử lại."));
+            return Task.CompletedTask;
+        }
+
+        return RunAsync(() => Library.SetScopeAsync(entry.Key, id));
+    }
 
     private async Task ImportFolderAsync()
     {
@@ -461,7 +521,7 @@ else if (_dialog == Dialog.Delete && _target is { } deleting)
 
     private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = InvokeAsync(() =>
     {
-        _eventNames = Workspaces.KnownEvents.ToDictionary(e => e.EventId, e => e.Name);
+        RefreshKnownEvents();
         StateHasChanged();
     });
 
