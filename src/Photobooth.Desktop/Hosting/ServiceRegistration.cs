@@ -81,9 +81,11 @@ public static class ServiceRegistration
         Directory.CreateDirectory(paths.RootDirectory);
         services.AddDbContextFactory<PhotoboothDbContext>(options => PhotoboothDatabase.Configure(options, paths.DatabaseFilePath));
 
+        // Cấu hình máy in/webcam/vùng hướng dẫn trong bảng DeviceSettings của SQLite.
+        // Nạp cache sau khi PhotoboothDatabase.Migrate() hoàn tất, không đọc app-state.json.
+        services.AddSingleton<DeviceSettingsStore>();
+
         // Sự kiện (Event Workspace) và lưu trữ phiên lâu dài theo sự kiện.
-        // app-state.json chỉ còn giữ lựa chọn máy in (cấu hình máy, không phải dữ liệu nghiệp vụ).
-        services.AddSingleton<AppStateStore>();
         services.AddSingleton<EventWorkspaceService>();
         services.AddSingleton<ISessionArchive, EventSessionArchive>();
         services.AddSingleton<AdminAccessService>();
@@ -117,7 +119,7 @@ public static class ServiceRegistration
         services.AddSingleton<WindowsShellService>();
         services.AddSingleton<WindowFullscreenService>();
 
-        // Webcam dùng cho Kiosk (chọn trong Admin › Camera, lưu app-state.json).
+        // Webcam dùng cho Kiosk (chọn trong Admin › Camera, lưu SQLite).
         services.AddSingleton<CameraSelectionService>();
         services.AddSingleton<CaptureGuideSettingsService>();
 
