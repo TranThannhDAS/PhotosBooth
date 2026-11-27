@@ -1,3 +1,5 @@
+@using Microsoft.Data.Sqlite
+@using Microsoft.EntityFrameworkCore
 @inject PrinterSelectionService Printers
 @inject PrintOptions PrintOptions
 @inject ILogger<PrinterPanel> Logger
@@ -66,7 +68,7 @@
             await Printers.SaveAsync(new PrinterSelection { Kind = _kind, WindowsPrinterName = _kind == PrinterKind.Windows ? _name : null });
             _message = new StatusInfo(StatusKind.Success, "Đã lưu cấu hình máy in.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is SqliteException or DbUpdateException or InvalidOperationException)
         {
             Logger.LogError(ex, "Không lưu được cấu hình máy in");
             _message = new StatusInfo(StatusKind.Error, "Không lưu được cấu hình máy in.");
