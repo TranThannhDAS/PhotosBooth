@@ -110,7 +110,7 @@ Chức năng điều phối chụp ảnh **không phụ thuộc trực tiếp v�
 
 Các khả năng nghiệp vụ cần tách:
 
-- Liệt kê/chọn nguồn camera khi được hỗ trợ. Đã có cho webcam (26/11/2026): `enumerateDevices()` trong WebView2 → Admin › Camera; lựa chọn (`deviceId` + tên) lưu trong `app-state.json` qua `CameraSelectionService`; `camera.js` mở đúng `deviceId`, đổi mã thì tìm lại theo tên (chỉ khi đúng một camera trùng tên), không có thì trả `CameraError.SelectedDeviceNotFound`.
+- Liệt kê/chọn nguồn camera khi được hỗ trợ. Đã có cho webcam (26/11/2026): `enumerateDevices()` trong WebView2 → Admin › Camera; lựa chọn (`deviceId` + tên) lưu trong SQLite bảng `DeviceSettings` qua `CameraSelectionService`; `camera.js` mở đúng `deviceId`, đổi mã thì tìm lại theo tên (chỉ khi đúng một camera trùng tên), không có thì trả `CameraError.SelectedDeviceNotFound`.
 - Bắt đầu/dừng preview.
 - Chụp một ảnh từ camera đang hoạt động.
 - Phát hiện và phản hồi khi camera bị lỗi hoặc không có quyền truy cập.
@@ -264,7 +264,7 @@ Admin › Khung ảnh
 **Quyết định 19/11/2026 — Event Workspace, file-based (chi tiết: `docs/EVENT_STORAGE.md`):**
 
 - File của phiên nằm trong thư mục sự kiện do người vận hành chọn: `{Sự kiện}/Sessions/{yyyyMMdd-HHmmss-xxxxxxxx}/` gồm `Template/` (snapshot + asset), `Originals/`, `Outputs/final-v{N}.png`, `Drafts/`.
-- `%LOCALAPPDATA%/Photobooth/` gồm log, `app-state.json` (chỉ còn máy in đang chọn), **`photobooth.db`** (SQLite) và hồ sơ WebView2. Cấu hình Desktop dùng `src/Photobooth.Desktop/appsettings.json`, được copy cạnh file `.exe` khi build/publish.
+- `%LOCALAPPDATA%/Photobooth/` gồm log, **`photobooth.db`** (SQLite chứa cả cấu hình thiết bị) và hồ sơ WebView2. Cấu hình Desktop dùng `src/Photobooth.Desktop/appsettings.json`, được copy cạnh file `.exe` khi build/publish.
 - Log Desktop: file `photobooth-yyyyMMdd.log`, mặc định ở `%LOCALAPPDATA%/Photobooth/Logs`. Đổi được bằng mục `logging` trong `appsettings.json` (từ 26/11/2026): `directory` (tuyệt đối, có biến môi trường, hoặc tương đối so với `%LOCALAPPDATA%/Photobooth`) và `minimumLevel` (Trace…Critical, mặc định Information). Giá trị sai hoặc thư mục không ghi được → dùng mặc định cho riêng phần log và ghi cảnh báo; các cấu hình khác không bị ảnh hưởng.
 - **Cập nhật 23/11/2026 — metadata chuyển sang SQLite** (xem §9.1). Bản JSON cũ (`session.json`, `cloud-upload.json`, danh bạ sự kiện trong `app-state.json`) **không còn là nguồn dữ liệu** và không được chuyển sang database.
 - Thành phần:
@@ -290,7 +290,7 @@ Admin › Khung ảnh
   - Desktop: đường dẫn tương đối với thư mục sự kiện.
   - Cloud: đường dẫn tương đối với `Storage:RootPath`.
   - Đường dẫn đọc từ database luôn được kiểm tra không vượt ra ngoài thư mục được phép.
-- **Mỗi loại metadata chỉ có một nguồn chính.** Không còn đọc/ghi `session.json`/`cloud-upload.json`. Template Library/Editor **giữ nguyên JSON** (`template.json`, `library.json`). `appsettings.json` (cấu hình Desktop, cạnh file thực thi) và lựa chọn máy in trong `app-state.json` vẫn là file. File AppData `settings.json` cũ không còn được đọc và không bị tự động xóa.
+- **Mỗi loại metadata chỉ có một nguồn chính.** Không còn đọc/ghi `session.json`/`cloud-upload.json`. Template Library/Editor **giữ nguyên JSON** (`template.json`, `library.json`). `appsettings.json` (cấu hình kỹ thuật Desktop, cạnh file thực thi) vẫn là file. **Máy in, webcam, vùng hướng dẫn** sử dụng duy nhất bảng SQLite `DeviceSettings`; không đọc/ghi/import `app-state.json` cũ. File AppData `settings.json` cũ không còn được đọc và không bị tự động xóa.
 - **Không có Repository/Unit of Work:**
   - Service dùng `IDbContextFactory<T>`; mỗi thao tác một `DbContext` ngắn (các service đều là singleton).
   - Mỗi lần lưu phiên là một `SaveChanges` (một transaction).
@@ -409,3 +409,12 @@ Khách quét QR → Cloud /s/{token}: chưa có ảnh → trang chờ (tự làm
 - Microsoft — Tạo WPF Blazor App: https://learn.microsoft.com/aspnet/core/blazor/hybrid/tutorials/wpf?view=aspnetcore-10.0
 - Microsoft — Bảo mật Blazor Hybrid/WebView2: https://learn.microsoft.com/aspnet/core/blazor/hybrid/security/security-considerations?view=aspnetcore-10.0
 - Microsoft — Quyền WebView2: https://learn.microsoft.com/microsoft-edge/webview2/concepts/permissions-api
+
+
+### Cấu hình thiết bị cục bộ — SQLite (27/11/2026)
+
+- Bảng `DeviceSettings` (Id = 1): `PrinterKind`, `WindowsPrinterName`, `WebcamDeviceId`, `WebcamLabel`, `GuideMode`, `GuideOutsideOpacity`, `GuideShowLabel`.
+- `DeviceSettingsStore` nạp cache từ SQLite, cập nhật cache **chỉ khi EF Core SaveChanges thành công**. `PrinterSelectionService`, `CameraSelectionService`, `CaptureGuideSettingsService` cùng dùng store này.
+- Máy chưa có bản ghi → áp dụng mặc định: không dùng máy in, webcam Windows mặc định, làm tối ngoài vùng ảnh 65% và có nhãn. Bản ghi được tạo ở lần lưu đầu tiên.
+- Không đọc, ghi, chuyển đổi hoặc fallback từ `app-state.json` cũ. Người vận hành chọn lại thiết bị khi nâng cấp từ bản chỉ lưu JSON; file cũ được để nguyên, không tự xóa.
+- Chạy EF Core migration `AddDeviceSettings` khi khởi động; không thay đổi thư mục ảnh gốc, template JSON hay CameraPresets JSON.
