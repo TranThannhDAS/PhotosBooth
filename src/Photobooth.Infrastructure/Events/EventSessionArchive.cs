@@ -38,7 +38,7 @@ public sealed class EventSessionArchive : ISessionArchive
     private static readonly JsonSerializerOptions TemplateWriteOptions = new(JsonTemplateCatalog.SerializerOptions)
     {
         WriteIndented = true,
-        Encoder = AppStateStore.SerializerOptions.Encoder,
+        Encoder = PhotoboothJsonOptions.Options.Encoder,
     };
 
     private static readonly JsonSerializerOptions CropOptions = new(JsonSerializerDefaults.Web);
