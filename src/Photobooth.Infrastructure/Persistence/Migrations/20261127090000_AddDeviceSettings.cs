@@ -1,12 +1,9 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Photobooth.Infrastructure.Persistence.Migrations;
 
-[DbContext(typeof(PhotoboothDbContext))]
-[Migration("20261127090000_AddDeviceSettings")]
 public partial class AddDeviceSettings : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
