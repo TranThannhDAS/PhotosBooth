@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace Photobooth.Infrastructure.Persistence;
 
 /// <summary>
-/// SQLite của Desktop: %LOCALAPPDATA%\Photobooth\photobooth.db. Nguồn dữ liệu chính cho sự kiện, phiên chụp, ảnh,
+/// SQLite của Desktop: %LOCALAPPDATA%\Photobooth\photobooth.db. Nguồn dữ liệu chính cho cấu hình thiết bị, sự kiện, phiên chụp, ảnh,
 /// phiên bản thành phẩm, xuất/in, link chia sẻ và trạng thái upload. Không lưu nội dung ảnh.
 /// Không xóa dây chuyền (cascade): dữ liệu nghiệp vụ chỉ được thêm/cập nhật, không bao giờ bị xóa kèm theo.
 /// </summary>
@@ -25,8 +25,22 @@ public sealed class PhotoboothDbContext(DbContextOptions<PhotoboothDbContext> op
 
     public DbSet<PrintJobRecord> PrintJobs => Set<PrintJobRecord>();
 
+    public DbSet<DeviceSettingsRecord> DeviceSettings => Set<DeviceSettingsRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<DeviceSettingsRecord>(e =>
+        {
+            e.ToTable("DeviceSettings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.PrinterKind).HasConversion<string>().HasMaxLength(16).IsRequired();
+            e.Property(x => x.WindowsPrinterName).HasMaxLength(260);
+            e.Property(x => x.WebcamDeviceId).HasMaxLength(1024);
+            e.Property(x => x.WebcamLabel).HasMaxLength(260);
+            e.Property(x => x.GuideMode).HasConversion<string>().HasMaxLength(24).IsRequired();
+        });
+
         modelBuilder.Entity<EventRecord>(e =>
         {
             e.ToTable("Events");
