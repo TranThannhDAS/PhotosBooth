@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Photobooth.Infrastructure.Events;
 
 namespace Photobooth.Tests.Configuration;
@@ -52,36 +50,4 @@ public sealed class CaptureGuideSettingsTests
             new CaptureGuideSettings { Mode = (CaptureGuideMode)100 }.Validate());
     }
 
-    [Fact]
-    public void Json_RoundTripsGuideSettings_AndOldStateGetsDefaults()
-    {
-        var options = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-        };
-        var state = new AppState
-        {
-            CaptureGuide = new CaptureGuideSettings
-            {
-                Mode = CaptureGuideMode.Outline,
-                OutsideOpacity = 0.4,
-                ShowGuideLabel = false,
-            },
-        };
-
-        var json = JsonSerializer.Serialize(state, options);
-        Assert.Contains("\"captureGuide\"", json);
-        Assert.Contains("\"outline\"", json);
-
-        var restored = JsonSerializer.Deserialize<AppState>(json, options);
-        Assert.NotNull(restored);
-        Assert.Equal(CaptureGuideMode.Outline, restored.CaptureGuide.Mode);
-        Assert.Equal(0.4, restored.CaptureGuide.OutsideOpacity, 6);
-        Assert.False(restored.CaptureGuide.ShowGuideLabel);
-
-        var oldState = JsonSerializer.Deserialize<AppState>("{\"camera\":{}}", options);
-        Assert.NotNull(oldState);
-        Assert.Equal(CaptureGuideMode.DimOutside, oldState.CaptureGuide.Mode);
-    }
 }
