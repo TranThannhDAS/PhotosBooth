@@ -51,6 +51,20 @@
         <span>Hiển thị nhãn “Vùng ảnh thành phẩm”</span>
     </label>
 
+    <div class="capture-guide-demo @DemoModeClass"
+         style="@($"--guide-outside-opacity: {(_opacityPercent / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture)};")"
+         role="img" aria-label="Mô phỏng vùng hướng dẫn chụp trên khung nguồn 3:2 với ô ảnh dọc 3:4">
+        <div class="capture-guide-demo-scene" aria-hidden="true"></div>
+        <div class="capture-guide-demo-person" aria-hidden="true"></div>
+        <div class="capture-guide-demo-window">
+            @if (_showGuideLabel)
+            {
+                <span>Vùng ảnh thành phẩm</span>
+            }
+        </div>
+    </div>
+    <p class="panel-hint">Minh họa nguồn ảnh 3:2 với ô dọc 3:4, không phải preview camera thật.</p>
+
     <p class="panel-hint">
         Vùng cắt vẫn được tính tự động theo template đã chọn và kích thước camera thực tế.
         Một template có ô ảnh dọc hoặc vuông có thể cắt hai bên dù camera chụp 3:2.
@@ -73,6 +87,12 @@
     private CaptureGuideMode _mode;
     private int _opacityPercent;
     private bool _showGuideLabel;
+    private string DemoModeClass => _mode switch
+    {
+        CaptureGuideMode.Outline => "guide-outline",
+        CaptureGuideMode.CropPreview => "guide-crop-preview",
+        _ => "guide-dim-outside",
+    };
     private bool _saving;
     private StatusInfo? _message;
 
