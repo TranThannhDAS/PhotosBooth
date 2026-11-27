@@ -14,17 +14,23 @@
                    không nằm trong ảnh chụp (ảnh được lấy trực tiếp từ khung hình camera). *@
                 @if (Guide is { } guide)
                 {
-                    <div class="framing" style="@FramingStyle" aria-hidden="true">
+                    <div class="framing @GuideModeClass" style="@FramingStyle" aria-hidden="true">
                         @if (guide.ShowsWholeImage)
                         {
                             <div class="framing-window framing-whole">
-                                <span class="framing-label">Toàn bộ khung hình được giữ trong ảnh</span>
+                                @if (_guideSettings.ShowGuideLabel)
+                                {
+                                    <span class="framing-label">Toàn bộ khung hình được giữ trong ảnh</span>
+                                }
                             </div>
                         }
                         else
                         {
                             <div class="framing-window" style="@GuideWindowStyle(guide)">
-                                <span class="framing-label">Vùng ảnh thành phẩm</span>
+                                @if (_guideSettings.ShowGuideLabel)
+                                {
+                                    <span class="framing-label">Vùng ảnh thành phẩm</span>
+                                }
                             </div>
                         }
                     </div>
@@ -55,7 +61,7 @@
                     @switch (progress.Stage)
                     {
                         case CaptureStage.Countdown:
-                            <div class="countdown" aria-live="assertive">
+                            <div class="countdown countdown-top" aria-live="assertive">
                                 <span class="countdown-number">@progress.SecondsRemaining</span>
                             </div>
                             break;
