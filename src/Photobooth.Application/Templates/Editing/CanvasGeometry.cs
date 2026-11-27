@@ -45,6 +45,28 @@ public static class CanvasGeometry
     }
 
     /// <summary>
+    /// Ép khung thành hình vuông sau khi kéo (dùng cho vùng QR), neo cạnh/góc đối diện với tay nắm.
+    /// Kéo cạnh trái/phải lấy theo chiều rộng, cạnh trên/dưới theo chiều cao, góc theo cạnh lớn hơn.
+    /// </summary>
+    public static CanvasRect ToSquare(CanvasRect rect, DragHandle handle)
+    {
+        if (rect.Width == rect.Height)
+        {
+            return rect;
+        }
+
+        var size = handle switch
+        {
+            DragHandle.East or DragHandle.West => rect.Width,
+            DragHandle.North or DragHandle.South => rect.Height,
+            _ => Math.Max(rect.Width, rect.Height),
+        };
+        var x = handle is DragHandle.West or DragHandle.NorthWest or DragHandle.SouthWest ? rect.Right - size : rect.X;
+        var y = handle is DragHandle.North or DragHandle.NorthEast or DragHandle.NorthWest ? rect.Bottom - size : rect.Y;
+        return new CanvasRect(x, y, size, size);
+    }
+
+    /// <summary>
     /// Áp dụng một thao tác kéo lên khung ban đầu <paramref name="start"/> với tổng độ dời (pixel canvas) tính từ lúc bắt đầu kéo.
     /// Tính lại từ khung ban đầu mỗi lần nên không tích lũy sai số làm tròn.
     /// </summary>

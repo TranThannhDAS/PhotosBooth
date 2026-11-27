@@ -69,14 +69,26 @@ public sealed record PrintOptions
     /// <summary>Trần kỹ thuật cho cấu hình, tránh nhập nhầm số rất lớn.</summary>
     public const int AbsoluteMaxCopies = 50;
 
+    public const int DefaultClientMaxCopies = 2;
+
     /// <summary>Số bản tối đa cho một lần in.</summary>
     public int MaxCopies { get; init; } = DefaultMaxCopies;
+
+    /// <summary>
+    /// Số bản tối đa cho một lần in do KHÁCH tự in lại từ Thư viện sự kiện (Client Mode). Không vượt <see cref="MaxCopies"/>.
+    /// </summary>
+    public int ClientMaxCopies { get; init; } = DefaultClientMaxCopies;
 
     public void Validate()
     {
         if (MaxCopies is < 1 or > AbsoluteMaxCopies)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxCopies), MaxCopies, $"Số bản in tối đa phải trong khoảng 1..{AbsoluteMaxCopies}.");
+        }
+
+        if (ClientMaxCopies < 1 || ClientMaxCopies > MaxCopies)
+        {
+            throw new ArgumentOutOfRangeException(nameof(ClientMaxCopies), ClientMaxCopies, $"Số bản khách tự in tối đa phải trong khoảng 1..{MaxCopies} (print.maxCopies).");
         }
     }
 }
@@ -105,3 +117,16 @@ public enum PrintOutcome
 }
 
 public sealed record PrintResult(PrintOutcome Outcome, PrintJob? Job = null, string? ErrorMessage = null);
+
+/// <summary>Vị trí vùng QR trên ảnh thành phẩm, theo tọa độ canvas của template (pixel).</summary>
+public sealed record PrintQrPlacement(int X, int Y, int Size, int CanvasWidthPixels, int CanvasHeightPixels);
+
+/// <summary>
+/// Tạo bản in kèm mã QR: SAO CHÉP ảnh thành phẩm (không sửa file phiên bản) rồi vẽ QR của link chia sẻ vào vùng QR của template.
+/// </summary>
+public interface IPrintImageRenderer
+{
+    /// <summary>Ghi bản in hoàn chỉnh vào <paramref name="destinationPath"/> (ghi file tạm rồi đổi tên; đã có file thì giữ nguyên).</summary>
+    /// <exception cref="IOException">Không đọc được ảnh thành phẩm hoặc không ghi được bản in.</exception>
+    Task RenderWithQrAsync(string sourceImagePath, string destinationPath, PrintQrPlacement placement, string url, CancellationToken cancellationToken = default);
+}

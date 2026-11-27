@@ -69,6 +69,7 @@
                 <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editor.AddRectangle()">■ Hình chữ nhật</button>
                 <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editor.AddRectangle(ellipse: true)">● Hình elip</button>
                 <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="AddImageAsync">🖼 Ảnh / PNG</button>
+                <button type="button" class="btn btn-secondary btn-sm" title="Vùng in mã QR chia sẻ (tối đa một vùng)" @onclick="() => _editor.AddQrCode()">▦ Vùng QR</button>
             </div>
 
             <h3 class="panel-title">Lớp <small>(trên cùng ở đầu)</small></h3>
@@ -122,6 +123,11 @@
                                 <ImageView Class="@($"tpl-el-fill tpl-image fit-{image.Fit.ToString().ToLowerInvariant()}")" Key="@image.AssetPath"
                                            ContentType="@ContentTypeOf(image.AssetPath)" Alt="@(image.AssetPath ?? string.Empty)"
                                            Loader="@(ct => LoadAssetAsync(image.AssetPath, ct))" />
+                                break;
+                            case EditorElementKind.QrCode:
+                                <div class="tpl-el-fill tpl-qr" title="Mã QR của phiên bản được in vào đây">
+                                    <span class="tpl-qr-label">QR</span>
+                                </div>
                                 break;
                             default:
                                 <div class="tpl-el-fill" style="@ShapeStyle(element.Decoration!)"></div>
@@ -253,6 +259,18 @@
                         </div>
                     </div>
                 }
+                else if (sel.Decoration is { Type: DecorationKind.QrCode } qr)
+                {
+                    <p class="panel-hint">
+                        Khi in, mã QR chia sẻ của <strong>đúng phiên bản được in</strong> sẽ được vẽ vào vùng này (nền trắng, chấm đen).
+                        Ảnh thành phẩm, ảnh xuất file và ảnh tải về từ Cloud không chứa QR; vùng này hiển thị nền bên dưới.
+                    </p>
+                    <p class="panel-hint">
+                        Vùng luôn vuông, tối thiểu @TemplateValidator.MinQrSizePixels(Canvas.Dpi) px
+                        (≈ @TemplateValidator.MinQrSizeMillimeters.ToString("0", CultureInfo.InvariantCulture) mm khi in) và phải nằm trọn trong canvas.
+                        Nếu chưa cấu hình Cloud, ảnh được in không kèm QR.
+                    </p>
+                }
                 else if (sel.Decoration is { } shape)
                 {
                     <PropColor Label="Màu tô" Value="@shape.Color" AllowEmpty="true" DefaultWhenAdded="#F9A8D4" OnCommit="v => SetDecoration(sel.Key, d => d with { Color = v })" />
@@ -270,7 +288,7 @@
                 }
 
                 <div class="prop-row">
-                    <button type="button" class="btn btn-secondary btn-sm" title="Ctrl+D" @onclick="() => _editor.DuplicateSelected()">Nhân bản</button>
+                    <button type="button" class="btn btn-secondary btn-sm" title="Ctrl+D" disabled="@(sel.Kind == EditorElementKind.QrCode)" @onclick="() => _editor.DuplicateSelected()">Nhân bản</button>
                     <button type="button" class="btn btn-danger btn-sm" title="Delete" @onclick="() => _editor.DeleteSelected()">Xóa</button>
                 </div>
             }

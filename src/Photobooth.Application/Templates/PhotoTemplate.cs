@@ -32,6 +32,10 @@ public sealed record PhotoTemplate
     /// </summary>
     [JsonIgnore]
     public int RequiredPhotoCount => Slots.Count == 0 ? 0 : Math.Max(0, Slots.Max(s => s.PhotoIndex) + 1);
+
+    /// <summary>Vùng mã QR in kèm (null = template không in QR). Tối đa một vùng (<see cref="TemplateValidator"/>).</summary>
+    [JsonIgnore]
+    public TemplateDecoration? QrArea => Decorations.FirstOrDefault(d => d.Type == DecorationKind.QrCode);
 }
 
 /// <summary>Kích thước canvas và kích thước vật lý (qua DPI).</summary>
@@ -113,6 +117,12 @@ public enum DecorationKind
     Ellipse,
     Text,
     Image,
+
+    /// <summary>
+    /// Vùng mã QR chia sẻ (vuông, tối đa một vùng mỗi template). Ảnh thành phẩm KHÔNG chứa QR (vùng này để trống, thấy nền bên dưới);
+    /// QR của đúng phiên bản được vẽ vào vùng này trên bản in lúc gửi lệnh in.
+    /// </summary>
+    QrCode,
 }
 
 public enum TextAlignment

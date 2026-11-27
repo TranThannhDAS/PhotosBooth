@@ -111,6 +111,117 @@ public sealed class EventWorkspaceService
     public Task<WorkspaceStatus> OpenAsync(string folder, string? newEventName = null, CancellationToken cancellationToken = default) =>
         OpenCoreAsync(folder, newEventName, createIfMissingEventFile: true, cancellationToken);
 
+    /// <summary>
+    /// Tạo sự kiện mới: tạo thư mục con <c>{nơi lưu}\{tên sự kiện}</c> (tên đã lọc ký tự Windows không cho phép) rồi dùng thư mục đó
+    /// làm Event Workspace — toàn bộ ảnh của sự kiện nằm trong thư mục này. Không dùng lại thư mục đã tồn tại (tránh lẫn sự kiện).
+    /// Lỗi kiểm tra (tên, nơi lưu, trùng thư mục) KHÔNG làm thay đổi sự kiện hiện tại.
+    /// </summary>
+    public async Task<WorkspaceStatus> CreateEventAsync(string storageFolder, string eventName, CancellationToken cancellationToken = default)
+    {
+        var name = eventName?.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            return new WorkspaceStatus(null, storageFolder, "Vui lòng nhập tên sự kiện.");
+        }
+
+        if (!EventFolderName.TryCreate(name, out var folderName))
+        {
+            return new WorkspaceStatus(null, storageFolder, "Tên sự kiện không dùng được làm tên thư mục. Vui lòng đặt tên khác.");
+        }
+
+        if (string.IsNullOrWhiteSpace(storageFolder) || !Path.IsPathFullyQualified(storageFolder))
+        {
+            return new WorkspaceStatus(null, storageFolder, "Vui lòng chọn nơi lưu sự kiện.");
+        }
+
+        var parent = Path.TrimEndingDirectorySeparator(Path.GetFullPath(storageFolder));
+        var parentProblem = await Task.Run(() => CheckFolder(parent, out _), cancellationToken).ConfigureAwait(false);
+        if (parentProblem is not null)
+        {
+            return new WorkspaceStatus(null, parent, parentProblem.Replace("thư mục sự kiện", "nơi lưu sự kiện", StringComparison.Ordinal));
+        }
+
+        var folder = Path.Combine(parent, folderName);
+        if (Directory.Exists(folder) || File.Exists(folder))
+        {
+            return new WorkspaceStatus(null, folder, $"Nơi lưu này đã có thư mục “{folderName}”. Hãy đặt tên sự kiện khác, hoặc dùng “Mở sự kiện có sẵn” nếu đó là sự kiện cũ.");
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex, "Không tạo được thư mục sự kiện mới");
+            return new WorkspaceStatus(null, folder, DescribeWriteError(ex));
+        }
+
+        var status = await OpenAsync(folder, name, cancellationToken).ConfigureAwait(false);
+        if (!status.IsReady)
+        {
+            TryDeleteEmptyFolder(folder);
+        }
+
+        return status;
+    }
+
+    /// <summary>
+    /// Mở lại một sự kiện đã tạo trước đó (thư mục có event.json). Thư mục chưa phải sự kiện bị từ chối — sự kiện mới phải tạo bằng
+    /// <see cref="CreateEventAsync"/>. Lỗi kiểm tra KHÔNG làm thay đổi sự kiện hiện tại.
+    /// </summary>
+    public async Task<WorkspaceStatus> OpenExistingAsync(string folder, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Path.IsPathFullyQualified(folder))
+        {
+            return new WorkspaceStatus(null, folder, "Đường dẫn thư mục sự kiện không hợp lệ.");
+        }
+
+        var inspected = await InspectAsync(folder, cancellationToken).ConfigureAwait(false);
+        if (inspected.Problem is not null)
+        {
+            return inspected;
+        }
+
+        if (inspected.IsNewEvent)
+        {
+            return inspected with
+            {
+                Problem = "Thư mục này chưa phải là sự kiện. Hãy chọn đúng thư mục sự kiện đã tạo, hoặc tạo sự kiện mới.",
+            };
+        }
+
+        return await OpenAsync(folder, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Nơi lưu gợi ý cho sự kiện mới: thư mục cha của sự kiện hiện tại, hoặc của sự kiện mở gần nhất trên máy.</summary>
+    public string? SuggestedStorageFolder
+    {
+        get
+        {
+            var folder = Current?.RootDirectory
+                ?? LoadEvents().Where(e => e.FolderPath is not null).MaxBy(e => e.LastOpenedAt)?.FolderPath;
+            var parent = folder is null ? null : Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder));
+            return parent is not null && Directory.Exists(parent) ? parent : null;
+        }
+    }
+
+    private void TryDeleteEmptyFolder(string folder)
+    {
+        try
+        {
+            // Chỉ dọn thư mục RỖNG vừa tự tạo khi không dùng được làm sự kiện.
+            if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
+            {
+                Directory.Delete(folder);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Không dọn được thư mục sự kiện rỗng vừa tạo");
+        }
+    }
+
     /// <summary>Đổi tên hiển thị của sự kiện hiện tại (không đổi tên thư mục).</summary>
     public async Task<WorkspaceStatus> RenameAsync(string name, CancellationToken cancellationToken = default)
     {

@@ -91,18 +91,58 @@ public sealed record ClientSessionDetail(
 /// Thư viện ảnh CHỈ ĐỌC cho chế độ khách (Client Mode), giới hạn chặt trong sự kiện đang phục vụ.
 /// Không nhận mã sự kiện hay đường dẫn tùy ý từ giao diện, không mở khóa Admin và không tác động đến
 /// phiên đang hoạt động trong <see cref="PhotoSessionService"/>.
+/// Thao tác ghi duy nhất: khách IN LẠI một phiên bản (giới hạn số bản, kèm QR của đúng phiên bản nếu template có vùng QR).
 /// </summary>
 public sealed class ClientEventGalleryService
 {
     private readonly ISessionArchive _archive;
     private readonly IImagePreviewRenderer _previews;
+    private readonly PhotoSessionService? _sessions;
 
+    /// <summary>Chỉ xem (không in).</summary>
     public ClientEventGalleryService(ISessionArchive archive, IImagePreviewRenderer previews)
+        : this(archive, previews, null)
+    {
+    }
+
+    public ClientEventGalleryService(ISessionArchive archive, IImagePreviewRenderer previews, PhotoSessionService? sessions)
     {
         ArgumentNullException.ThrowIfNull(archive);
         ArgumentNullException.ThrowIfNull(previews);
         _archive = archive;
         _previews = previews;
+        _sessions = sessions;
+    }
+
+    /// <summary>Khách được in lại (đã có máy in). Giao diện vẫn phải xử lý kết quả <see cref="PrintOutcome.NotConfigured"/>.</summary>
+    public bool CanPrint => _sessions?.Printer is not null;
+
+    /// <summary>Số bản tối đa khách tự in mỗi lần (<c>print.clientMaxCopies</c>).</summary>
+    public int MaxClientCopies => _sessions?.PrintOptions.ClientMaxCopies ?? 0;
+
+    /// <summary>
+    /// Khách in lại phiên bản <paramref name="version"/> của một phiên thuộc sự kiện hiện tại. Lần in đầu tiên của phiên bản
+    /// sẽ tạo link chia sẻ (QR) cho phiên bản đó nếu template có vùng QR và Cloud đã được cấu hình; các lần sau dùng lại đúng QR đó.
+    /// </summary>
+    public async Task<PrintResult> PrintVersionAsync(string sessionKey, int version, int copies, CancellationToken cancellationToken = default)
+    {
+        if (_sessions is null)
+        {
+            return new PrintResult(PrintOutcome.NotConfigured);
+        }
+
+        if (version <= 0 || !IsSafeSessionKey(sessionKey) || TryGetCurrentKnownEvent() is not { } current)
+        {
+            return new PrintResult(PrintOutcome.NothingToPrint);
+        }
+
+        var archived = await TryLoadInCurrentEventAsync(sessionKey, current.EventKey, cancellationToken).ConfigureAwait(false);
+        if (archived is null)
+        {
+            return new PrintResult(PrintOutcome.NothingToPrint);
+        }
+
+        return await _sessions.RequestClientReprintAsync(archived.Session, version, copies, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Sự kiện đang phục vụ (null nếu chưa chọn hoặc không truy cập được).</summary>

@@ -23,7 +23,7 @@
 
     <div class="folder-row">
         <span class="folder-label">Lưu vào</span>
-        <span class="folder-path" title="@ExportFolder.CurrentFolder">@ExportFolder.CurrentFolder</span>
+        <span class="folder-path" title="@ExportFolder.GetFolder(Session)">@ExportFolder.GetFolder(Session)</span>
         @if (AllowFolderChange)
         {
             <button type="button" class="btn btn-ghost btn-sm" disabled="@(Disabled || IsExporting)" @onclick="PickFolderAsync">Đổi thư mục</button>
@@ -160,7 +160,7 @@
 
     private async Task PickFolderAsync()
     {
-        if (await ExportFolder.PickFolderAsync())
+        if (await ExportFolder.PickFolderAsync(Session))
         {
             _message = null;
         }
@@ -182,7 +182,7 @@
         StateHasChanged();
         try
         {
-            _results = await Sessions.ExportAsync(_formats.ToArray(), ExportFolder.CurrentFolder, version: Version);
+            _results = await Sessions.ExportAsync(_formats.ToArray(), ExportFolder.PrepareFolder(Session), version: Version);
             _lastSavedFile = _results.LastOrDefault(r => r.Result.Succeeded)?.Result.FilePath;
             _message = _results.All(r => r.Result.Succeeded)
                 ? new StatusInfo(StatusKind.Success, "Đã lưu ảnh thành công.", "Có thể lưu thêm định dạng khác.")

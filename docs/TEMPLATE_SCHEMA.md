@@ -127,7 +127,7 @@ Thuộc tính chung cho mọi trang trí:
 | Thuộc tính | Bắt buộc | Mặc định | Ghi chú |
 |---|---|---|---|
 | `id` | Không | không có | |
-| `type` | Có | — | `rectangle`, `ellipse`, `text`, `image` (giá trị khác bị báo lỗi) |
+| `type` | Có | — | `rectangle`, `ellipse`, `text`, `image`, `qrCode` (giá trị khác bị báo lỗi) |
 | `x`, `y` | Không | `0` | |
 | `width`, `height` | Có trên thực tế | `0` | Phải > 0 |
 | `zIndex` | Không | `0` | −1000..1000 |
@@ -187,13 +187,26 @@ Placeholder lấy theo thời điểm bắt đầu phiên chụp, giống nhau �
 
 Đường dẫn bị **từ chối** (lỗi): đường dẫn tuyệt đối (`C:\…`, `/…`), đường dẫn mạng (`\\server\…`), URI (`http:…`) và mọi đường dẫn có `..`. File không tồn tại hoặc hỏng/không phải ảnh cũng là **lỗi**, và template sẽ không được nạp.
 
+## 8.1 Vùng mã QR (`qrCode`)
+
+```json
+{ "id": "qr", "type": "qrCode", "x": 960, "y": 1560, "width": 200, "height": 200, "zIndex": 50 }
+```
+
+- Đánh dấu chỗ in **mã QR chia sẻ của đúng phiên bản được in**. Mỗi template tối đa **một** vùng QR.
+- Ảnh thành phẩm (`final-v{N}.png`), file xuất JPEG/PNG/PDF và ảnh tải về từ Cloud **không chứa QR**: vùng này để trống, thấy nền bên dưới.
+- Khi in, ứng dụng tạo bản in riêng `Outputs/print-v{N}.png` = thành phẩm + QR (nền trắng, chấm đen, có lề), vẽ đúng vào vùng này. Xem BUSINESS_RULES BR-QR09.
+- Ràng buộc (**lỗi** nếu vi phạm): hình vuông (`width` = `height`); cạnh tối thiểu **15 mm** khi in (`⌈15 / 25,4 × dpi⌉` px, ví dụ 178 px ở 300 DPI); nằm trọn trong canvas.
+- Không dùng `color`, `stroke…`, `text`, `assetPath`.
+- Template Editor: nút **"▦ Vùng QR"** thêm vùng ở góc dưới phải; vùng luôn vuông khi kéo/đổi kích thước, không nhân bản được.
+
 ## 9. Kiểm tra (validation)
 
 Khi nạp, mỗi vấn đề được báo kèm **vị trí thuộc tính**, ví dụ `slots[2](photo-3).focalPoint.x` hoặc `$.decorations[0].type`.
 
 | Mức | Ví dụ |
 |---|---|
-| **Lỗi** (template không được dùng) | JSON sai cú pháp (có số dòng/cột); thiếu thuộc tính bắt buộc; thuộc tính lạ; `type`/`fit`/`textAlign` không hỗ trợ; canvas hoặc DPI ngoài giới hạn; ô/trang trí có kích thước ≤ 0; `photoIndex` ngoài 0..19 hoặc không liên tục từ 0; `focalPoint` ngoài 0..1; `cornerRadius` âm; `zIndex` ngoài −1000..1000; mã màu sai; `id` trùng; asset không an toàn, không tồn tại hoặc hỏng; trùng `id` template |
+| **Lỗi** (template không được dùng) | JSON sai cú pháp (có số dòng/cột); thiếu thuộc tính bắt buộc; thuộc tính lạ; `type`/`fit`/`textAlign` không hỗ trợ; canvas hoặc DPI ngoài giới hạn; ô/trang trí có kích thước ≤ 0; `photoIndex` ngoài 0..19 hoặc không liên tục từ 0; `focalPoint` ngoài 0..1; `cornerRadius` âm; `zIndex` ngoài −1000..1000; mã màu sai; `id` trùng; asset không an toàn, không tồn tại hoặc hỏng; trùng `id` template; vùng QR không vuông, nhỏ hơn 15 mm, tràn canvas hoặc có hơn một vùng QR |
 | **Cảnh báo** (vẫn dùng được) | Phần tử tràn hoặc nằm ngoài canvas; `cornerRadius` lớn hơn nửa cạnh ngắn; cỡ chữ lớn hơn chiều cao khung chữ; font không có trên máy; `id` khác tên thư mục |
 
 ## 10. Ví dụ hoàn chỉnh

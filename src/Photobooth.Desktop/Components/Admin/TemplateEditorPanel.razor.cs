@@ -479,6 +479,7 @@ public sealed partial class TemplateEditorPanel : IAsyncDisposable
         EditorElementKind.Text => "Chữ",
         EditorElementKind.Rectangle => "Hình chữ nhật",
         EditorElementKind.Ellipse => "Hình elip",
+        EditorElementKind.QrCode => "Vùng mã QR",
         _ => "Ảnh trang trí",
     };
 

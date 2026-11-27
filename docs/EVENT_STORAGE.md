@@ -19,9 +19,13 @@ Dữ liệu của các sự kiện không bao giờ bị trộn lẫn. Thư mụ
 - Màn khởi động hiện khi mở ứng dụng và mỗi khi thoát chế độ quản trị. Đang phục vụ khách thì vào lại quản trị bằng nút "Quản trị" ở màn hình chào (cần PIN).
   - Ứng dụng tự mở lại sự kiện **mở gần nhất** (bảng `Events` trong SQLite).
   - Bảng `Events` cũng là **danh bạ các sự kiện đã mở trên máy** (mã, tên, thư mục, lần mở gần nhất) cho bộ lọc của Thư viện ảnh. Một thư mục chỉ thuộc một sự kiện.
-  - **"Chọn thư mục sự kiện" / "Đổi sự kiện khác"** mở hộp thoại chọn thư mục của Windows. Hộp thoại có sẵn nút *New folder* để tạo thư mục mới, nên không phải gõ đường dẫn.
-    - Thư mục **đã có** `event.json`: mở lại sự kiện cũ theo mã trong file (kể cả khi thư mục đã được di chuyển — thư mục mới được ghi vào database).
-    - Thư mục **chưa có** `event.json`: hỏi tên sự kiện (mặc định là tên thư mục), tạo `event.json` (chỉ chứa mã sự kiện) và bản ghi trong SQLite.
+  - **Tạo sự kiện mới** (cập nhật 27/11/2026): chọn **nơi lưu** bằng hộp thoại chọn thư mục của Windows và nhập **tên sự kiện**. Ứng dụng tự tạo thư mục con `{nơi lưu}\{tên sự kiện}` và dùng nó làm thư mục sự kiện; toàn bộ ảnh của sự kiện nằm trong đó.
+    - Tên thư mục giữ nguyên tiếng Việt có dấu; ký tự Windows không cho phép (`\ / : * ? " < > |`) đổi thành `-`; gộp khoảng trắng, bỏ dấu chấm cuối, tối đa 100 ký tự. Tên dành riêng của Windows (`CON`, `PRN`, `COM1`…) bị từ chối.
+    - Nơi lưu đã có thư mục cùng tên → **từ chối** (không tự thêm hậu tố, không dùng chung thư mục), sự kiện hiện tại giữ nguyên.
+    - Nơi lưu được gợi ý lại lần sau = thư mục cha của sự kiện mở gần nhất (không thêm cấu hình mới).
+    - Sau khi tạo thư mục: ghi `event.json` (chỉ chứa mã sự kiện) và bản ghi trong SQLite như trước.
+  - **Mở sự kiện có sẵn…**: chọn đúng thư mục sự kiện đã tạo (có `event.json`) để dùng tiếp, kể cả khi thư mục đã được di chuyển (thư mục mới được ghi vào database). Thư mục chưa phải sự kiện bị từ chối — không còn biến một thư mục bất kỳ thành sự kiện.
+  - Thư mục sự kiện tạo theo cách cũ không cần chuyển đổi: vẫn mở bằng "Mở sự kiện có sẵn…" nếu có `event.json`.
   - `event.json` chỉ là **dấu nhận diện** thư mục (mã sự kiện); tên sự kiện nằm trong SQLite. Đổi tên sự kiện không sửa file trong thư mục.
   - **"Bắt đầu phục vụ khách"** chỉ bấm được khi sự kiện hợp lệ. Sau khi bấm, ứng dụng chuyển sang Kiosk.
   - **"Chế độ quản trị"** yêu cầu PIN. PIN được khai báo ở `AdminAccessService.Pin`.
@@ -54,8 +58,11 @@ Dữ liệu của các sự kiện không bao giờ bị trộn lẫn. Thư mụ
         │   ├── final-v1.png           phiên bản thành phẩm (không bao giờ ghi đè)
         │   ├── final-v1.thumb.jpg     ảnh thu nhỏ cho thư viện ảnh
         │   └── final-v2.png …
+        ├── Exports/                   file xuất JPEG/PNG/PDF của chính phiên này (tạo khi xuất lần đầu)
         └── Drafts/                    bản ghép tạm khi đang chỉnh (tự dọn khi xong)
 ```
+
+- **File xuất** (cập nhật 27/11/2026) mặc định lưu vào `Exports/` trong thư mục của **đúng phiên được xuất**, tức nằm trong thư mục sự kiện tạo ở màn khởi động; phiên mở lại từ sự kiện khác cũng lưu vào thư mục của sự kiện đó. Quản trị viên vẫn đổi được thư mục cho từng phiên bằng "Đổi thư mục" (chỉ trong lần chạy đó). Không có phiên thì mới dùng `export.defaultFolder` hoặc thư mục Ảnh (Pictures).
 
 - Tên thư mục phiên luôn duy nhất. Nếu trùng tên thì dùng toàn bộ SessionId.
 - Mọi file (ảnh, thành phẩm, snapshot) được ghi theo kiểu **ghi file tạm rồi đổi tên**; metadata ghi trong transaction của SQLite (chế độ WAL). Ứng dụng dừng đột ngột cũng không làm hỏng bản cũ.
@@ -114,6 +121,6 @@ Thư viện ảnh **quản trị** (lọc nhiều sự kiện, chỉnh sửa l�
 
 ## 7. Di chuyển hoặc sao chép thư mục sự kiện
 
-- **Di chuyển trên cùng máy** (đổi ổ, đổi tên thư mục): Admin → **Sự kiện** → **Đổi sự kiện khác**, rồi chọn thư mục ở vị trí mới. Ứng dụng nhận ra sự kiện qua `event.json`, cập nhật thư mục trong database; mọi phiên, phiên bản, lịch sử và link chia sẻ vẫn dùng được vì đường dẫn là tương đối.
+- **Di chuyển trên cùng máy** (đổi ổ, đổi tên thư mục): Admin → **Sự kiện** → **Mở sự kiện có sẵn…**, rồi chọn thư mục ở vị trí mới. Ứng dụng nhận ra sự kiện qua `event.json`, cập nhật thư mục trong database; mọi phiên, phiên bản, lịch sử và link chia sẻ vẫn dùng được vì đường dẫn là tương đối.
 - **Sang máy khác:** metadata nằm trong `photobooth.db` của máy cũ, nên chép riêng thư mục sự kiện chỉ mang theo **file**. Máy mới nhận ra sự kiện (cùng mã) nhưng Thư viện ảnh không có các phiên cũ. Muốn chuyển cả lịch sử thì chép kèm `photobooth.db` (khi ứng dụng đã đóng; file này sẽ **thay toàn bộ** dữ liệu của máy mới). Đồng bộ nhiều máy chưa thuộc phạm vi.
 - Máy mới không cần có template trong thư viện, vì mỗi phiên đã mang theo snapshot template và asset.

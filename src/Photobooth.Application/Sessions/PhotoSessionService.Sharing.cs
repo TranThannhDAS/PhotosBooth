@@ -25,12 +25,16 @@ public sealed partial class PhotoSessionService
     /// </list>
     /// </summary>
     /// <returns>null nếu chưa cấu hình Cloud, không có phiên bản/file, hoặc chưa ghi được metadata (khi đó KHÔNG hiển thị QR).</returns>
-    public async Task<ShareLink?> EnsureShareLinkAsync(int version, CancellationToken cancellationToken = default)
+    public Task<ShareLink?> EnsureShareLinkAsync(int version, CancellationToken cancellationToken = default) =>
+        EnsureShareLinkAsync(_currentTarget, version, cancellationToken);
+
+    /// <summary>Như <see cref="EnsureShareLinkAsync(int, CancellationToken)"/> nhưng cho một phiên bất kỳ (phiên hiện tại hoặc phiên đã lưu).</summary>
+    private async Task<ShareLink?> EnsureShareLinkAsync(SessionTarget target, int version, CancellationToken cancellationToken)
     {
         await _versionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (Current is not { Directory: not null } session || session.FindVersion(version) is not { } output)
+            if (target.Session is not { Directory: not null } session || session.FindVersion(version) is not { } output)
             {
                 return null;
             }
@@ -47,7 +51,7 @@ public sealed partial class PhotoSessionService
             }
 
             var attached = false;
-            Mutate(s =>
+            target.Mutate(s =>
             {
                 if (s.SessionId != session.SessionId || s.FindVersion(version) is not { Share: null })
                 {
@@ -63,10 +67,10 @@ public sealed partial class PhotoSessionService
                 return null;
             }
 
-            if (!await PersistCurrentAsync(CancellationToken.None).ConfigureAwait(false))
+            if (!await target.PersistAsync(CancellationToken.None).ConfigureAwait(false))
             {
                 // Token chưa được lưu bền vững → không hiển thị QR (tránh phát QR mà sau khi tắt máy không còn ai biết để upload).
-                Mutate(s => s.SessionId == session.SessionId && s.FindVersion(version)?.Share == link ? WithShare(s, version, null) : null);
+                target.Mutate(s => s.SessionId == session.SessionId && s.FindVersion(version)?.Share == link ? WithShare(s, version, null) : null);
                 _logger.LogError("Không ghi được link chia sẻ của phiên {SessionId} v{Version}; không hiển thị QR", session.SessionId, version);
                 return null;
             }

@@ -115,6 +115,11 @@ public sealed class TemplateEditor
         }
 
         var rect = CanvasGeometry.Apply(gesture.StartBounds, gesture.Handle, canvasDeltaX, canvasDeltaY, keepAspect, gridSize);
+        if (element.Kind == EditorElementKind.QrCode)
+        {
+            rect = CanvasGeometry.ToSquare(rect, gesture.Handle);
+        }
+
         var index = gesture.Start.IndexOf(gesture.Key);
         Current = gesture.Start with { Layers = gesture.Start.Layers.SetItem(index, element.WithBounds(rect)) };
         Changed?.Invoke(this, EventArgs.Empty);
@@ -243,10 +248,38 @@ public sealed class TemplateEditor
         });
     }
 
+    /// <summary>
+    /// Thêm vùng mã QR (vuông, góc dưới bên phải, đủ lớn để quét khi in). Mỗi template chỉ có một vùng QR:
+    /// nếu đã có thì chọn vùng đó thay vì thêm mới.
+    /// </summary>
+    public EditorElement AddQrCode()
+    {
+        if (Current.Layers.FirstOrDefault(l => l.Kind == EditorElementKind.QrCode) is { } existing)
+        {
+            Select(existing.Key);
+            return existing;
+        }
+
+        var canvas = Current.Canvas;
+        var shortSide = Math.Max(1, Math.Min(canvas.WidthPixels, canvas.HeightPixels));
+        var size = Math.Min(shortSide, Math.Max(TemplateValidator.MinQrSizePixels(canvas.Dpi), shortSide / 5));
+        var margin = Math.Max(0, Math.Min(shortSide / 30, shortSide - size));
+        return AddDecoration(new TemplateDecoration
+        {
+            Id = NextId("qr"),
+            Type = DecorationKind.QrCode,
+            X = Math.Max(0, canvas.WidthPixels - size - margin),
+            Y = Math.Max(0, canvas.HeightPixels - size - margin),
+            Width = size,
+            Height = size,
+        });
+    }
+
     /// <summary>Nhân bản phần tử đang chọn, lệch một chút và nằm ngay trên bản gốc. Ô ảnh bản sao dùng CHUNG photoIndex.</summary>
+    /// <returns>null nếu chưa chọn gì hoặc phần tử là vùng QR (mỗi template chỉ có một vùng QR).</returns>
     public EditorElement? DuplicateSelected()
     {
-        if (Selected is not { } source)
+        if (Selected is not { } source || source.Kind == EditorElementKind.QrCode)
         {
             return null;
         }
@@ -328,8 +361,20 @@ public sealed class TemplateEditor
     public bool UpdateDecoration(Guid key, Func<TemplateDecoration, TemplateDecoration> change) =>
         Replace(key, e => e.Decoration is { } d ? EditorElement.ForDecoration(change(d), e.Key) : e);
 
+    /// <summary>Đặt vị trí/kích thước. Vùng QR luôn vuông: cạnh vừa được đổi quyết định cạnh còn lại.</summary>
     public bool SetBounds(Guid key, CanvasRect bounds) =>
-        Replace(key, e => e.WithBounds(bounds with { Width = Math.Max(1, bounds.Width), Height = Math.Max(1, bounds.Height) }));
+        Replace(key, e =>
+        {
+            var width = Math.Max(1, bounds.Width);
+            var height = Math.Max(1, bounds.Height);
+            if (e.Kind == EditorElementKind.QrCode)
+            {
+                var size = height != e.Bounds.Height && width == e.Bounds.Width ? height : width;
+                width = height = size;
+            }
+
+            return e.WithBounds(bounds with { Width = width, Height = height });
+        });
 
     public bool SetInfo(string name, string? description) =>
         Apply(d => d with { Name = name.Trim(), Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim() });

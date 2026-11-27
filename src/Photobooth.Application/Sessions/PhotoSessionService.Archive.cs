@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Photobooth.Application.Composition;
 using Photobooth.Application.Printing;
@@ -300,81 +301,184 @@ public sealed partial class PhotoSessionService
             var output = version is { } requested
                 ? Current?.FindVersion(requested)
                 : await ConfirmOutputAsync(cancellationToken).ConfigureAwait(false);
-            if (output is null || !File.Exists(output.FilePath) || Current is not { } session)
+            if (output is null || !File.Exists(output.FilePath) || Current is null)
             {
                 return new PrintResult(PrintOutcome.NothingToPrint);
             }
 
-            var now = _timeProvider.GetUtcNow();
-            var previous = session.PrintJobs.Where(j => j.OutputVersion == output.Version).ToArray();
-            if (!confirmRetry && previous.LastOrDefault(j => j.Status is PrintJobStatus.Pending or PrintJobStatus.Failed) is { } unclear)
-            {
-                return new PrintResult(PrintOutcome.ConfirmationRequired, unclear);
-            }
-
-            // Bấm trùng: cùng phiên bản, cùng số bản, vừa gửi xong (lệnh đã hủy/thất bại không tính).
-            if (previous.LastOrDefault(j => j.Status is not (PrintJobStatus.Cancelled or PrintJobStatus.Failed)) is { } last
-                && last.Copies == copies
-                && now - last.CreatedAt < DuplicatePrintWindow)
-            {
-                _logger.LogWarning("Bỏ qua yêu cầu in trùng cho phiên {SessionId} v{Version}", session.SessionId, output.Version);
-                return new PrintResult(PrintOutcome.Busy, last);
-            }
-
-            var job = new PrintJob(Guid.NewGuid(), session.SessionId, output.Version, output.FilePath, copies, printer.Name, printer.IsPhysical, PrintJobStatus.Pending, now);
-            UpsertPrintJob(job);
-            if (!await PersistCurrentAsync(cancellationToken).ConfigureAwait(false))
-            {
-                // Không ghi được lịch sử → không gửi lệnh in (tránh in mà không có dấu vết).
-                job = job with { Status = PrintJobStatus.Failed, UpdatedAt = _timeProvider.GetUtcNow(), ErrorMessage = "Không ghi được lịch sử in vào thư mục sự kiện." };
-                UpsertPrintJob(job);
-                return new PrintResult(PrintOutcome.Failed, job, job.ErrorMessage);
-            }
-
-            PrintSubmission submission;
-            try
-            {
-                submission = await printer
-                    .SubmitAsync(new PrintRequest(job.PrintJobId, output.FilePath, copies, output.WidthPixels, output.HeightPixels, output.Dpi), cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                submission = new PrintSubmission(PrintJobStatus.Failed, "Đã hủy trước khi gửi lệnh in.");
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
-            {
-                _logger.LogError(ex, "Gửi lệnh in thất bại ({Printer})", printer.Name);
-                submission = new PrintSubmission(PrintJobStatus.Failed, "Không gửi được lệnh in tới máy in.");
-            }
-
-            // Máy in chỉ được báo "đã tiếp nhận"/"giả lập"/"lỗi"; "in xong" luôn do người xác nhận.
-            var status = submission.Status switch
-            {
-                PrintJobStatus.Submitted when printer.IsPhysical => PrintJobStatus.Submitted,
-                PrintJobStatus.Submitted or PrintJobStatus.Simulated or PrintJobStatus.Completed when !printer.IsPhysical => PrintJobStatus.Simulated,
-                PrintJobStatus.Completed => PrintJobStatus.Submitted,
-                _ => PrintJobStatus.Failed,
-            };
-            job = job with { Status = status, UpdatedAt = _timeProvider.GetUtcNow(), ErrorMessage = status == PrintJobStatus.Failed ? submission.ErrorMessage ?? "Lỗi không xác định." : null };
-            UpsertPrintJob(job);
-            await PersistCurrentAsync(CancellationToken.None).ConfigureAwait(false);
-
-            _logger.LogInformation(
-                "Yêu cầu in {Copies} bản phiên {SessionId} v{Version} qua {Printer}: {Status}",
-                copies, session.SessionId, output.Version, printer.Name, status);
-
-            var outcome = status switch
-            {
-                PrintJobStatus.Submitted => PrintOutcome.Submitted,
-                PrintJobStatus.Simulated => PrintOutcome.Simulated,
-                _ => PrintOutcome.Failed,
-            };
-            return new PrintResult(outcome, job, job.ErrorMessage);
+            return await PrintVersionAsync(_currentTarget, printer, output, copies, confirmRetry, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _printGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Khách in lại một phiên bản của phiên ĐÃ LƯU (Thư viện sự kiện, Client Mode) mà không mở phiên đó vào phiên hiện tại.
+    /// Tối đa <see cref="PrintOptions.ClientMaxCopies"/> bản; không tự xác nhận in lại lệnh in chưa rõ trạng thái (cần nhân viên).
+    /// Nếu phiên đó chính là phiên hiện tại thì thao tác trên phiên hiện tại để không ghi đè dữ liệu mới hơn.
+    /// </summary>
+    /// <param name="archived">Phiên đã nạp từ <see cref="ISessionArchive"/>; người gọi chịu trách nhiệm kiểm tra phiên thuộc sự kiện hiện tại.</param>
+    public async Task<PrintResult> RequestClientReprintAsync(PhotoSession archived, int version, int copies, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(archived);
+        if (copies < 1 || copies > _printOptions.ClientMaxCopies)
+        {
+            return new PrintResult(PrintOutcome.InvalidCopies);
+        }
+
+        if (_printers.Current is not { } printer)
+        {
+            return new PrintResult(PrintOutcome.NotConfigured);
+        }
+
+        if (archived.Directory is null)
+        {
+            return new PrintResult(PrintOutcome.NothingToPrint);
+        }
+
+        if (!await _printGate.WaitAsync(0, CancellationToken.None).ConfigureAwait(false))
+        {
+            return new PrintResult(PrintOutcome.Busy);
+        }
+
+        try
+        {
+            SessionTarget target = Current?.SessionId == archived.SessionId ? _currentTarget : new DetachedSessionTarget(this, archived);
+            var output = target.Session?.FindVersion(version);
+            if (output is null || !File.Exists(output.FilePath))
+            {
+                return new PrintResult(PrintOutcome.NothingToPrint);
+            }
+
+            return await PrintVersionAsync(target, printer, output, copies, confirmRetry: false, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _printGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Lõi in một phiên bản (gọi khi đã giữ <see cref="_printGate"/>): kiểm tra lệnh in chưa rõ/bấm trùng, chuẩn bị bản in
+    /// (kèm QR của đúng phiên bản nếu template có vùng QR), ghi Print Job (Pending) rồi mới gửi máy in.
+    /// </summary>
+    private async Task<PrintResult> PrintVersionAsync(SessionTarget target, IPrinter printer, OutputVersion output, int copies, bool confirmRetry, CancellationToken cancellationToken)
+    {
+        if (target.Session is not { } session)
+        {
+            return new PrintResult(PrintOutcome.NothingToPrint);
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var previous = session.PrintJobs.Where(j => j.OutputVersion == output.Version).ToArray();
+        if (!confirmRetry && previous.LastOrDefault(j => j.Status is PrintJobStatus.Pending or PrintJobStatus.Failed) is { } unclear)
+        {
+            return new PrintResult(PrintOutcome.ConfirmationRequired, unclear);
+        }
+
+        // Bấm trùng: cùng phiên bản, cùng số bản, vừa gửi xong (lệnh đã hủy/thất bại không tính).
+        if (previous.LastOrDefault(j => j.Status is not (PrintJobStatus.Cancelled or PrintJobStatus.Failed)) is { } last
+            && last.Copies == copies
+            && now - last.CreatedAt < DuplicatePrintWindow)
+        {
+            _logger.LogWarning("Bỏ qua yêu cầu in trùng cho phiên {SessionId} v{Version}", session.SessionId, output.Version);
+            return new PrintResult(PrintOutcome.Busy, last);
+        }
+
+        if (await PreparePrintImageAsync(target, session, output, cancellationToken).ConfigureAwait(false) is not { } printFile)
+        {
+            return new PrintResult(PrintOutcome.Failed, null, "Không tạo được bản in kèm mã QR. Ảnh chưa được gửi tới máy in.");
+        }
+
+        var job = new PrintJob(Guid.NewGuid(), session.SessionId, output.Version, output.FilePath, copies, printer.Name, printer.IsPhysical, PrintJobStatus.Pending, _timeProvider.GetUtcNow());
+        UpsertPrintJob(target, job);
+        if (!await target.PersistAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // Không ghi được lịch sử → không gửi lệnh in (tránh in mà không có dấu vết).
+            job = job with { Status = PrintJobStatus.Failed, UpdatedAt = _timeProvider.GetUtcNow(), ErrorMessage = "Không ghi được lịch sử in vào thư mục sự kiện." };
+            UpsertPrintJob(target, job);
+            return new PrintResult(PrintOutcome.Failed, job, job.ErrorMessage);
+        }
+
+        PrintSubmission submission;
+        try
+        {
+            submission = await printer
+                .SubmitAsync(new PrintRequest(job.PrintJobId, printFile, copies, output.WidthPixels, output.HeightPixels, output.Dpi), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            submission = new PrintSubmission(PrintJobStatus.Failed, "Đã hủy trước khi gửi lệnh in.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
+        {
+            _logger.LogError(ex, "Gửi lệnh in thất bại ({Printer})", printer.Name);
+            submission = new PrintSubmission(PrintJobStatus.Failed, "Không gửi được lệnh in tới máy in.");
+        }
+
+        // Máy in chỉ được báo "đã tiếp nhận"/"giả lập"/"lỗi"; "in xong" luôn do người xác nhận.
+        var status = submission.Status switch
+        {
+            PrintJobStatus.Submitted when printer.IsPhysical => PrintJobStatus.Submitted,
+            PrintJobStatus.Submitted or PrintJobStatus.Simulated or PrintJobStatus.Completed when !printer.IsPhysical => PrintJobStatus.Simulated,
+            PrintJobStatus.Completed => PrintJobStatus.Submitted,
+            _ => PrintJobStatus.Failed,
+        };
+        job = job with { Status = status, UpdatedAt = _timeProvider.GetUtcNow(), ErrorMessage = status == PrintJobStatus.Failed ? submission.ErrorMessage ?? "Lỗi không xác định." : null };
+        UpsertPrintJob(target, job);
+        await target.PersistAsync(CancellationToken.None).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Yêu cầu in {Copies} bản phiên {SessionId} v{Version} qua {Printer}: {Status}",
+            copies, session.SessionId, output.Version, printer.Name, status);
+
+        var outcome = status switch
+        {
+            PrintJobStatus.Submitted => PrintOutcome.Submitted,
+            PrintJobStatus.Simulated => PrintOutcome.Simulated,
+            _ => PrintOutcome.Failed,
+        };
+        return new PrintResult(outcome, job, job.ErrorMessage);
+    }
+
+    /// <summary>
+    /// File gửi máy in cho <paramref name="output"/>:
+    /// <list type="bullet">
+    /// <item>Template của phiên không có vùng QR (hoặc phiên bản dùng template khác) → in đúng file thành phẩm.</item>
+    /// <item>Có vùng QR nhưng chưa tạo được link chia sẻ (chưa cấu hình Cloud/lỗi ghi metadata) → in file thành phẩm, không kèm QR.</item>
+    /// <item>Có vùng QR và link → bản in riêng <c>print-v{N}.png</c> = thành phẩm + QR của ĐÚNG phiên bản này (file thành phẩm không bị sửa).</item>
+    /// </list>
+    /// </summary>
+    /// <returns>null nếu cần QR nhưng không tạo được bản in (KHÔNG in thiếu QR một cách âm thầm).</returns>
+    private async Task<string?> PreparePrintImageAsync(SessionTarget target, PhotoSession session, OutputVersion output, CancellationToken cancellationToken)
+    {
+        if (session.Template is not { QrArea: { } qr } template || !string.Equals(template.Id, output.TemplateId, StringComparison.Ordinal))
+        {
+            return output.FilePath;
+        }
+
+        if (await EnsureShareLinkAsync(target, output.Version, cancellationToken).ConfigureAwait(false) is not { } link)
+        {
+            _logger.LogInformation("In phiên {SessionId} v{Version} không kèm QR: chưa có link chia sẻ", session.SessionId, output.Version);
+            return output.FilePath;
+        }
+
+        var printFile = Path.Combine(
+            Path.GetDirectoryName(output.FilePath) ?? session.Directory!,
+            string.Create(CultureInfo.InvariantCulture, $"print-v{output.Version}.png"));
+        try
+        {
+            var placement = new PrintQrPlacement(qr.X, qr.Y, Math.Min(qr.Width, qr.Height), template.Canvas.WidthPixels, template.Canvas.HeightPixels);
+            await _printImages.RenderWithQrAsync(output.FilePath, printFile, placement, link.Url, cancellationToken).ConfigureAwait(false);
+            return printFile;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex, "Không tạo được bản in kèm QR cho phiên {SessionId} v{Version}", session.SessionId, output.Version);
+            return null;
         }
     }
 
@@ -398,12 +502,12 @@ public sealed partial class PhotoSessionService
             return false;
         }
 
-        UpsertPrintJob(job with { Status = status, UpdatedAt = _timeProvider.GetUtcNow() });
+        UpsertPrintJob(_currentTarget, job with { Status = status, UpdatedAt = _timeProvider.GetUtcNow() });
         return await PersistCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private void UpsertPrintJob(PrintJob job) =>
-        Mutate(s => s.SessionId != job.SessionId
+    private static void UpsertPrintJob(SessionTarget target, PrintJob job) =>
+        target.Mutate(s => s.SessionId != job.SessionId
             ? null
             : s with
             {
@@ -411,4 +515,72 @@ public sealed partial class PhotoSessionService
                     ? s.PrintJobs.Select(j => j.PrintJobId == job.PrintJobId ? job : j).ToArray()
                     : [.. s.PrintJobs, job],
             });
+
+    // ---------------------------------------------------------------- Phiên được thao tác
+
+    /// <summary>
+    /// Phiên mà thao tác in/chia sẻ tác động lên: phiên hiện tại (<see cref="Current"/>) hoặc một phiên đã lưu được nạp riêng
+    /// (Thư viện sự kiện) — cùng một logic in/chia sẻ, khác nơi đọc/ghi trạng thái.
+    /// </summary>
+    private abstract class SessionTarget
+    {
+        public abstract PhotoSession? Session { get; }
+
+        /// <summary>Thay đổi trạng thái; hàm trả về null nghĩa là không đổi.</summary>
+        public abstract void Mutate(Func<PhotoSession, PhotoSession?> mutation);
+
+        /// <summary>Ghi metadata bền vững; false nếu ghi lỗi.</summary>
+        public abstract Task<bool> PersistAsync(CancellationToken cancellationToken);
+    }
+
+    private sealed class CurrentSessionTarget(PhotoSessionService owner) : SessionTarget
+    {
+        public override PhotoSession? Session => owner.Current;
+
+        public override void Mutate(Func<PhotoSession, PhotoSession?> mutation) => owner.Mutate(mutation);
+
+        public override Task<bool> PersistAsync(CancellationToken cancellationToken) => owner.PersistCurrentAsync(cancellationToken);
+    }
+
+    /// <summary>Phiên đã lưu, không phải phiên hiện tại: trạng thái chỉ sống trong thao tác này, ghi qua cùng hàng đợi ghi metadata.</summary>
+    private sealed class DetachedSessionTarget(PhotoSessionService owner, PhotoSession session) : SessionTarget
+    {
+        private readonly Lock _gate = new();
+        private PhotoSession _session = session;
+
+        public override PhotoSession? Session
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _session;
+                }
+            }
+        }
+
+        public override void Mutate(Func<PhotoSession, PhotoSession?> mutation)
+        {
+            lock (_gate)
+            {
+                if (mutation(_session) is { } next)
+                {
+                    _session = next;
+                }
+            }
+        }
+
+        public override async Task<bool> PersistAsync(CancellationToken cancellationToken)
+        {
+            await owner._persistGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await owner.SaveSnapshotAsync(Session!, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                owner._persistGate.Release();
+            }
+        }
+    }
 }

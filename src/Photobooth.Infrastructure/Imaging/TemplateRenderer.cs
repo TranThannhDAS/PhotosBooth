@@ -234,6 +234,9 @@ internal static class TemplateRenderer
             case DecorationKind.Image:
                 DrawImage(canvas, template, decoration, rect);
                 break;
+            case DecorationKind.QrCode:
+                // Ảnh thành phẩm không chứa QR: QR của đúng phiên bản chỉ được vẽ lên bản in (PrintImageRenderer).
+                break;
         }
     }
 

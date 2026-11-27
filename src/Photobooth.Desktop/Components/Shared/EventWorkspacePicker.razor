@@ -5,8 +5,9 @@
 @inject ILogger<EventWorkspacePicker> Logger
 
 @*
-    Chọn/tạo/mở lại sự kiện (Event Workspace) bằng hộp thoại chọn thư mục của Windows — không gõ đường dẫn.
-    Dùng ở màn khởi động và trong Admin.
+    Tạo/mở lại sự kiện (Event Workspace) bằng hộp thoại chọn thư mục của Windows — không gõ đường dẫn. Dùng ở màn khởi động và trong Admin.
+    - Tạo sự kiện mới: chọn NƠI LƯU + nhập tên → tự tạo thư mục con "{nơi lưu}\{tên sự kiện}", mọi ảnh của sự kiện nằm trong đó.
+    - Mở sự kiện có sẵn: chọn đúng thư mục sự kiện đã tạo trước đó.
 *@
 <div class="event-picker">
     @if (Workspaces.Status is { Workspace: { } workspace } status)
@@ -40,19 +41,44 @@
     }
     else
     {
-        <StatusMessage Status="@(new StatusInfo(StatusKind.Info, "Chưa chọn sự kiện.", "Chọn hoặc tạo một thư mục riêng cho sự kiện này để lưu toàn bộ ảnh."))" />
+        <StatusMessage Status="@(new StatusInfo(StatusKind.Info, "Chưa chọn sự kiện.", "Tạo sự kiện mới (chọn nơi lưu và đặt tên) hoặc mở lại một sự kiện đã có."))" />
     }
 
-    @if (_pending is { } pending)
+    @if (ShowCreateForm)
     {
         <div class="event-new">
-            <p class="event-label">Tạo sự kiện mới trong thư mục</p>
-            <p class="event-path" title="@pending">@pending</p>
+            <p class="event-label">Tạo sự kiện mới</p>
+            <span class="event-label">Nơi lưu sự kiện</span>
+            <div class="event-name-row">
+                @if (_storageFolder is { } storage)
+                {
+                    <p class="event-path event-storage" title="@storage">@storage</p>
+                }
+                else
+                {
+                    <p class="event-meta event-storage">Chưa chọn nơi lưu.</p>
+                }
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@(Busy || Locked)" @onclick="PickStorageAsync">
+                    @(_storageFolder is null ? "Chọn nơi lưu…" : "Đổi nơi lưu…")
+                </button>
+            </div>
             <label class="event-label" for="new-event-name">Tên sự kiện</label>
-            <input id="new-event-name" class="text-input" type="text" maxlength="120" @bind="_newName" @bind:event="oninput" disabled="@Busy" />
+            <input id="new-event-name" class="text-input" type="text" maxlength="120" placeholder="Ví dụ: Đám cưới Lan & Minh"
+                   @bind="_newName" @bind:event="oninput" disabled="@(Busy || Locked)" />
+            @if (NewFolderPreview is { } preview)
+            {
+                <p class="event-meta">Thư mục sẽ được tạo: <span class="event-path" title="@preview">@preview</span></p>
+            }
+            else if (!string.IsNullOrWhiteSpace(_newName))
+            {
+                <p class="tpl-warning">Tên này không dùng được làm tên thư mục. Vui lòng đặt tên khác.</p>
+            }
             <div class="event-actions">
-                <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => _pending = null">Hủy</button>
-                <button type="button" class="btn btn-primary" disabled="@(Busy || string.IsNullOrWhiteSpace(_newName))" @onclick="CreateAsync">Tạo sự kiện</button>
+                @if (Workspaces.Current is not null)
+                {
+                    <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => _creating = false">Hủy</button>
+                }
+                <button type="button" class="btn btn-primary" disabled="@(Busy || Locked || NewFolderPreview is null)" @onclick="CreateAsync">Tạo sự kiện</button>
             </div>
         </div>
     }
@@ -63,9 +89,11 @@
     }
 
     <div class="event-actions">
-        <button type="button" class="btn btn-secondary" disabled="@(Busy || Locked)" @onclick="PickAsync">
-            @(Workspaces.Current is null ? "Chọn thư mục sự kiện" : "Đổi sự kiện khác")
-        </button>
+        @if (!ShowCreateForm)
+        {
+            <button type="button" class="btn btn-secondary" disabled="@(Busy || Locked)" @onclick="BeginCreate">Tạo sự kiện mới</button>
+        }
+        <button type="button" class="btn btn-secondary" disabled="@(Busy || Locked)" @onclick="OpenExistingAsync">Mở sự kiện có sẵn…</button>
         @if (Workspaces.Current is { } current)
         {
             <button type="button" class="btn btn-ghost" disabled="@Busy" @onclick="() => OpenInExplorer(current.RootDirectory)">Mở thư mục</button>
@@ -78,7 +106,8 @@
 </div>
 
 @code {
-    private string? _pending;
+    private string? _storageFolder;
+    private bool _creating;
     private string _newName = string.Empty;
     private string _name = string.Empty;
     private StatusInfo? _message;
@@ -96,18 +125,63 @@
     private bool CanSaveName =>
         Workspaces.Current is { } w && !string.IsNullOrWhiteSpace(_name) && !string.Equals(_name.Trim(), w.Info.Name, StringComparison.Ordinal);
 
+    /// <summary>Form tạo sự kiện: luôn hiện khi chưa có sự kiện; đã có thì mở bằng nút "Tạo sự kiện mới".</summary>
+    private bool ShowCreateForm => Workspaces.Current is null || _creating;
+
+    /// <summary>Đường dẫn thư mục sẽ tạo (null nếu chưa chọn nơi lưu hoặc tên không dùng được).</summary>
+    private string? NewFolderPreview =>
+        _storageFolder is { } storage && EventFolderName.TryCreate(_newName, out var folderName)
+            ? Path.Combine(storage, folderName)
+            : null;
+
     protected override void OnInitialized()
     {
         Workspaces.Changed += OnWorkspaceChanged;
         _name = Workspaces.Current?.Info.Name ?? string.Empty;
+        _storageFolder = Workspaces.SuggestedStorageFolder;
     }
 
-    private async Task PickAsync()
+    private void BeginCreate()
+    {
+        _message = null;
+        _newName = string.Empty;
+        _storageFolder ??= Workspaces.SuggestedStorageFolder;
+        _creating = true;
+    }
+
+    private async Task PickStorageAsync()
+    {
+        _message = null;
+        var folder = await FolderPicker.PickAsync("Chọn nơi lưu sự kiện (thư mục sự kiện sẽ được tạo bên trong)", _storageFolder);
+        if (folder is not null)
+        {
+            _storageFolder = folder;
+        }
+    }
+
+    private Task CreateAsync() => RunAsync(async () =>
+    {
+        if (_storageFolder is not { } storage)
+        {
+            _message = new StatusInfo(StatusKind.Warning, "Vui lòng chọn nơi lưu sự kiện.");
+            return;
+        }
+
+        var status = await Workspaces.CreateEventAsync(storage, _newName);
+        await ApplyResultAsync(status, "Đã tạo sự kiện mới.");
+        if (status.IsReady)
+        {
+            _creating = false;
+            _newName = string.Empty;
+        }
+    });
+
+    private async Task OpenExistingAsync()
     {
         _message = null;
         var folder = await FolderPicker.PickAsync(
-            "Chọn hoặc tạo thư mục cho sự kiện",
-            Workspaces.Current?.RootDirectory is { } root ? Path.GetDirectoryName(root) : null);
+            "Chọn thư mục sự kiện đã tạo trước đó",
+            Workspaces.Current?.RootDirectory is { } root ? Path.GetDirectoryName(root) : _storageFolder);
         if (folder is null)
         {
             return;
@@ -115,32 +189,14 @@
 
         await RunAsync(async () =>
         {
-            var inspected = await Workspaces.InspectAsync(folder);
-            if (inspected.Problem is not null)
+            var status = await Workspaces.OpenExistingAsync(folder);
+            await ApplyResultAsync(status, "Đã mở lại sự kiện.");
+            if (status.IsReady)
             {
-                _message = new StatusInfo(StatusKind.Error, inspected.Problem, folder);
-            }
-            else if (inspected.IsNewEvent)
-            {
-                // Thư mục chưa phải sự kiện: xác nhận tên trước khi tạo event.json.
-                _pending = folder;
-                _newName = Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
-            }
-            else
-            {
-                await ApplyResultAsync(await Workspaces.OpenAsync(folder), "Đã mở lại sự kiện.");
+                _creating = false;
             }
         });
     }
-
-    private Task CreateAsync() => RunAsync(async () =>
-    {
-        if (_pending is { } folder)
-        {
-            await ApplyResultAsync(await Workspaces.OpenAsync(folder, _newName), "Đã tạo sự kiện mới.");
-            _pending = null;
-        }
-    });
 
     private Task SaveNameAsync() => RunAsync(async () =>
         await ApplyResultAsync(await Workspaces.RenameAsync(_name), "Đã lưu tên sự kiện."));

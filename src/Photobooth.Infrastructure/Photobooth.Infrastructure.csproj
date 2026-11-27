@@ -16,6 +16,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.15" />
     <!-- Ghép ảnh, mã hóa JPEG/PNG và tạo PDF (SKDocument). Giấy phép MIT, chạy offline. -->
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <!-- Vẽ mã QR chia sẻ lên bản in (cùng package Desktop đang dùng). QRCoder — giấy phép MIT, không phụ thuộc thêm package nào. -->
+    <PackageReference Include="QRCoder" Version="1.7.0" />
     <!-- Metadata nghiệp vụ (sự kiện, phiên, ảnh, phiên bản, in, chia sẻ) lưu trong SQLite. Giấy phép MIT. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
     <!-- Chỉ dùng lúc thiết kế (dotnet ef migrations), không đi kèm ứng dụng. -->

@@ -9,6 +9,7 @@ public enum EditorElementKind
     Ellipse,
     Text,
     Image,
+    QrCode,
 }
 
 /// <summary>
@@ -46,10 +47,11 @@ public sealed record EditorElement
             DecorationKind.Rectangle => EditorElementKind.Rectangle,
             DecorationKind.Ellipse => EditorElementKind.Ellipse,
             DecorationKind.Text => EditorElementKind.Text,
+            DecorationKind.QrCode => EditorElementKind.QrCode,
             _ => EditorElementKind.Image,
         };
 
-    public string? ElementId => Slot?.Id ?? Decoration!.Id;
+    public string? ElementId => Slot is { } slot ? slot.Id : Decoration!.Id;
 
     public int ZIndex => Slot?.ZIndex ?? Decoration!.ZIndex;
 

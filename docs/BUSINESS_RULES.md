@@ -162,7 +162,7 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
   - Không dùng số thứ tự, đường dẫn file hay thông tin khách.
   - Mỗi **phiên bản thành phẩm** có một token riêng.
   - In lại, mở lại phiên hay upload lại đều dùng đúng token cũ.
-- **BR-QR03 — Phiên bản mới.** Chỉnh sửa lại tạo `final-v{N+1}` **không có QR**. Quản trị viên bấm "Tạo mã QR chia sẻ" để cấp token mới cho phiên bản đó. Token và ảnh của phiên bản đã chia sẻ không bao giờ bị ghi đè; Cloud trả `409` nếu cùng token mà khác ảnh.
+- **BR-QR03 — Phiên bản mới.** Chỉnh sửa lại tạo `final-v{N+1}` **chưa có QR** (luồng lưu chỉnh sửa trong Admin giữ nguyên). Phiên bản đó nhận token mới khi quản trị viên bấm "Tạo mã QR chia sẻ", hoặc ở **lần in đầu tiên** nếu template có vùng QR (BR-QR09). Token và ảnh của phiên bản đã chia sẻ không bao giờ bị ghi đè; Cloud trả `409` nếu cùng token mà khác ảnh.
 - **BR-QR04 — Lưu bền trước khi hiện QR.** Không ghi được token vào SQLite thì không hiển thị QR (màn Hoàn thành báo "Chưa tạo được mã QR…"); phiên vẫn hoàn tất bình thường.
 - **BR-QR05 — Chỉ upload ảnh thành phẩm**, không upload ảnh gốc. Không xóa ảnh local sau khi upload.
 - **BR-QR06 — Thử lại.**
@@ -171,6 +171,12 @@ AI **không tự đặt** giới hạn số lần chụp lại, timeout quay v�
   - Mất file local hoặc Cloud từ chối: đánh dấu lỗi, không thử lại vô hạn.
 - **BR-QR07 — Cấu hình.** Mục `cloud` trong `appsettings.json` của Desktop gồm `enabled`, `baseUrl`, `uploadTimeoutSeconds`, `apiKey`; không hardcode địa chỉ. Tắt hoặc sai thì không tạo QR, không ảnh hưởng chụp/lưu/in, và Admin → "Chia sẻ QR" báo rõ lý do.
 - **BR-QR08 — Trang của khách** (`/s/{token}`): chưa có ảnh thì hiện "Ảnh của bạn đang được chuẩn bị." kèm tự làm mới, không cache. Có ảnh thì hiện ảnh và nút "Tải ảnh xuống". Token sai định dạng trả 404. Không cần đăng nhập, không liệt kê ảnh.
+- **BR-QR09 — In kèm QR (quyết định của chủ sản phẩm, 27/11/2026).**
+  - Áp dụng cho **mọi chỗ in** (kiosk, Admin, Thư viện sự kiện của khách) khi template của phiên có **vùng QR** (`qrCode`, TEMPLATE_SCHEMA §8.1).
+  - Mỗi phiên bản một QR. Lần in đầu của một phiên bản chưa có token sẽ tạo token theo BR-QR01/02/04 (lưu bền trước), rồi mới in. In lại phiên bản nào thì ra **đúng QR của phiên bản đó**, không đổi giữa các lần in.
+  - QR chỉ có trên **bản in** `Outputs/print-v{N}.png`; `final-v{N}.png` không bị sửa. Lịch sử in vẫn ghi theo phiên bản.
+  - Template không có vùng QR → in như cũ, không tạo token. Có vùng QR nhưng Cloud chưa cấu hình (hoặc chưa ghi được token) → in **không kèm QR** (vùng để trống).
+  - Có vùng QR, có token nhưng không tạo được bản in → **không in** (không âm thầm in thiếu QR), báo lỗi, không tạo Print Job.
 
 ## 5. Mô hình trạng thái đề xuất
 
@@ -313,7 +319,13 @@ Quản trị viên trong V1 cần có khả năng:
 
 **Bảo vệ truy cập Admin (đã chốt 19/11/2026 theo yêu cầu chủ sản phẩm):** màn khởi động hiện khi mở ứng dụng; tại đó có nút vào Admin bằng **PIN cố định `1234`** (khai báo duy nhất ở `AdminAccessService.Pin`). Sau khi bấm "Bắt đầu phục vụ khách", chế độ Admin (và thư viện quản trị có bộ lọc nhiều sự kiện, chỉnh sửa, in/xuất lại, tạo QR) bị ẩn. **Cập nhật 19/11/2026 (theo yêu cầu chủ sản phẩm):** màn hình chào của Kiosk có nút nhỏ **"Quản trị"** hiện rõ ở góc; bấm và nhập đúng PIN thì vào lại Admin mà không cần mở lại ứng dụng. Nút chỉ có ở màn hình chào, nên không làm gián đoạn phiên chụp đang dở. Thoát Admin → màn khởi động → "Bắt đầu phục vụ khách" để quay lại Kiosk. Vì nút hiện rõ, khách có thể tò mò bấm; PIN `1234` rất dễ đoán, nên nên đổi sang PIN khó hơn trước khi dùng thật. Lưu ý rủi ro: PIN cố định, ngắn chỉ ngăn khách bấm nhầm, không phải bảo mật mạnh.
 
-**Thư viện sự kiện trong Client Mode (quyết định mới của chủ sản phẩm, 26/11/2026):** thay thế quy tắc cũ "khách ở Kiosk không xem được ảnh của khách khác". Ở màn Chào mừng và màn Hoàn thành (không mở giữa các bước chụp/ghép/xuất), khách được mở **Thư viện sự kiện** ở chế độ **chỉ xem (read-only)** và **offline** để xem toàn bộ các phiên, ảnh thành phẩm, ảnh gốc (kể cả ảnh chụp lại), thông tin phiên và mã QR đã tạo (nếu có) của **riêng sự kiện đang phục vụ**. Không cho lọc/đổi sự kiện, không thêm/sửa/xóa/in/xuất/mở Explorer/tạo QR mới và không hủy hay thay đổi phiên chụp hiện tại. Thư viện quản trị (`EventGalleryService`) vẫn chỉ dành cho Admin có PIN.
+**Thư viện sự kiện trong Client Mode (quyết định mới của chủ sản phẩm, 26/11/2026):** thay thế quy tắc cũ "khách ở Kiosk không xem được ảnh của khách khác". Ở màn Chào mừng và màn Hoàn thành (không mở giữa các bước chụp/ghép/xuất), khách được mở **Thư viện sự kiện** ở chế độ **chỉ xem (read-only)** và **offline** để xem toàn bộ các phiên, ảnh thành phẩm, ảnh gốc (kể cả ảnh chụp lại), thông tin phiên và mã QR đã tạo (nếu có) của **riêng sự kiện đang phục vụ**. Không cho lọc/đổi sự kiện, không thêm/sửa/xóa/xuất/mở Explorer và không hủy hay thay đổi phiên chụp hiện tại.
+
+**Cập nhật 27/11/2026 (quyết định của chủ sản phẩm):** khách được **in lại** phiên bản đang xem trong Thư viện sự kiện.
+- Tối đa `print.clientMaxCopies` bản mỗi lần (mặc định 2, không vượt `print.maxCopies`), luôn có bước xác nhận.
+- Lần in đầu của phiên bản tạo QR riêng cho phiên bản đó nếu template có vùng QR (BR-QR09).
+- Phiên bản có lệnh in trước đó thất bại/chưa rõ trạng thái: khách **không** tự in lại, phải báo nhân viên kiểm tra trong Admin.
+- Rủi ro đã chấp nhận: mọi khách đều in được ảnh của phiên khác trong cùng sự kiện (chỉ giới hạn số bản mỗi lần). Thư viện quản trị (`EventGalleryService`) vẫn chỉ dành cho Admin có PIN.
 
 ## 10. Tiêu chí nghiệm thu theo kịch bản
 
@@ -332,6 +344,7 @@ Quản trị viên trong V1 cần có khả năng:
 | BR-11 | Đóng/mở ứng dụng | File ảnh đã lưu vẫn tồn tại, có thể truy cập qua thư viện khi tính năng đã triển khai |
 | BR-12 | Chụp/ghép/xuất offline | Không có lời gọi cloud hay yêu cầu login để hoàn tất luồng (upload QR chạy nền, không chặn) |
 | BR-QR | Hoàn tất khi mất Internet | Vẫn có QR; khi có mạng lại, ảnh tự đồng bộ và đúng QR cũ mở được ảnh |
+| BR-QR09 | In v1 hai lần, chỉnh sửa ra v2 rồi in | Hai bản in v1 cùng một QR; bản in v2 có QR khác; `final-v1/v2.png` không chứa QR |
 
 **Kiểm thử phân lớp:** BR-03/04/05/06/09 ưu tiên unit/integration test với camera giả và ảnh mẫu. BR-02 và preview webcam **phải thử thật trên Windows**; mock không xác nhận webcam hoạt động.
 

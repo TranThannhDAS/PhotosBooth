@@ -5,8 +5,9 @@
 @inject ILogger<ClientGalleryScreen> Logger
 
 @*
-    Thư viện sự kiện cho chế độ khách (chỉ xem, offline, chỉ hiển thị các phiên của sự kiện hiện tại).
-    Không cho lọc/đổi sự kiện, không chỉnh sửa, xóa, in, xuất hay tác động tới phiên chụp đang có.
+    Thư viện sự kiện cho chế độ khách (offline, chỉ hiển thị các phiên của sự kiện hiện tại).
+    Chỉ cho xem và IN LẠI phiên bản thành phẩm (giới hạn số bản); không lọc/đổi sự kiện, không chỉnh sửa, xóa, xuất
+    hay tác động tới phiên chụp đang có.
 *@
 <div class="screen client-gallery-screen">
     <header class="screen-header client-gallery-header">
@@ -46,7 +47,7 @@
     <main class="screen-body client-gallery-body">
         @if (_selectedDetail is { } detail)
         {
-            <ClientSessionDetailView @key="detail.SessionId" Detail="detail" />
+            <ClientSessionDetailView @key="detail.SessionId" Detail="detail" OnPrinted="RefreshDetailAsync" />
         }
         else
         {
@@ -308,6 +309,34 @@
                 _openingKey = null;
                 StateHasChanged();
             }
+        }
+    }
+
+    /// <summary>Tải lại chi tiết phiên đang xem (sau khi in: lịch sử in, mã QR mới) mà không quay về danh sách.</summary>
+    private async Task RefreshDetailAsync()
+    {
+        if (_disposed || _selectedDetail is not { } shown)
+        {
+            return;
+        }
+
+        var (seq, token) = BeginRequest();
+        try
+        {
+            var detail = await Gallery.GetSessionDetailAsync(shown.SessionKey, token);
+            if (!_disposed && !token.IsCancellationRequested && seq == _requestSeq && _selectedDetail?.SessionId == detail.SessionId)
+            {
+                _selectedDetail = detail;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException or InvalidDataException or EventWorkspaceUnavailableException or IOException or UnauthorizedAccessException)
+        {
+            // Lệnh in đã được ghi; chỉ không làm mới được phần hiển thị.
+            Logger.LogWarning(ex, "Không tải lại được chi tiết phiên {SessionId} sau khi in", shown.SessionId);
         }
     }
 

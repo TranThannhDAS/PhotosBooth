@@ -41,7 +41,8 @@ internal static class TestSessions
         IPrinterProvider? printers = null,
         PrintOptions? printOptions = null,
         ShareLinkFactory? shareLinks = null,
-        ICloudUploadQueue? uploads = null) =>
+        ICloudUploadQueue? uploads = null,
+        IPrintImageRenderer? printImages = null) =>
         new(
             store ?? new LocalOriginalPhotoStore(paths),
             composer ?? new SkiaPhotoComposer(paths, NullLogger<SkiaPhotoComposer>.Instance),
@@ -49,6 +50,7 @@ internal static class TestSessions
             new ComposedPhotoExporter(new ExportOptions(), NullLogger<ComposedPhotoExporter>.Instance),
             CreateArchive(paths, workspaces),
             printers ?? new TestPrinterProvider(),
+            printImages ?? new SkiaPrintImageRenderer(),
             options ?? new CaptureOptions(),
             printOptions ?? new PrintOptions(),
             shareLinks ?? new ShareLinkFactory(new CloudShareOptions()),

@@ -1,0 +1,140 @@
+@using Photobooth.Application.Printing
+@inject ClientEventGalleryService Gallery
+@inject ILogger<ClientPrintPanel> Logger
+
+@*
+    Khách in lại MỘT phiên bản thành phẩm từ Thư viện sự kiện (Client Mode).
+    - Giới hạn số bản mỗi lần (print.clientMaxCopies), luôn có bước xác nhận.
+    - Lần in đầu của phiên bản sẽ tạo mã QR riêng của phiên bản đó (nếu template có vùng QR) và in kèm; in lại dùng đúng mã cũ.
+    - Lệnh in trước đó chưa rõ kết quả/thất bại: khách không tự in lại, cần nhân viên kiểm tra trong Admin.
+*@
+<section class="panel-section">
+    <h2 class="panel-title">In ảnh (v@(Version))</h2>
+    @if (!Gallery.CanPrint)
+    {
+        <StatusMessage Status="@(new StatusInfo(StatusKind.Warning, "Chưa có máy in.", "Vui lòng báo nhân viên nếu bạn cần in ảnh."))" />
+    }
+    else
+    {
+        <div class="copies-row">
+            <span class="copies-label">Số bản</span>
+            <div class="stepper" role="group" aria-label="Số bản in">
+                <button type="button" class="btn btn-secondary stepper-btn" aria-label="Giảm số bản"
+                        disabled="@(_printing || _copies <= 1)" @onclick="() => ChangeCopies(-1)">−</button>
+                <output class="stepper-value" aria-live="polite">@_copies</output>
+                <button type="button" class="btn btn-secondary stepper-btn" aria-label="Tăng số bản"
+                        disabled="@(_printing || _copies >= MaxCopies)" @onclick="() => ChangeCopies(1)">+</button>
+            </div>
+            <small class="copies-max">Tối đa @MaxCopies bản mỗi lần</small>
+        </div>
+        <button type="button" class="btn btn-primary" disabled="@_printing" @onclick="() => _confirming = true">
+            @if (_printing)
+            {
+                <span class="spinner spinner-sm" aria-hidden="true"></span>
+                <span>Đang gửi lệnh in…</span>
+            }
+            else
+            {
+                <span>In @_copies bản</span>
+            }
+        </button>
+    }
+
+    @if (_message is not null)
+    {
+        <StatusMessage Status="@_message" />
+    }
+</section>
+
+@if (_confirming)
+{
+    <ConfirmDialog Title="@($"In {_copies} bản?")"
+                   Message="@($"Ảnh thành phẩm phiên bản v{Version} sẽ được in {_copies} bản.")"
+                   ConfirmText="In" CancelText="Không in"
+                   OnConfirm="PrintAsync" OnCancel="() => _confirming = false" />
+}
+
+@code {
+    private int _copies = 1;
+    private bool _printing;
+    private bool _confirming;
+    private StatusInfo? _message;
+    private (string, int)? _shownFor;
+
+    [Parameter, EditorRequired]
+    public string SessionKey { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public int Version { get; set; }
+
+    /// <summary>Báo màn cha tải lại chi tiết phiên (lịch sử in, mã QR mới tạo).</summary>
+    [Parameter]
+    public EventCallback OnPrinted { get; set; }
+
+    private int MaxCopies => Math.Max(1, Gallery.MaxClientCopies);
+
+    protected override void OnParametersSet()
+    {
+        // Đổi phiên bản đang xem → bỏ thông báo của phiên bản trước.
+        if (_shownFor != (SessionKey, Version))
+        {
+            _shownFor = (SessionKey, Version);
+            _message = null;
+            _confirming = false;
+            _copies = Math.Clamp(_copies, 1, MaxCopies);
+        }
+    }
+
+    private void ChangeCopies(int delta) => _copies = Math.Clamp(_copies + delta, 1, MaxCopies);
+
+    private async Task PrintAsync()
+    {
+        _confirming = false;
+        if (_printing)
+        {
+            return;
+        }
+
+        _printing = true;
+        _message = null;
+        StateHasChanged();
+        var printed = false;
+        try
+        {
+            var result = await Gallery.PrintVersionAsync(SessionKey, Version, _copies);
+            printed = result.Job is not null;
+            _message = result.Outcome switch
+            {
+                PrintOutcome.Submitted =>
+                    new StatusInfo(StatusKind.Success, $"Đã gửi lệnh in {_copies} bản.", "Vui lòng chờ ảnh ra ở máy in."),
+                PrintOutcome.Simulated =>
+                    new StatusInfo(StatusKind.Info, $"Đã ghi nhận yêu cầu in {_copies} bản (chế độ thử nghiệm).", "Máy in giả lập — KHÔNG có bản in thật."),
+                PrintOutcome.NotConfigured =>
+                    new StatusInfo(StatusKind.Warning, "Chưa có máy in.", "Vui lòng báo nhân viên nếu bạn cần in ảnh."),
+                PrintOutcome.InvalidCopies =>
+                    new StatusInfo(StatusKind.Warning, $"Mỗi lần chỉ được in từ 1 đến {MaxCopies} bản."),
+                PrintOutcome.Busy =>
+                    new StatusInfo(StatusKind.Info, "Máy in đang xử lý một yêu cầu khác hoặc bạn vừa bấm in.", "Vui lòng chờ giây lát rồi thử lại."),
+                PrintOutcome.NothingToPrint =>
+                    new StatusInfo(StatusKind.Error, "Không tìm thấy ảnh của phiên bản này để in.", "Vui lòng báo nhân viên kiểm tra."),
+                PrintOutcome.ConfirmationRequired =>
+                    new StatusInfo(StatusKind.Warning, "Lần in trước của ảnh này chưa rõ kết quả.", "Vui lòng báo nhân viên kiểm tra máy in trước khi in lại, để tránh in trùng."),
+                _ => new StatusInfo(StatusKind.Error, "Chưa in được.", (result.ErrorMessage ?? "Lỗi không xác định.") + " Vui lòng báo nhân viên."),
+            };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Logger.LogError(ex, "Lỗi khi khách in lại từ Thư viện sự kiện");
+            _message = new StatusInfo(StatusKind.Error, "Chưa in được.", "Ảnh vẫn được giữ nguyên. Vui lòng thử lại hoặc báo nhân viên.");
+        }
+        finally
+        {
+            _printing = false;
+        }
+
+        if (printed)
+        {
+            await OnPrinted.InvokeAsync();
+        }
+    }
+}

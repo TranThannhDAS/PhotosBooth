@@ -204,7 +204,51 @@ public static partial class TemplateValidator
                     }
 
                     break;
+
+                case DecorationKind.QrCode:
+                    ValidateQrArea(template.Canvas, path, decoration, sizeValid, error);
+                    break;
             }
+        }
+
+        var qrAreas = template.Decorations.Count(d => d.Type == DecorationKind.QrCode);
+        if (qrAreas > 1)
+        {
+            error("decorations", string.Create(CultureInfo.InvariantCulture, $"Chỉ được có tối đa một vùng mã QR (đang có {qrAreas})."));
+        }
+    }
+
+    /// <summary>
+    /// Cạnh nhỏ nhất của vùng QR (pixel) để điện thoại quét được khi in: <see cref="MinQrSizeMillimeters"/> mm ở DPI của canvas.
+    /// </summary>
+    public static int MinQrSizePixels(int dpi) =>
+        (int)Math.Ceiling(MinQrSizeMillimeters / 25.4 * Math.Max(1, dpi));
+
+    /// <summary>Kích thước in tối thiểu của mã QR (mm).</summary>
+    public const double MinQrSizeMillimeters = 15;
+
+    private static void ValidateQrArea(TemplateCanvas canvas, string path, TemplateDecoration qr, bool sizeValid, Action<string, string> error)
+    {
+        if (!sizeValid)
+        {
+            return;
+        }
+
+        if (qr.Width != qr.Height)
+        {
+            error(path, "Vùng mã QR phải là hình vuông (rộng = cao).");
+        }
+
+        var min = MinQrSizePixels(canvas.Dpi);
+        if (Math.Min(qr.Width, qr.Height) < min)
+        {
+            error(path, string.Create(CultureInfo.InvariantCulture,
+                $"Vùng mã QR quá nhỏ để quét: cần tối thiểu {min} px (≈ {MinQrSizeMillimeters:0} mm khi in ở {canvas.Dpi} DPI)."));
+        }
+
+        if (qr.X < 0 || qr.Y < 0 || (long)qr.X + qr.Width > canvas.WidthPixels || (long)qr.Y + qr.Height > canvas.HeightPixels)
+        {
+            error(path, "Vùng mã QR phải nằm trọn trong canvas (QR bị cắt sẽ không quét được).");
         }
     }
 

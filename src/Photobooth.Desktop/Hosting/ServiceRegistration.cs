@@ -110,6 +110,9 @@ public static class ServiceRegistration
         services.AddSingleton<IImagePreviewRenderer, SkiaImagePreviewRenderer>();
         services.AddSingleton<IComposedPhotoExporter, ComposedPhotoExporter>();
 
+        // Bản in kèm QR của đúng phiên bản (template có vùng QR); file thành phẩm không bị sửa.
+        services.AddSingleton<IPrintImageRenderer, SkiaPrintImageRenderer>();
+
         // Nghiệp vụ: singleton để trạng thái phiên sống ngoài vòng đời component/WebView.
         services.AddSingleton<IOriginalPhotoStore, LocalOriginalPhotoStore>();
         services.AddSingleton<PhotoSessionService>();

@@ -273,7 +273,8 @@ Admin › Khung ảnh
   - `PhotoSessionService` (partial `PhotoSessionService.Archive.cs`): ghi metadata sau mỗi ảnh/phiên bản/xuất/in; `ConfirmOutputAsync` (phiên bản bất biến); mở lại, chỉnh sửa lại, hủy/lưu; `RequestPrintAsync`.
   - `PhotoboothStoragePaths` đăng ký thư mục của từng phiên và các Event Workspace đã mở (phạm vi được phép đọc ảnh).
   - `EventGalleryService` + `AdminAccessService`: thư viện ảnh quản trị (lọc nhiều sự kiện, chỉnh sửa/xuất/in lại) chỉ dùng được trong Admin (PIN), không mở được sau khi đã vào Kiosk.
-  - `ClientEventGalleryService` (quyết định mới của chủ sản phẩm): thư viện sự kiện chỉ-xem (read-only) cho Client Mode, giới hạn chặt trong sự kiện hiện tại qua `ISessionArchive` + `IImagePreviewRenderer`, không mở khóa Admin, không gọi `PhotoSessionService.OpenArchivedSession` và hoạt động hoàn toàn offline.
+  - `ClientEventGalleryService` (quyết định mới của chủ sản phẩm): thư viện sự kiện cho Client Mode, giới hạn chặt trong sự kiện hiện tại qua `ISessionArchive` + `IImagePreviewRenderer`, không mở khóa Admin, không gọi `PhotoSessionService.OpenArchivedSession` và hoạt động hoàn toàn offline. Thao tác ghi duy nhất là **in lại** (27/11/2026): gọi `PhotoSessionService.RequestClientReprintAsync` trên phiên đã nạp (không thay phiên hiện tại), dùng chung lõi in với kiosk/Admin.
+  - In kèm QR (BR-QR09): `IPrintImageRenderer` (Application) / `SkiaPrintImageRenderer` (Infrastructure, SkiaSharp + QRCoder) sao chép `final-v{N}.png` thành `print-v{N}.png` và vẽ QR của phiên bản vào vùng `qrCode` của template snapshot; file thành phẩm không đổi.
   - `ArchivedSession.PersistedState` giữ trạng thái kết thúc đã lưu để thư viện Client phân biệt phiên hoàn thành/hủy; `ArchivedSession.Session.State` vẫn phục vụ luồng mở lại để chỉnh sửa của Admin. Không đổi schema database.
 ### 9.1 Lưu trữ metadata bằng database (đã chốt 23/11/2026)
 

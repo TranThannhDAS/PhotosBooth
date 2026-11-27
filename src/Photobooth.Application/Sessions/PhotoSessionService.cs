@@ -33,6 +33,7 @@ public sealed partial class PhotoSessionService
     private readonly IComposedPhotoExporter _exporter;
     private readonly ISessionArchive _archive;
     private readonly IPrinterProvider _printers;
+    private readonly IPrintImageRenderer _printImages;
     private readonly PrintOptions _printOptions;
     private readonly ShareLinkFactory _shareLinks;
     private readonly ICloudUploadQueue _uploads;
@@ -40,6 +41,7 @@ public sealed partial class PhotoSessionService
     private readonly ILogger<PhotoSessionService> _logger;
     private readonly Lock _gate = new();
     private readonly SemaphoreSlim _exportGate = new(1, 1);
+    private readonly SessionTarget _currentTarget;
     private PhotoSession? _current;
     private PhotoSessionState _preComposeState = PhotoSessionState.Reviewing;
     private CancellationTokenSource? _composeCts;
@@ -52,6 +54,7 @@ public sealed partial class PhotoSessionService
         IComposedPhotoExporter exporter,
         ISessionArchive archive,
         IPrinterProvider printers,
+        IPrintImageRenderer printImages,
         CaptureOptions options,
         PrintOptions printOptions,
         ShareLinkFactory shareLinks,
@@ -70,12 +73,14 @@ public sealed partial class PhotoSessionService
         _exporter = exporter;
         _archive = archive;
         _printers = printers;
+        _printImages = printImages;
         _printOptions = printOptions;
         _shareLinks = shareLinks;
         _uploads = uploads;
         _timeProvider = timeProvider;
         _logger = logger;
         Options = options;
+        _currentTarget = new CurrentSessionTarget(this);
     }
 
     /// <summary>Phát sinh sau mỗi thay đổi trạng thái phiên (có thể từ luồng nền).</summary>

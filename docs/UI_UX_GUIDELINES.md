@@ -58,7 +58,7 @@ Hoàn thành → Phiên mới
 ### 4.1 Màn hình chào (`Welcome`)
 
 - Hiển thị tên/logo ứng dụng, một câu hướng dẫn ngắn, nút **Bắt đầu chụp** dễ nhìn.
-- Có nút phụ **Thư viện sự kiện** (quyết định mới của chủ sản phẩm: chỉ-xem các phiên trong sự kiện hiện tại, offline, không chỉnh sửa/xóa/in/xuất/đổi sự kiện); không làm lu mờ nút **Bắt đầu chụp**.
+- Có nút phụ **Thư viện sự kiện** (quyết định mới của chủ sản phẩm: xem các phiên trong sự kiện hiện tại, offline, không chỉnh sửa/xóa/xuất/đổi sự kiện; từ 27/11/2026 được **in lại** phiên bản đang xem với số bản giới hạn — BUSINESS_RULES BR-QR09); không làm lu mờ nút **Bắt đầu chụp**.
 - Nếu camera chưa cấu hình, có thể cho bắt đầu rồi xử lý ở bước camera; không báo lỗi giả khi chưa kiểm tra thiết bị.
 - Khi có tiến trình khởi tạo đang chạy, phản hồi rõ để tránh bấm liên tục.
 
@@ -159,6 +159,7 @@ Chế độ khách được thiết kế cho **màn cảm ứng 100%**; chuột/
 - WebView2 tắt **chụm hai ngón phóng to cả trang** (`IsPinchZoomEnabled = false`) và **vuốt ngang để quay lại trang** (`IsSwipeNavigationEnabled = false`). Cử chỉ chụm chỉ có tác dụng trong vùng tự xử lý (`touch-action: none`), như trình chỉnh vùng cắt.
 - **Manual Crop:** một ngón kéo ảnh; **hai ngón chụm/mở để thu nhỏ/phóng to**, điểm ảnh dưới hai ngón tay đứng yên; nhấc một ngón thì tiếp tục kéo bằng ngón còn lại mà ảnh không nhảy. Có thêm nút **−/+** (56 px, bước 10%) và thanh trượt có nút kéo 36 px (vùng chạm 48 px). Con lăn chuột vẫn dùng được trên laptop. Ngón "kẹt" (mất sự kiện nhấc tay) được tự bỏ khi chạm lại. Trong phiên khách có thể chụp lại, hộp chỉnh ảnh có nút **Chụp lại ảnh X** tách biệt cạnh nhóm **Hủy / Áp dụng** để bỏ bản nháp chưa áp dụng, đóng hộp và mở camera preview chụp lại đúng ảnh nguồn của ô đang chỉnh; nút này không hiển thị khi quản trị viên chỉnh sửa lại phiên đã lưu. Với ô `fit = contain` (hiển thị trọn ảnh), chạm vào ô hoặc chip vẫn mở hộp xem trọn ảnh đúng tỉ lệ (kèm giải thích ngắn, nút **Đóng** và nút **Chụp lại ảnh X** trong phiên khách), nhưng ẩn điều khiển kéo/phóng to/khôi phục/Áp dụng vì không hỗ trợ chỉnh vùng cắt.
 - **Ô ảnh chạm được:** trên thiết bị không có rê chuột (`@media (hover: none)`), mỗi ô ảnh trong khung thành phẩm luôn có viền nét đứt mảnh và sáng lên khi chạm. Viền hover chỉ áp dụng cho chuột, tránh viền "dính" sau khi chạm. Danh sách chip "Các ô ảnh" vẫn là cách thay thế cho ô nhỏ.
+- **Tạo sự kiện (màn khởi động/Admin):** chọn nơi lưu + nhập tên sự kiện, hiển thị trước đường dẫn thư mục sẽ tạo; nút "Mở sự kiện có sẵn…" để dùng tiếp sự kiện cũ. Không yêu cầu gõ đường dẫn.
 - **Không mở hộp thoại Windows trong Kiosk:** màn thành phẩm của khách không có nút "Đổi thư mục" lưu ảnh, vì hộp thoại chọn thư mục cho phép duyệt/đổi tên/xóa file ở mọi nơi, kể cả ảnh của khách khác. Thư mục xuất do quản trị viên đổi trong Admin.
 - Kiosk không có ô nhập chữ (không cần bàn phím ảo).
 - Ngoài phạm vi ứng dụng: cử chỉ vuốt từ mép màn hình của Windows (Action Center, chuyển ứng dụng) phải tắt bằng cấu hình kiosk của Windows (Assigned Access/Group Policy) khi triển khai thật.

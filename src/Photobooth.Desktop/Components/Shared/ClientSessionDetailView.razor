@@ -5,7 +5,8 @@
     - Xem thành phẩm theo từng phiên bản (có phóng to và xem lớn).
     - Xem toàn bộ ảnh gốc theo thứ tự chụp (kể cả ảnh chụp lại), bấm xem lớn.
     - Xem thông tin phiên, mã QR đã tạo (nếu có), tóm tắt xuất và lịch sử in ở dạng chỉ đọc.
-    Không có bất kỳ thao tác chỉnh sửa, chụp lại, xóa, in, xuất, mở Explorer hay tạo QR mới nào.
+    - In lại phiên bản đang xem (giới hạn số bản); lần in đầu tạo mã QR riêng của phiên bản đó nếu template có vùng QR.
+    Không có thao tác chỉnh sửa, chụp lại, xóa, xuất hay mở Explorer.
 *@
 <div class="client-detail-layout">
     <div class="client-detail-main">
@@ -190,6 +191,11 @@
             }
         </section>
 
+        @if (SelectedVersion is { IsFileAvailable: true } printable)
+        {
+            <ClientPrintPanel SessionKey="@Detail.SessionKey" Version="printable.Version" OnPrinted="OnPrinted" />
+        }
+
         @if (SelectedVersion?.Share is { } share)
         {
             <section class="panel-section">
@@ -298,6 +304,10 @@ else if (_lightboxVersion is { } enlargedVersion)
 
     [Parameter, EditorRequired]
     public ClientSessionDetail Detail { get; set; } = default!;
+
+    /// <summary>Đã gửi lệnh in: màn cha tải lại chi tiết (lịch sử in, mã QR vừa tạo).</summary>
+    [Parameter]
+    public EventCallback OnPrinted { get; set; }
 
     private ClientSessionOutputVersion? LatestVersion =>
         Detail.Versions.Count == 0 ? null : Detail.Versions[^1];
