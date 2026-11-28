@@ -1,0 +1,74 @@
+# Photobooth Cloud: ASP.NET Core .NET 10, PostgreSQL và Cloudflare Tunnel tùy chọn.
+# Sử dụng Linux containers trên Docker Desktop/WSL2 hoặc Linux host.
+name: photobooth-cloud
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: photobooth_cloud
+      POSTGRES_USER: photobooth
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Hãy nhập POSTGRES_PASSWORD trong .env}
+    volumes:
+      # PostgreSQL dùng named volume, không bind mount DB trực tiếp vào NTFS.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photobooth -d photobooth_cloud"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - backend
+
+  cloud:
+    build:
+      context: ./src/Photobooth.Cloud
+      dockerfile: Dockerfile
+    image: photobooth-cloud:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=photobooth_cloud;Username=photobooth;Password=${POSTGRES_PASSWORD:?Hãy nhập POSTGRES_PASSWORD trong .env}"
+      Storage__RootPath: /data/photos
+      Storage__MaxFileSizeMB: ${CLOUD_MAX_UPLOAD_MB:-20}
+      Database__MigrateOnStartup: ${DB_MIGRATE_ON_STARTUP:-true}
+      Upload__ApiKey: ${UPLOAD_API_KEY:?Hãy nhập UPLOAD_API_KEY tối thiểu 32 ký tự trong .env}
+      PublicBaseUrl: ${PUBLIC_BASE_URL:-}
+      AllowedHosts: ${ALLOWED_HOSTS:-*}
+    volumes:
+      - type: bind
+        source: ${PHOTO_STORAGE_PATH:?Hãy nhập PHOTO_STORAGE_PATH trong .env}
+        target: /data/photos
+        bind:
+          create_host_path: false
+    # Chỉ cho truy cập từ chính laptop; Tunnel kết nối nội bộ qua Docker network.
+    ports:
+      - "127.0.0.1:${CLOUD_PORT:-5180}:8080"
+    networks:
+      - backend
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    depends_on:
+      - cloud
+    # Trỏ Published Application Service URL trên Cloudflare: http://cloud:8080
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+
+networks:
+  backend:
+    driver: bridge

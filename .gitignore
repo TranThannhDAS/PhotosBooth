@@ -3,3 +3,7 @@ obj/
 .vs/
 *.user
 *.suo
+# Thông tin cấu hình cá nhân của Docker Compose (không commit bí mật).
+/.env
+/.env.*
+!/.env.example

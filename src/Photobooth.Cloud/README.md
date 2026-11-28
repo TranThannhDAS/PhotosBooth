@@ -212,6 +212,9 @@ Test chạy **ứng dụng thật** (Kestrel, cổng ngẫu nhiên trên `127.0.
 
 ## Triển khai
 
+**Triển khai bằng Docker Compose (Windows + WSL2/Linux):** xem [`docs/DEPLOY_CLOUD_DOCKER.md`](../../docs/DEPLOY_CLOUD_DOCKER.md). Bộ Compose chạy ASP.NET Core .NET 10, PostgreSQL trong named volume, ảnh bind mount từ ổ D của Windows vào `/data/photos`; Cloudflare Tunnel là profile tùy chọn. Ví dụ đường dẫn Windows dưới đây chỉ dành cho chạy Cloud trực tiếp, không phải đường dẫn bên trong Linux container.
+
+
 1. Publish:
    ```powershell
    dotnet publish src/Photobooth.Cloud -c Release -o <thư-mục-publish>
